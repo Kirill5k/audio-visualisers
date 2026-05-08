@@ -55,6 +55,25 @@
       left: 290px;
     }
 
+    #fullscreenBtn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 200;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      backdrop-filter: blur(10px);
+    }
+
+    #fullscreenBtn:hover {
+      background: rgba(255,255,255,0.1);
+    }
+
     input[type="range"] {
       width: 100%;
     }
@@ -116,6 +135,7 @@
 <body>
 
 <button id="togglePanel" class="shifted">☰ Hide Panel</button>
+<button id="fullscreenBtn">⛶ Fullscreen</button>
 
 <div id="ui">
   <input type="file" id="fileInput" accept="audio/*" />
@@ -152,6 +172,14 @@
     value="0.02"
   />
 
+  <!-- Camera -->
+  <div class="section-label">Camera</div>
+
+  <div class="checkbox-row">
+    <input type="checkbox" id="lowAngleToggle" />
+    <span>Low Angle</span>
+  </div>
+
   <!-- Color Gradient Section -->
   <div class="section-label">Color Gradient</div>
 
@@ -164,8 +192,13 @@
     <span>Mid</span>
   </div>
   <div class="color-row">
-    <input type="color" id="colorHigh" value="#000000" />
+    <input type="color" id="colorHigh" value="#d6eae8" />
     <span>High (loud)</span>
+  </div>
+
+  <div class="checkbox-row">
+    <input type="checkbox" id="hueShiftToggle" checked />
+    <span>Hue Shift Over Time</span>
   </div>
 
   <!-- Depth Fade Section -->
@@ -181,6 +214,21 @@
     max="1"
     step="0.05"
     value="0.0"
+  />
+
+  <!-- Rendering -->
+  <div class="section-label">Rendering</div>
+
+  <label>
+    Wireframe Width: <span id="wireWidthLabel">0.5</span>
+  </label>
+  <input
+    type="range"
+    id="wireWidthSlider"
+    min="0.5"
+    max="5"
+    step="0.5"
+    value="0.5"
   />
 </div>
 
@@ -215,8 +263,12 @@ const camera = new THREE.PerspectiveCamera(
   1000
 );
 
-// Camera now on the opposite side (negative Z)
-camera.position.set(0, 32, -80);
+// Camera positions
+const CAM_HIGH = { x: 0, y: 32, z: -80 };
+const CAM_LOW  = { x: 0, y: 12, z: -70 };
+let lowAngle = false;
+
+camera.position.set(CAM_HIGH.x, CAM_HIGH.y, CAM_HIGH.z);
 camera.lookAt(0, 0, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -275,12 +327,22 @@ const LOW_BIN_SKIP = 10;
 let scrollSpeed = 0.8;
 let rotationEnabled = true;
 let rotationSpeed = 0.02;
-let fadeAmount = 0.1;
+let fadeAmount = 0.0;
+
+// Track whether audio has been loaded (camera only moves after this)
+let audioStarted = false;
 
 // Gradient colors
 let colorLow  = new THREE.Color(0x000020);
 let colorMid  = new THREE.Color(0x39a7c0);
-let colorHigh = new THREE.Color(0x000000);
+let colorHigh = new THREE.Color(0xd6eae8);
+
+// Hue shift (enabled by default)
+let hueShiftEnabled = true;
+let hueShiftOffset = 0;
+
+// Rendering options
+let wireframeWidth = 0.5;
 
 // =====================================================
 // Geometry
@@ -300,6 +362,10 @@ const vertexCount = geometry.attributes.position.count;
 const colors = new Float32Array(vertexCount * 3);
 geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
+// =====================================================
+// Wireframe Mesh (main visual)
+// =====================================================
+
 const material = new THREE.MeshStandardMaterial({
   vertexColors: true,
   emissive: 0x000000,
@@ -311,6 +377,32 @@ const material = new THREE.MeshStandardMaterial({
 
 const mesh = new THREE.Mesh(geometry, material);
 scene.add(mesh);
+
+// =====================================================
+// Line Segments wireframe (for thickness control)
+// =====================================================
+
+const lineMat = new THREE.LineBasicMaterial({
+  vertexColors: true,
+  transparent: true,
+  opacity: 0.95,
+  linewidth: wireframeWidth
+});
+
+let lineSegments = null;
+let useLineSegments = false;
+
+function rebuildLineSegments() {
+  if (lineSegments) {
+    scene.remove(lineSegments);
+    lineSegments.geometry.dispose();
+  }
+  const wireGeo = new THREE.WireframeGeometry(geometry);
+  lineSegments = new THREE.LineSegments(wireGeo, lineMat);
+  lineSegments.rotation.y = mesh.rotation.y;
+  lineSegments.visible = useLineSegments;
+  scene.add(lineSegments);
+}
 
 // =====================================================
 // History Buffer
@@ -333,16 +425,38 @@ function getLogIndex(i) {
 }
 
 // =====================================================
-// Color Interpolation Helper
+// Color Interpolation with Hue Shift
 // =====================================================
 
 const tmpColor = new THREE.Color();
+const shiftedLow = new THREE.Color();
+const shiftedMid = new THREE.Color();
+const shiftedHigh = new THREE.Color();
+
+function updateShiftedColors() {
+  shiftedLow.copy(colorLow);
+  shiftedMid.copy(colorMid);
+  shiftedHigh.copy(colorHigh);
+
+  if (hueShiftEnabled && hueShiftOffset > 0) {
+    const hsl = {};
+
+    shiftedLow.getHSL(hsl);
+    shiftedLow.setHSL((hsl.h + hueShiftOffset) % 1, hsl.s, hsl.l);
+
+    shiftedMid.getHSL(hsl);
+    shiftedMid.setHSL((hsl.h + hueShiftOffset) % 1, hsl.s, hsl.l);
+
+    shiftedHigh.getHSL(hsl);
+    shiftedHigh.setHSL((hsl.h + hueShiftOffset) % 1, hsl.s, hsl.l);
+  }
+}
 
 function getGradientColor(t) {
   if (t <= 0.5) {
-    tmpColor.lerpColors(colorLow, colorMid, t * 2);
+    tmpColor.lerpColors(shiftedLow, shiftedMid, t * 2);
   } else {
-    tmpColor.lerpColors(colorMid, colorHigh, (t - 0.5) * 2);
+    tmpColor.lerpColors(shiftedMid, shiftedHigh, (t - 0.5) * 2);
   }
   return tmpColor;
 }
@@ -369,6 +483,25 @@ toggleBtn.addEventListener('click', () => {
   }
 });
 
+// Fullscreen button
+document.getElementById('fullscreenBtn').addEventListener('click', () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen();
+  } else {
+    document.exitFullscreen();
+  }
+});
+
+// Update button text when exiting fullscreen via Escape
+document.addEventListener('fullscreenchange', () => {
+  const btn = document.getElementById('fullscreenBtn');
+  if (document.fullscreenElement) {
+    btn.textContent = '⛶ Exit Fullscreen';
+  } else {
+    btn.textContent = '⛶ Fullscreen';
+  }
+});
+
 const speedSlider = document.getElementById('speedSlider');
 const speedLabel = document.getElementById('speedLabel');
 
@@ -390,6 +523,14 @@ rotSpeedSlider.addEventListener('input', (e) => {
   rotSpeedLabel.textContent = rotationSpeed.toFixed(2);
 });
 
+// Low angle toggle
+document.getElementById('lowAngleToggle').addEventListener('change', (e) => {
+  lowAngle = e.target.checked;
+  const cam = lowAngle ? CAM_LOW : CAM_HIGH;
+  camera.position.set(cam.x, cam.y, cam.z);
+  camera.lookAt(0, 0, 0);
+});
+
 // Color pickers
 document.getElementById('colorLow').addEventListener('input', (e) => {
   colorLow.set(e.target.value);
@@ -401,6 +542,14 @@ document.getElementById('colorHigh').addEventListener('input', (e) => {
   colorHigh.set(e.target.value);
 });
 
+// Hue shift toggle
+document.getElementById('hueShiftToggle').addEventListener('change', (e) => {
+  hueShiftEnabled = e.target.checked;
+  if (!hueShiftEnabled) {
+    hueShiftOffset = 0;
+  }
+});
+
 // Fade slider
 const fadeSlider = document.getElementById('fadeSlider');
 const fadeLabel = document.getElementById('fadeLabel');
@@ -408,6 +557,28 @@ const fadeLabel = document.getElementById('fadeLabel');
 fadeSlider.addEventListener('input', (e) => {
   fadeAmount = parseFloat(e.target.value);
   fadeLabel.textContent = fadeAmount.toFixed(2);
+});
+
+// Wireframe width slider
+const wireWidthSlider = document.getElementById('wireWidthSlider');
+const wireWidthLabel = document.getElementById('wireWidthLabel');
+
+wireWidthSlider.addEventListener('input', (e) => {
+  wireframeWidth = parseFloat(e.target.value);
+  wireWidthLabel.textContent = wireframeWidth.toFixed(1);
+  lineMat.linewidth = wireframeWidth;
+
+  // Switch to LineSegments mode when width > 1
+  if (wireframeWidth > 1 && !useLineSegments) {
+    useLineSegments = true;
+    mesh.visible = false;
+    rebuildLineSegments();
+    if (lineSegments) lineSegments.visible = true;
+  } else if (wireframeWidth <= 1 && useLineSegments) {
+    useLineSegments = false;
+    mesh.visible = true;
+    if (lineSegments) lineSegments.visible = false;
+  }
 });
 
 // =====================================================
@@ -436,6 +607,9 @@ fileInput.addEventListener('change', async (e) => {
   analyser.connect(audioContext.destination);
 
   source.start();
+
+  // Mark audio as started — camera rotation begins now
+  audioStarted = true;
 });
 
 // =====================================================
@@ -448,10 +622,19 @@ const colorArray = geometry.attributes.color.array;
 const clock = new THREE.Clock();
 
 let accumulator = 0;
+let needsLineRebuild = false;
 
 function updateSpectrogram(delta) {
 
   analyser.getByteFrequencyData(frequencyData);
+
+  // Advance hue shift
+  if (hueShiftEnabled) {
+    hueShiftOffset += delta * 0.03;
+    if (hueShiftOffset > 1) hueShiftOffset -= 1;
+  }
+
+  updateShiftedColors();
 
   accumulator += delta * scrollSpeed * 60;
 
@@ -500,6 +683,8 @@ function updateSpectrogram(delta) {
 
   geometry.attributes.position.needsUpdate = true;
   geometry.attributes.color.needsUpdate = true;
+
+  needsLineRebuild = true;
 }
 
 function animate() {
@@ -510,8 +695,17 @@ function animate() {
 
   updateSpectrogram(delta);
 
-  if (rotationEnabled) {
+  // Only rotate after audio has started
+  if (rotationEnabled && audioStarted) {
     mesh.rotation.y += delta * rotationSpeed;
+    if (lineSegments) lineSegments.rotation.y = mesh.rotation.y;
+  }
+
+  // Rebuild line segments if geometry changed and they're visible
+  if (needsLineRebuild && useLineSegments) {
+    rebuildLineSegments();
+    if (lineSegments) lineSegments.rotation.y = mesh.rotation.y;
+    needsLineRebuild = false;
   }
 
   composer.render();
