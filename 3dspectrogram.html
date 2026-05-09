@@ -371,19 +371,18 @@ function updateShiftedColors() {
 }
 updateShiftedColors();
 
-// =====================================================
-// Textures
-// =====================================================
-
-const dataTextureArray = new Uint8Array(FFT_BINS * HISTORY * 4);
+// #1: Data Texture (Direct RedFormat for zero CPU loops)
+const dataTextureArray = new Uint8Array(FFT_BINS * HISTORY);
 const dataTexture = new THREE.DataTexture(
-  dataTextureArray, FFT_BINS, HISTORY, THREE.RGBAFormat, THREE.UnsignedByteType
+  dataTextureArray,
+  FFT_BINS,
+  HISTORY,
+  THREE.RedFormat,
+  THREE.UnsignedByteType
 );
 dataTexture.minFilter = THREE.NearestFilter;
 dataTexture.magFilter = THREE.NearestFilter;
 dataTexture.needsUpdate = true;
-
-const rowBuffer = new Uint8Array(FFT_BINS * 4);
 
 const colorLUTTexture = new THREE.DataTexture(
   colorLUTData, COLOR_LUT_SIZE, 1, THREE.RGBAFormat, THREE.UnsignedByteType
@@ -497,16 +496,8 @@ const mesh = new THREE.Mesh(geometry, spectrogramMaterial);
 scene.add(mesh);
 
 function pushNewRow() {
-  for (let i = 0; i < FFT_BINS; i++) {
-    const val = frequencyData[i];
-    rowBuffer[i * 4] = val;
-    rowBuffer[i * 4 + 1] = 0;
-    rowBuffer[i * 4 + 2] = 0;
-    rowBuffer[i * 4 + 3] = 255; // Full alpha to prevent GL glitches
-  }
-
-  const offset = historyHead * FFT_BINS * 4;
-  dataTextureArray.set(rowBuffer, offset);
+  const offset = historyHead * FFT_BINS;
+  dataTextureArray.set(frequencyData, offset);
 
   const gl = renderer.getContext();
   const texProps = renderer.properties.get(dataTexture);
@@ -516,7 +507,7 @@ function pushNewRow() {
     gl.bindTexture(gl.TEXTURE_2D, texProps.__webglTexture);
     gl.texSubImage2D(
       gl.TEXTURE_2D, 0, 0, historyHead, FFT_BINS, 1,
-      gl.RGBA, gl.UNSIGNED_BYTE, rowBuffer
+      gl.RED, gl.UNSIGNED_BYTE, frequencyData
     );
     gl.bindTexture(gl.TEXTURE_2D, activeTexture);
   } else {
@@ -667,7 +658,7 @@ function animate() {
   }
 
   // Smooth camera transition
-  camera.position.lerp(targetCamPos, 0.005);
+  camera.position.lerp(targetCamPos, 0.001);
   camera.lookAt(0, 0, 0);
 
   renderer.render(scene, camera);
