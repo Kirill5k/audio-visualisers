@@ -283,23 +283,15 @@ let lowAngle = false;
 camera.position.set(CAM_HIGH.x, CAM_HIGH.y, CAM_HIGH.z);
 camera.lookAt(0, 0, 0);
 
-// #6: Create renderer WITHOUT preserveDrawingBuffer initially
+// Renderer
 let renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 document.body.appendChild(renderer.domElement);
 
 // =====================================================
-// Postprocessing
+// Postprocessing (REMOVED EffectComposer for performance)
 // =====================================================
-
-let composer = new EffectComposer(renderer);
-let renderPass = new RenderPass(scene, camera);
-composer.addPass(renderPass);
-
-let filmPass = new FilmPass(0.35);
-filmPass.enabled = false;
-composer.addPass(filmPass);
 
 // =====================================================
 // Lights
@@ -354,7 +346,7 @@ let filmGrainEnabled = false;
 let emissiveGlowEnabled = true;
 
 // =====================================================
-// #3: Pre-compute Color LUT (256 entries, RGBA for compatibility)
+// #6: Pre-compute & Memory Optimization
 // =====================================================
 
 const COLOR_LUT_SIZE = 256;
@@ -364,6 +356,7 @@ const shiftedLow = new THREE.Color();
 const shiftedMid = new THREE.Color();
 const shiftedHigh = new THREE.Color();
 const tmpColor = new THREE.Color();
+const tempHSL = { h: 0, s: 0, l: 0 }; // Reusable object for HSL calculations
 
 function rebuildColorLUT() {
   for (let i = 0; i < COLOR_LUT_SIZE; i++) {
@@ -386,13 +379,12 @@ function updateShiftedColors() {
   shiftedHigh.copy(colorHigh);
 
   if (hueShiftEnabled && hueShiftOffset > 0) {
-    const hsl = {};
-    shiftedLow.getHSL(hsl);
-    shiftedLow.setHSL((hsl.h + hueShiftOffset) % 1, hsl.s, hsl.l);
-    shiftedMid.getHSL(hsl);
-    shiftedMid.setHSL((hsl.h + hueShiftOffset) % 1, hsl.s, hsl.l);
-    shiftedHigh.getHSL(hsl);
-    shiftedHigh.setHSL((hsl.h + hueShiftOffset) % 1, hsl.s, hsl.l);
+    shiftedLow.getHSL(tempHSL);
+    shiftedLow.setHSL((tempHSL.h + hueShiftOffset) % 1, tempHSL.s, tempHSL.l);
+    shiftedMid.getHSL(tempHSL);
+    shiftedMid.setHSL((tempHSL.h + hueShiftOffset) % 1, tempHSL.s, tempHSL.l);
+    shiftedHigh.getHSL(tempHSL);
+    shiftedHigh.setHSL((tempHSL.h + hueShiftOffset) % 1, tempHSL.s, tempHSL.l);
   }
 
   rebuildColorLUT();
@@ -401,22 +393,8 @@ function updateShiftedColors() {
 // Initial build
 updateShiftedColors();
 
-// =====================================================
-// Pre-built log index lookup table
-// =====================================================
-
-const logIndexTable = new Uint16Array(FFT_BINS);
-for (let i = 0; i < FFT_BINS; i++) {
-  const normalized = i / FFT_BINS;
-  const usableRange = FFT_BINS - 1 - LOW_BIN_SKIP;
-  logIndexTable[i] = LOW_BIN_SKIP + Math.floor(Math.pow(normalized, 2.2) * usableRange);
-}
-
-// =====================================================
-// #2: Data Texture (frequency history) — RGBA format for compatibility
-// =====================================================
-
-// Store amplitude in R channel, use RGBA format for broad WebGL support
+// #1: Data Texture (frequency history)
+// Revert to RGBAFormat for maximum compatibility while keeping the optimization
 const dataTextureArray = new Uint8Array(FFT_BINS * HISTORY * 4);
 const dataTexture = new THREE.DataTexture(
   dataTextureArray,
@@ -428,6 +406,9 @@ const dataTexture = new THREE.DataTexture(
 dataTexture.minFilter = THREE.NearestFilter;
 dataTexture.magFilter = THREE.NearestFilter;
 dataTexture.needsUpdate = true;
+
+// Pre-allocate a row buffer for RGBA upload
+const rowBuffer = new Uint8Array(FFT_BINS * 4);
 
 // Color LUT texture: 256 x 1, RGBA
 const colorLUTTexture = new THREE.DataTexture(
@@ -450,7 +431,7 @@ function updateColorLUTTexture() {
 let historyHead = 0;
 
 // =====================================================
-// Custom ShaderMaterial
+// Custom ShaderMaterial (Optimized with merged effects)
 // =====================================================
 
 const spectrogramMaterial = new THREE.ShaderMaterial({
@@ -466,6 +447,9 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
     uFogColor: { value: new THREE.Color(0x020305) },
     uFogNear: { value: 30.0 },
     uFogFar: { value: 160.0 },
+    uTime: { value: 0.0 },
+    uFilmGrain: { value: 0.0 },
+    uLowBinSkip: { value: LOW_BIN_SKIP / FFT_BINS }
   },
   vertexShader: `
     uniform sampler2D uDataTexture;
@@ -474,42 +458,33 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
     uniform float uHistorySize;
     uniform float uHeightScale;
     uniform float uEmissiveGlow;
+    uniform float uLowBinSkip;
 
     varying vec3 vColor;
     varying float vFogDepth;
+    varying vec2 vUv;
 
     void main() {
+      vUv = uv;
       vec2 gridUV = uv;
 
-      // gridUV.x = frequency position (0..1)
-      // gridUV.y = row position in geometry (0..1)
-      // After rotateX(-PI/2), UV.y corresponds to the Z axis (depth/time)
-
-      // Map geometry row to the ring buffer position
-      // UV.y=0 is the "front" of the geometry (closest to negative Z),
-      // UV.y=1 is the "back"
-      // We want UV.y=0 to show the NEWEST data (historyHead - 1)
-      // and UV.y=1 to show the OLDEST data
+      // #1: Logarithmic mapping on GPU
+      float usableRange = 1.0 - uLowBinSkip;
+      float logX = uLowBinSkip + pow(gridUV.x, 2.2) * usableRange;
 
       float row = gridUV.y * (uHistorySize - 1.0);
       float texRow = mod(uHistoryHead - 1.0 - row + uHistorySize, uHistorySize);
       float texV = (texRow + 0.5) / uHistorySize;
-      float texU = gridUV.x;
+      
+      // Sample amplitude from R channel
+      float amplitude = texture2D(uDataTexture, vec2(logX, texV)).r;
 
-      // Sample amplitude from data texture (stored in R channel)
-      float amplitude = texture2D(uDataTexture, vec2(texU, texV)).r;
-
-      // Compute height: pow(amplitude, 1.7) * heightScale
       float height = pow(amplitude, 1.7) * uHeightScale;
 
-      // Displace Y position
       vec3 displaced = position;
       displaced.y = height;
 
-      // Sample color from LUT using amplitude
       vec3 baseColor = texture2D(uColorLUT, vec2(amplitude, 0.5)).rgb;
-
-      // Emissive glow on peaks
       float glow = pow(amplitude, 2.5) * uEmissiveGlow;
       vColor = baseColor + baseColor * glow;
 
@@ -523,14 +498,25 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
     uniform vec3 uFogColor;
     uniform float uFogNear;
     uniform float uFogFar;
+    uniform float uTime;
+    uniform float uFilmGrain;
 
     varying vec3 vColor;
     varying float vFogDepth;
+    varying vec2 vUv;
+
+    float noise(vec2 p) {
+      return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+    }
 
     void main() {
-      // Apply fog
       float fogFactor = smoothstep(uFogNear, uFogFar, vFogDepth);
       vec3 color = mix(vColor, uFogColor, fogFactor);
+
+      if (uFilmGrain > 0.0) {
+        float grain = noise(vUv * 10.0 + uTime) - 0.5;
+        color += grain * 0.08 * uFilmGrain;
+      }
 
       gl_FragColor = vec4(color, 0.95);
     }
@@ -553,7 +539,7 @@ const mesh = new THREE.Mesh(geometry, spectrogramMaterial);
 scene.add(mesh);
 
 // =====================================================
-// #4: Line Segments — persistent with in-place updates
+// #4: Line Segments
 // =====================================================
 
 const lineMat = new THREE.LineBasicMaterial({
@@ -588,9 +574,6 @@ function buildLineSegments() {
 function updateLineSegmentsInPlace() {
   if (!lineSegments || !useLineSegments) return;
 
-  // Rebuild wireframe positions from current geometry state
-  // Since shader displaces on GPU, we need to compute positions on CPU for lines
-  // This is the tradeoff when using thick lines
   const newWire = new THREE.WireframeGeometry(geometry);
   const srcArr = newWire.attributes.position.array;
   const dstArr = lineSegments.geometry.attributes.position.array;
@@ -603,26 +586,18 @@ function updateLineSegmentsInPlace() {
 }
 
 // =====================================================
-// #1: Ring buffer — single row update
+// #1: Ring buffer (Optimized row push)
 // =====================================================
 
-const rowBuffer = new Uint8Array(FFT_BINS * 4); // RGBA per pixel
-
 function pushNewRow() {
-  // Fill row buffer from frequency data
+  // Fill rowBuffer for RGBA upload (only R channel needed for amplitude)
   for (let i = 0; i < FFT_BINS; i++) {
-    const val = frequencyData[logIndexTable[i]];
-    rowBuffer[i * 4]     = val;   // R = amplitude
-    rowBuffer[i * 4 + 1] = 0;    // G
-    rowBuffer[i * 4 + 2] = 0;    // B
-    rowBuffer[i * 4 + 3] = 255;  // A
+    rowBuffer[i * 4] = frequencyData[i];
   }
 
-  // Write into flat array
   const offset = historyHead * FFT_BINS * 4;
   dataTextureArray.set(rowBuffer, offset);
 
-  // Partial GPU upload via texSubImage2D
   const gl = renderer.getContext();
   const texProps = renderer.properties.get(dataTexture);
 
@@ -640,22 +615,17 @@ function pushNewRow() {
       gl.UNSIGNED_BYTE,
       rowBuffer
     );
-    // Restore previous binding
     gl.bindTexture(gl.TEXTURE_2D, activeTexture);
   } else {
-    // First frame fallback
     dataTexture.needsUpdate = true;
   }
 
-  // Advance ring buffer
   historyHead = (historyHead + 1) % HISTORY;
-
-  // Update uniform
   spectrogramMaterial.uniforms.uHistoryHead.value = historyHead;
 }
 
 // =====================================================
-// #6 & #8: Recording
+// Recording
 // =====================================================
 
 let mediaRecorder = null;
@@ -680,16 +650,6 @@ function recreateRenderer(preserveBuffer) {
   renderer.setPixelRatio(window.devicePixelRatio);
   parent.appendChild(renderer.domElement);
 
-  // Rebuild composer
-  composer.dispose();
-  renderPass = new RenderPass(scene, camera);
-  filmPass = new FilmPass(0.35);
-  filmPass.enabled = filmGrainEnabled;
-
-  composer = new EffectComposer(renderer);
-  composer.addPass(renderPass);
-  composer.addPass(filmPass);
-
   // Force texture re-upload
   dataTexture.needsUpdate = true;
   colorLUTTexture.needsUpdate = true;
@@ -704,14 +664,12 @@ function startRecording() {
 
   renderer.setPixelRatio(1);
   renderer.setSize(1920, 1080);
-  composer.setSize(1920, 1080);
   camera.aspect = 1920 / 1080;
   camera.updateProjectionMatrix();
 
   const canvas = renderer.domElement;
   const videoStream = canvas.captureStream(60);
 
-  // #8: Record audio
   const audioStreamDest = audioContext.createMediaStreamDestination();
   audioDestNode = audioStreamDest;
   analyser.connect(audioStreamDest);
@@ -753,7 +711,6 @@ function startRecording() {
     recreateRenderer(false);
     renderer.setPixelRatio(preRecordPixelRatio);
     renderer.setSize(preRecordWidth, preRecordHeight);
-    composer.setSize(preRecordWidth, preRecordHeight);
     camera.aspect = preRecordWidth / preRecordHeight;
     camera.updateProjectionMatrix();
   };
@@ -841,7 +798,7 @@ document.getElementById('lowAngleToggle').addEventListener('change', (e) => {
   camera.lookAt(0, 0, 0);
 });
 
-// Color pickers — rebuild LUT when changed
+// Color pickers
 document.getElementById('colorLow').addEventListener('input', (e) => {
   colorLow.set(e.target.value);
   updateShiftedColors();
@@ -889,7 +846,7 @@ wireWidthSlider.addEventListener('input', (e) => {
 
 document.getElementById('filmGrainToggle').addEventListener('change', (e) => {
   filmGrainEnabled = e.target.checked;
-  filmPass.enabled = filmGrainEnabled;
+  spectrogramMaterial.uniforms.uFilmGrain.value = filmGrainEnabled ? 1.0 : 0.0;
 });
 
 document.getElementById('emissiveGlowToggle').addEventListener('change', (e) => {
@@ -928,18 +885,16 @@ fileInput.addEventListener('change', async (e) => {
 const clock = new THREE.Clock();
 let accumulator = 0;
 
-// Initialize
 updateColorLUTTexture();
 
 function animate() {
   requestAnimationFrame(animate);
 
   const delta = clock.getDelta();
+  spectrogramMaterial.uniforms.uTime.value += delta;
 
-  // Get frequency data
   analyser.getByteFrequencyData(frequencyData);
 
-  // #7: Throttle hue shift — only rebuild LUT if offset changed visibly
   if (hueShiftEnabled) {
     hueShiftOffset += delta * 0.03;
     if (hueShiftOffset > 1) hueShiftOffset -= 1;
@@ -951,27 +906,19 @@ function animate() {
     }
   }
 
-  // Scroll accumulation
   accumulator += delta * scrollSpeed * 60;
 
   if (accumulator >= 1) {
     accumulator = 0;
-    // #1: Push only one new row to GPU
     pushNewRow();
   }
 
-  // Rotation only after audio starts
   if (rotationEnabled && audioStarted) {
     mesh.rotation.y += delta * rotationSpeed;
     if (lineSegments) lineSegments.rotation.y = mesh.rotation.y;
   }
 
-  // #5: Bypass EffectComposer when film grain is off
-  if (!filmGrainEnabled) {
-    renderer.render(scene, camera);
-  } else {
-    composer.render();
-  }
+  renderer.render(scene, camera);
 }
 
 animate();
@@ -987,7 +934,6 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
 
   renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 </script>
