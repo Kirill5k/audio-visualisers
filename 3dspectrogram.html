@@ -572,7 +572,7 @@ function startRecording() {
 
   mediaRecorder = new MediaRecorder(videoStream, {
     mimeType: mimeType,
-    videoBitsPerSecond: 16000000
+    videoBitsPerSecond: 20000000
   });
 
   mediaRecorder.ondataavailable = (e) => {
