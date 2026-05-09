@@ -492,7 +492,15 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
 
 const geometry = new THREE.PlaneGeometry(110, 160, FFT_BINS - 1, HISTORY - 1);
 geometry.rotateX(-Math.PI / 2);
+
+// #4: Static Bounding Box & Frustum Culling Optimization
+// Pre-computing a fixed box prevents Three.js from re-scanning vertices every frame.
+// We expand it by 50 to safely encompass the maximum possible peak heights (uHeightScale = 22).
+geometry.computeBoundingBox();
+geometry.boundingBox.expandByScalar(50);
+
 const mesh = new THREE.Mesh(geometry, spectrogramMaterial);
+mesh.frustumCulled = true; // Explicitly enable efficient culling
 scene.add(mesh);
 
 function pushNewRow() {
