@@ -55,11 +55,16 @@
       left: 290px;
     }
 
-    #fullscreenBtn {
+    .top-right-buttons {
       position: absolute;
       top: 20px;
       right: 20px;
       z-index: 200;
+      display: flex;
+      gap: 8px;
+    }
+
+    .top-btn {
       background: rgba(0,0,0,0.7);
       color: white;
       border: 1px solid rgba(255,255,255,0.2);
@@ -70,8 +75,13 @@
       backdrop-filter: blur(10px);
     }
 
-    #fullscreenBtn:hover {
+    .top-btn:hover {
       background: rgba(255,255,255,0.1);
+    }
+
+    .top-btn.recording {
+      background: rgba(200,0,0,0.7);
+      border-color: rgba(255,100,100,0.5);
     }
 
     input[type="range"] {
@@ -135,7 +145,11 @@
 <body>
 
 <button id="togglePanel" class="shifted">☰ Hide Panel</button>
-<button id="fullscreenBtn">⛶ Fullscreen</button>
+
+<div class="top-right-buttons">
+  <button id="recordBtn" class="top-btn">⏺ Record</button>
+  <button id="fullscreenBtn" class="top-btn">⛶ Fullscreen</button>
+</div>
 
 <div id="ui">
   <input type="file" id="fileInput" accept="audio/*" />
@@ -220,6 +234,18 @@
   <div class="section-label">Rendering</div>
 
   <label>
+    Bloom Strength: <span id="bloomLabel">1.4</span>
+  </label>
+  <input
+    type="range"
+    id="bloomSlider"
+    min="0"
+    max="4"
+    step="0.1"
+    value="1.4"
+  />
+
+  <label>
     Wireframe Width: <span id="wireWidthLabel">0.5</span>
   </label>
   <input
@@ -271,7 +297,8 @@ let lowAngle = false;
 camera.position.set(CAM_HIGH.x, CAM_HIGH.y, CAM_HIGH.z);
 camera.lookAt(0, 0, 0);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// preserveDrawingBuffer needed for MediaRecorder to capture frames
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 document.body.appendChild(renderer.domElement);
@@ -329,7 +356,7 @@ let rotationEnabled = true;
 let rotationSpeed = 0.02;
 let fadeAmount = 0.0;
 
-// Track whether audio has been loaded (camera only moves after this)
+// Track whether audio has been loaded
 let audioStarted = false;
 
 // Gradient colors
@@ -359,8 +386,8 @@ geometry.rotateX(-Math.PI / 2);
 
 // Add vertex color attribute
 const vertexCount = geometry.attributes.position.count;
-const colors = new Float32Array(vertexCount * 3);
-geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+const colorsAttr = new Float32Array(vertexCount * 3);
+geometry.setAttribute('color', new THREE.BufferAttribute(colorsAttr, 3));
 
 // =====================================================
 // Wireframe Mesh (main visual)
@@ -405,23 +432,19 @@ function rebuildLineSegments() {
 }
 
 // =====================================================
-// History Buffer
+// History Buffer — flat typed array + ring buffer
 // =====================================================
 
-const history = [];
+// Single flat Float32Array: HISTORY rows × FFT_BINS columns
+const historyBuffer = new Float32Array(HISTORY * FFT_BINS);
+let historyHead = 0; // ring buffer write pointer
 
-for (let i = 0; i < HISTORY; i++) {
-  history.push(new Array(FFT_BINS).fill(0));
-}
-
-// =====================================================
-// Log Frequency Mapping (skips low bins)
-// =====================================================
-
-function getLogIndex(i) {
+// Pre-built log index lookup table (avoids recomputing every frame)
+const logIndexTable = new Uint16Array(FFT_BINS);
+for (let i = 0; i < FFT_BINS; i++) {
   const normalized = i / FFT_BINS;
   const usableRange = FFT_BINS - 1 - LOW_BIN_SKIP;
-  return LOW_BIN_SKIP + Math.floor(Math.pow(normalized, 2.2) * usableRange);
+  logIndexTable[i] = LOW_BIN_SKIP + Math.floor(Math.pow(normalized, 2.2) * usableRange);
 }
 
 // =====================================================
@@ -462,6 +485,89 @@ function getGradientColor(t) {
 }
 
 // =====================================================
+// Recording (MediaRecorder at 1080p 60fps, video only)
+// =====================================================
+
+let mediaRecorder = null;
+let recordedChunks = [];
+let isRecording = false;
+
+// Store original renderer size to restore after recording
+let preRecordWidth = 0;
+let preRecordHeight = 0;
+let preRecordPixelRatio = 1;
+
+function startRecording() {
+  // Save current size
+  preRecordWidth = renderer.domElement.clientWidth;
+  preRecordHeight = renderer.domElement.clientHeight;
+  preRecordPixelRatio = renderer.getPixelRatio();
+
+  // Force renderer to 1920×1080 at pixel ratio 1
+  renderer.setPixelRatio(1);
+  renderer.setSize(1920, 1080);
+  composer.setSize(1920, 1080);
+  camera.aspect = 1920 / 1080;
+  camera.updateProjectionMatrix();
+
+  const canvas = renderer.domElement;
+  const stream = canvas.captureStream(60);
+
+  recordedChunks = [];
+
+  // Try VP9 first, fall back to VP8
+  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+    ? 'video/webm;codecs=vp9'
+    : 'video/webm;codecs=vp8';
+
+  mediaRecorder = new MediaRecorder(stream, {
+    mimeType: mimeType,
+    videoBitsPerSecond: 16000000 // 16 Mbps for high quality
+  });
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) {
+      recordedChunks.push(e.data);
+    }
+  };
+
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(recordedChunks, { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'spectrogram_1080p60.webm';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    // Restore original size
+    renderer.setPixelRatio(preRecordPixelRatio);
+    renderer.setSize(preRecordWidth, preRecordHeight);
+    composer.setSize(preRecordWidth, preRecordHeight);
+    camera.aspect = preRecordWidth / preRecordHeight;
+    camera.updateProjectionMatrix();
+  };
+
+  mediaRecorder.start(100); // collect data every 100ms
+  isRecording = true;
+
+  const btn = document.getElementById('recordBtn');
+  btn.textContent = '⏹ Stop';
+  btn.classList.add('recording');
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+  isRecording = false;
+
+  const btn = document.getElementById('recordBtn');
+  btn.textContent = '⏺ Record';
+  btn.classList.remove('recording');
+}
+
+// =====================================================
 // UI
 // =====================================================
 
@@ -483,6 +589,15 @@ toggleBtn.addEventListener('click', () => {
   }
 });
 
+// Record button
+document.getElementById('recordBtn').addEventListener('click', () => {
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+});
+
 // Fullscreen button
 document.getElementById('fullscreenBtn').addEventListener('click', () => {
   if (!document.fullscreenElement) {
@@ -492,7 +607,6 @@ document.getElementById('fullscreenBtn').addEventListener('click', () => {
   }
 });
 
-// Update button text when exiting fullscreen via Escape
 document.addEventListener('fullscreenchange', () => {
   const btn = document.getElementById('fullscreenBtn');
   if (document.fullscreenElement) {
@@ -559,6 +673,15 @@ fadeSlider.addEventListener('input', (e) => {
   fadeLabel.textContent = fadeAmount.toFixed(2);
 });
 
+// Bloom strength slider
+const bloomSlider = document.getElementById('bloomSlider');
+const bloomLabel = document.getElementById('bloomLabel');
+
+bloomSlider.addEventListener('input', (e) => {
+  bloomPass.strength = parseFloat(e.target.value);
+  bloomLabel.textContent = parseFloat(e.target.value).toFixed(1);
+});
+
 // Wireframe width slider
 const wireWidthSlider = document.getElementById('wireWidthSlider');
 const wireWidthLabel = document.getElementById('wireWidthLabel');
@@ -568,7 +691,6 @@ wireWidthSlider.addEventListener('input', (e) => {
   wireWidthLabel.textContent = wireframeWidth.toFixed(1);
   lineMat.linewidth = wireframeWidth;
 
-  // Switch to LineSegments mode when width > 1
   if (wireframeWidth > 1 && !useLineSegments) {
     useLineSegments = true;
     mesh.visible = false;
@@ -608,7 +730,6 @@ fileInput.addEventListener('change', async (e) => {
 
   source.start();
 
-  // Mark audio as started — camera rotation begins now
   audioStarted = true;
 });
 
@@ -642,18 +763,16 @@ function updateSpectrogram(delta) {
 
   accumulator = 0;
 
-  const frame = [];
-
+  // Write new row directly into ring buffer (no array creation, no unshift)
+  const rowOffset = historyHead * FFT_BINS;
   for (let i = 0; i < FFT_BINS; i++) {
-
-    const logIndex = getLogIndex(i);
-
-    frame.push(frequencyData[logIndex]);
+    historyBuffer[rowOffset + i] = frequencyData[logIndexTable[i]];
   }
 
-  history.unshift(frame);
-  history.pop();
+  // Advance ring buffer head
+  historyHead = (historyHead + 1) % HISTORY;
 
+  // Update vertex positions and colors
   let ptr = 0;
 
   for (let z = 0; z < HISTORY; z++) {
@@ -661,18 +780,20 @@ function updateSpectrogram(delta) {
     const depthRatio = z / (HISTORY - 1);
     const depthMultiplier = 1.0 - (depthRatio * fadeAmount);
 
+    // Read from ring buffer: newest row is at (historyHead - 1), oldest at historyHead
+    const rowIndex = ((historyHead - 1 - z) % HISTORY + HISTORY) % HISTORY;
+    const srcOffset = rowIndex * FFT_BINS;
+
     for (let x = 0; x < FFT_BINS; x++) {
 
-      const value = history[z][x] / 255;
+      const value = historyBuffer[srcOffset + x] / 255;
 
       const amplified = Math.pow(value, 1.7) * 22;
 
       positions[ptr + 1] = amplified;
 
-      // Get gradient color based on amplitude
       const color = getGradientColor(value);
 
-      // Apply depth fade
       colorArray[ptr]     = color.r * depthMultiplier;
       colorArray[ptr + 1] = color.g * depthMultiplier;
       colorArray[ptr + 2] = color.b * depthMultiplier;
@@ -714,10 +835,12 @@ function animate() {
 animate();
 
 // =====================================================
-// Resize
+// Resize (skip during recording to maintain 1080p)
 // =====================================================
 
 window.addEventListener('resize', () => {
+
+  if (isRecording) return;
 
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
