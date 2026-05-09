@@ -247,8 +247,7 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://unpkg.com/three@0.165.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.165.0/examples/jsm/"
+    "three": "https://unpkg.com/three@0.165.0/build/three.module.js"
   }
 }
 </script>
@@ -256,9 +255,6 @@
 <script type="module">
 
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { FilmPass } from 'three/addons/postprocessing/FilmPass.js';
 
 // =====================================================
 // Scene
@@ -275,7 +271,6 @@ const camera = new THREE.PerspectiveCamera(
   1000
 );
 
-// Camera positions — matching the working version
 const CAM_HIGH = { x: 0, y: 32, z: -80 };
 const CAM_LOW  = { x: 0, y: 12, z: -70 };
 let lowAngle = false;
@@ -283,22 +278,12 @@ let lowAngle = false;
 camera.position.set(CAM_HIGH.x, CAM_HIGH.y, CAM_HIGH.z);
 camera.lookAt(0, 0, 0);
 
-// Renderer
 let renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 document.body.appendChild(renderer.domElement);
 
-// =====================================================
-// Postprocessing (REMOVED EffectComposer for performance)
-// =====================================================
-
-// =====================================================
-// Lights
-// =====================================================
-
 scene.add(new THREE.AmbientLight(0xffffff, 0.3));
-
 const dirLight = new THREE.DirectionalLight(0xffffff, 1);
 dirLight.position.set(10, 20, 10);
 scene.add(dirLight);
@@ -308,21 +293,19 @@ scene.add(dirLight);
 // =====================================================
 
 const audioContext = new AudioContext();
-
 const analyser = audioContext.createAnalyser();
 analyser.fftSize = 2048;
 analyser.smoothingTimeConstant = 0.85;
 
 const frequencyData = new Uint8Array(analyser.frequencyBinCount);
-
 let audioDestNode = null;
 
 // =====================================================
-// Spectrogram Settings
+// Settings (Restored 1:1 fidelity)
 // =====================================================
 
 const FFT_BINS = analyser.frequencyBinCount; // 1024
-const HISTORY = 500;
+const HISTORY = 400;
 const LOW_BIN_SKIP = 10;
 
 let scrollSpeed = 0.8;
@@ -330,33 +313,30 @@ let rotationEnabled = true;
 let rotationSpeed = 0.02;
 let audioStarted = false;
 
-// Gradient colors
 let colorLow  = new THREE.Color(0x000020);
 let colorMid  = new THREE.Color(0x39a7c0);
 let colorHigh = new THREE.Color(0xd6eae8);
 
-// Hue shift
 let hueShiftEnabled = true;
 let hueShiftOffset = 0;
 let lastHueUpdateOffset = -1;
 
-// Rendering options
 let wireframeWidth = 0.5;
 let filmGrainEnabled = false;
 let emissiveGlowEnabled = true;
 
 // =====================================================
-// #6: Pre-compute & Memory Optimization
+// Memory & LUT
 // =====================================================
 
 const COLOR_LUT_SIZE = 256;
-const colorLUTData = new Uint8Array(COLOR_LUT_SIZE * 4); // RGBA
+const colorLUTData = new Uint8Array(COLOR_LUT_SIZE * 4);
 
 const shiftedLow = new THREE.Color();
 const shiftedMid = new THREE.Color();
 const shiftedHigh = new THREE.Color();
 const tmpColor = new THREE.Color();
-const tempHSL = { h: 0, s: 0, l: 0 }; // Reusable object for HSL calculations
+const tempHSL = { h: 0, s: 0, l: 0 }; 
 
 function rebuildColorLUT() {
   for (let i = 0; i < COLOR_LUT_SIZE; i++) {
@@ -377,7 +357,6 @@ function updateShiftedColors() {
   shiftedLow.copy(colorLow);
   shiftedMid.copy(colorMid);
   shiftedHigh.copy(colorHigh);
-
   if (hueShiftEnabled && hueShiftOffset > 0) {
     shiftedLow.getHSL(tempHSL);
     shiftedLow.setHSL((tempHSL.h + hueShiftOffset) % 1, tempHSL.s, tempHSL.l);
@@ -386,37 +365,26 @@ function updateShiftedColors() {
     shiftedHigh.getHSL(tempHSL);
     shiftedHigh.setHSL((tempHSL.h + hueShiftOffset) % 1, tempHSL.s, tempHSL.l);
   }
-
   rebuildColorLUT();
 }
-
-// Initial build
 updateShiftedColors();
 
-// #1: Data Texture (frequency history)
-// Revert to RGBAFormat for maximum compatibility while keeping the optimization
+// =====================================================
+// Textures
+// =====================================================
+
 const dataTextureArray = new Uint8Array(FFT_BINS * HISTORY * 4);
 const dataTexture = new THREE.DataTexture(
-  dataTextureArray,
-  FFT_BINS,
-  HISTORY,
-  THREE.RGBAFormat,
-  THREE.UnsignedByteType
+  dataTextureArray, FFT_BINS, HISTORY, THREE.RGBAFormat, THREE.UnsignedByteType
 );
 dataTexture.minFilter = THREE.NearestFilter;
 dataTexture.magFilter = THREE.NearestFilter;
 dataTexture.needsUpdate = true;
 
-// Pre-allocate a row buffer for RGBA upload
 const rowBuffer = new Uint8Array(FFT_BINS * 4);
 
-// Color LUT texture: 256 x 1, RGBA
 const colorLUTTexture = new THREE.DataTexture(
-  colorLUTData,
-  COLOR_LUT_SIZE,
-  1,
-  THREE.RGBAFormat,
-  THREE.UnsignedByteType
+  colorLUTData, COLOR_LUT_SIZE, 1, THREE.RGBAFormat, THREE.UnsignedByteType
 );
 colorLUTTexture.minFilter = THREE.LinearFilter;
 colorLUTTexture.magFilter = THREE.LinearFilter;
@@ -427,11 +395,10 @@ function updateColorLUTTexture() {
   colorLUTTexture.needsUpdate = true;
 }
 
-// Ring buffer head
 let historyHead = 0;
 
 // =====================================================
-// Custom ShaderMaterial (Optimized with merged effects)
+// Shader
 // =====================================================
 
 const spectrogramMaterial = new THREE.ShaderMaterial({
@@ -468,7 +435,6 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
       vUv = uv;
       vec2 gridUV = uv;
 
-      // #1: Logarithmic mapping on GPU
       float usableRange = 1.0 - uLowBinSkip;
       float logX = uLowBinSkip + pow(gridUV.x, 2.2) * usableRange;
 
@@ -476,9 +442,7 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
       float texRow = mod(uHistoryHead - 1.0 - row + uHistorySize, uHistorySize);
       float texV = (texRow + 0.5) / uHistorySize;
       
-      // Sample amplitude from R channel
       float amplitude = texture2D(uDataTexture, vec2(logX, texV)).r;
-
       float height = pow(amplitude, 1.7) * uHeightScale;
 
       vec3 displaced = position;
@@ -490,11 +454,11 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
 
       vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
       vFogDepth = -mvPosition.z;
-
       gl_Position = projectionMatrix * mvPosition;
     }
   `,
   fragmentShader: `
+    precision highp float;
     uniform vec3 uFogColor;
     uniform float uFogNear;
     uniform float uFogFar;
@@ -512,87 +476,31 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
     void main() {
       float fogFactor = smoothstep(uFogNear, uFogFar, vFogDepth);
       vec3 color = mix(vColor, uFogColor, fogFactor);
-
       if (uFilmGrain > 0.0) {
         float grain = noise(vUv * 10.0 + uTime) - 0.5;
         color += grain * 0.08 * uFilmGrain;
       }
-
       gl_FragColor = vec4(color, 0.95);
     }
   `
 });
 
 // =====================================================
-// Geometry
+// Geometry (Restored 1:1)
 // =====================================================
 
-const geometry = new THREE.PlaneGeometry(
-  110,
-  160,
-  FFT_BINS - 1,
-  HISTORY - 1
-);
+const geometry = new THREE.PlaneGeometry(110, 160, FFT_BINS - 1, HISTORY - 1);
 geometry.rotateX(-Math.PI / 2);
-
 const mesh = new THREE.Mesh(geometry, spectrogramMaterial);
 scene.add(mesh);
 
-// =====================================================
-// #4: Line Segments
-// =====================================================
-
-const lineMat = new THREE.LineBasicMaterial({
-  vertexColors: true,
-  transparent: true,
-  opacity: 0.95,
-  linewidth: wireframeWidth
-});
-
-let lineSegments = null;
-let useLineSegments = false;
-
-function buildLineSegments() {
-  if (lineSegments) {
-    scene.remove(lineSegments);
-    lineSegments.geometry.dispose();
-  }
-  const wireGeo = new THREE.WireframeGeometry(geometry);
-  wireGeo.attributes.position.setUsage(THREE.DynamicDrawUsage);
-
-  const posCount = wireGeo.attributes.position.count;
-  const colorArr = new Float32Array(posCount * 3);
-  wireGeo.setAttribute('color', new THREE.BufferAttribute(colorArr, 3));
-  wireGeo.attributes.color.setUsage(THREE.DynamicDrawUsage);
-
-  lineSegments = new THREE.LineSegments(wireGeo, lineMat);
-  lineSegments.rotation.y = mesh.rotation.y;
-  lineSegments.visible = useLineSegments;
-  scene.add(lineSegments);
-}
-
-function updateLineSegmentsInPlace() {
-  if (!lineSegments || !useLineSegments) return;
-
-  const newWire = new THREE.WireframeGeometry(geometry);
-  const srcArr = newWire.attributes.position.array;
-  const dstArr = lineSegments.geometry.attributes.position.array;
-
-  if (srcArr.length === dstArr.length) {
-    dstArr.set(srcArr);
-    lineSegments.geometry.attributes.position.needsUpdate = true;
-  }
-  newWire.dispose();
-}
-
-// =====================================================
-// #1: Ring buffer (Optimized row push)
-// =====================================================
-
 function pushNewRow() {
-  // Fill rowBuffer for RGBA upload (only R channel needed for amplitude)
   for (let i = 0; i < FFT_BINS; i++) {
-    rowBuffer[i * 4] = frequencyData[i];
+    const val = frequencyData[i];
+    rowBuffer[i * 4] = val;
+    rowBuffer[i * 4 + 1] = 0;
+    rowBuffer[i * 4 + 2] = 0;
+    rowBuffer[i * 4 + 3] = 255; // Full alpha to prevent GL glitches
   }
 
   const offset = historyHead * FFT_BINS * 4;
@@ -605,15 +513,8 @@ function pushNewRow() {
     const activeTexture = gl.getParameter(gl.TEXTURE_BINDING_2D);
     gl.bindTexture(gl.TEXTURE_2D, texProps.__webglTexture);
     gl.texSubImage2D(
-      gl.TEXTURE_2D,
-      0,
-      0,
-      historyHead,
-      FFT_BINS,
-      1,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      rowBuffer
+      gl.TEXTURE_2D, 0, 0, historyHead, FFT_BINS, 1,
+      gl.RGBA, gl.UNSIGNED_BYTE, rowBuffer
     );
     gl.bindTexture(gl.TEXTURE_2D, activeTexture);
   } else {
@@ -635,26 +536,6 @@ let preRecordWidth = 0;
 let preRecordHeight = 0;
 let preRecordPixelRatio = 1;
 
-function recreateRenderer(preserveBuffer) {
-  const oldCanvas = renderer.domElement;
-  const parent = oldCanvas.parentElement;
-
-  renderer.dispose();
-  parent.removeChild(oldCanvas);
-
-  renderer = new THREE.WebGLRenderer({
-    antialias: true,
-    preserveDrawingBuffer: preserveBuffer
-  });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(window.devicePixelRatio);
-  parent.appendChild(renderer.domElement);
-
-  // Force texture re-upload
-  dataTexture.needsUpdate = true;
-  colorLUTTexture.needsUpdate = true;
-}
-
 function startRecording() {
   recreateRenderer(true);
 
@@ -662,6 +543,7 @@ function startRecording() {
   preRecordHeight = window.innerHeight;
   preRecordPixelRatio = renderer.getPixelRatio();
 
+  // Force 1080p for recording
   renderer.setPixelRatio(1);
   renderer.setSize(1920, 1080);
   camera.aspect = 1920 / 1080;
@@ -670,6 +552,7 @@ function startRecording() {
   const canvas = renderer.domElement;
   const videoStream = canvas.captureStream(60);
 
+  // Capture Audio
   const audioStreamDest = audioContext.createMediaStreamDestination();
   audioDestNode = audioStreamDest;
   analyser.connect(audioStreamDest);
@@ -680,7 +563,6 @@ function startRecording() {
   }
 
   recordedChunks = [];
-
   const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
     ? 'video/webm;codecs=vp9,opus'
     : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
@@ -701,7 +583,7 @@ function startRecording() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'spectrogram_1080p60.webm';
+    a.download = 'spectrogram_1080p.webm';
     a.click();
     URL.revokeObjectURL(url);
 
@@ -717,7 +599,6 @@ function startRecording() {
 
   mediaRecorder.start(100);
   isRecording = true;
-
   const btn = document.getElementById('recordBtn');
   btn.textContent = '⏹ Stop';
   btn.classList.add('recording');
@@ -728,67 +609,94 @@ function stopRecording() {
     mediaRecorder.stop();
   }
   isRecording = false;
-
   const btn = document.getElementById('recordBtn');
   btn.textContent = '⏺ Record';
   btn.classList.remove('recording');
 }
 
 // =====================================================
-// UI
+// UI & Animation
 // =====================================================
 
-const toggleBtn = document.getElementById('togglePanel');
-const uiPanel = document.getElementById('ui');
-let panelVisible = true;
-
-toggleBtn.addEventListener('click', () => {
-  panelVisible = !panelVisible;
-  if (panelVisible) {
-    uiPanel.classList.remove('hidden');
-    toggleBtn.classList.add('shifted');
-    toggleBtn.textContent = '☰ Hide Panel';
-  } else {
-    uiPanel.classList.add('hidden');
-    toggleBtn.classList.remove('shifted');
-    toggleBtn.textContent = '☰ Show Panel';
-  }
-});
+function recreateRenderer(preserveBuffer) {
+  const oldCanvas = renderer.domElement;
+  const parent = oldCanvas.parentElement;
+  renderer.dispose();
+  parent.removeChild(oldCanvas);
+  renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: preserveBuffer });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  parent.appendChild(renderer.domElement);
+  dataTexture.needsUpdate = true;
+  colorLUTTexture.needsUpdate = true;
+}
 
 document.getElementById('recordBtn').addEventListener('click', () => {
   if (isRecording) stopRecording();
   else startRecording();
 });
 
-document.getElementById('fullscreenBtn').addEventListener('click', () => {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen();
+const clock = new THREE.Clock();
+let accumulator = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  spectrogramMaterial.uniforms.uTime.value += delta;
+  analyser.getByteFrequencyData(frequencyData);
+
+  if (hueShiftEnabled) {
+    hueShiftOffset += delta * 0.03;
+    if (hueShiftOffset > 1) hueShiftOffset -= 1;
+    if (Math.abs(hueShiftOffset - lastHueUpdateOffset) > 0.001) {
+      lastHueUpdateOffset = hueShiftOffset;
+      updateShiftedColors();
+      updateColorLUTTexture();
+    }
+  }
+
+  accumulator += delta * scrollSpeed * 60;
+  if (accumulator >= 1) {
+    accumulator = 0;
+    pushNewRow();
+  }
+  if (rotationEnabled && audioStarted) {
+    mesh.rotation.y += delta * rotationSpeed;
+  }
+  renderer.render(scene, camera);
+}
+animate();
+
+// UI Listeners
+document.getElementById('togglePanel').addEventListener('click', (e) => {
+  const ui = document.getElementById('ui');
+  const btn = e.target;
+  if (ui.classList.contains('hidden')) {
+    ui.classList.remove('hidden');
+    btn.classList.add('shifted');
+    btn.textContent = '☰ Hide Panel';
   } else {
-    document.exitFullscreen();
+    ui.classList.add('hidden');
+    btn.classList.remove('shifted');
+    btn.textContent = '☰ Show Panel';
   }
 });
 
-document.addEventListener('fullscreenchange', () => {
-  const btn = document.getElementById('fullscreenBtn');
-  btn.textContent = document.fullscreenElement ? '⛶ Exit Fullscreen' : '⛶ Fullscreen';
+document.getElementById('fullscreenBtn').addEventListener('click', () => {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+  else document.exitFullscreen();
 });
 
-const speedSlider = document.getElementById('speedSlider');
-const speedLabel = document.getElementById('speedLabel');
-speedSlider.addEventListener('input', (e) => {
+document.getElementById('speedSlider').addEventListener('input', (e) => {
   scrollSpeed = parseFloat(e.target.value);
-  speedLabel.textContent = scrollSpeed.toFixed(1);
+  document.getElementById('speedLabel').textContent = scrollSpeed.toFixed(1);
 });
 
-document.getElementById('rotateToggle').addEventListener('change', (e) => {
-  rotationEnabled = e.target.checked;
-});
+document.getElementById('rotateToggle').addEventListener('change', (e) => rotationEnabled = e.target.checked);
 
-const rotSpeedSlider = document.getElementById('rotSpeedSlider');
-const rotSpeedLabel = document.getElementById('rotSpeedLabel');
-rotSpeedSlider.addEventListener('input', (e) => {
+document.getElementById('rotSpeedSlider').addEventListener('input', (e) => {
   rotationSpeed = parseFloat(e.target.value);
-  rotSpeedLabel.textContent = rotationSpeed.toFixed(2);
+  document.getElementById('rotSpeedLabel').textContent = rotationSpeed.toFixed(2);
 });
 
 document.getElementById('lowAngleToggle').addEventListener('change', (e) => {
@@ -798,7 +706,6 @@ document.getElementById('lowAngleToggle').addEventListener('change', (e) => {
   camera.lookAt(0, 0, 0);
 });
 
-// Color pickers
 document.getElementById('colorLow').addEventListener('input', (e) => {
   colorLow.set(e.target.value);
   updateShiftedColors();
@@ -819,29 +726,14 @@ document.getElementById('hueShiftToggle').addEventListener('change', (e) => {
   hueShiftEnabled = e.target.checked;
   if (!hueShiftEnabled) {
     hueShiftOffset = 0;
-    lastHueUpdateOffset = -1;
     updateShiftedColors();
     updateColorLUTTexture();
   }
 });
 
-const wireWidthSlider = document.getElementById('wireWidthSlider');
-const wireWidthLabel = document.getElementById('wireWidthLabel');
-wireWidthSlider.addEventListener('input', (e) => {
+document.getElementById('wireWidthSlider').addEventListener('input', (e) => {
   wireframeWidth = parseFloat(e.target.value);
-  wireWidthLabel.textContent = wireframeWidth.toFixed(1);
-  lineMat.linewidth = wireframeWidth;
-
-  if (wireframeWidth > 1 && !useLineSegments) {
-    useLineSegments = true;
-    mesh.visible = false;
-    buildLineSegments();
-    if (lineSegments) lineSegments.visible = true;
-  } else if (wireframeWidth <= 1 && useLineSegments) {
-    useLineSegments = false;
-    mesh.visible = true;
-    if (lineSegments) lineSegments.visible = false;
-  }
+  document.getElementById('wireWidthLabel').textContent = wireframeWidth.toFixed(1);
 });
 
 document.getElementById('filmGrainToggle').addEventListener('change', (e) => {
@@ -854,89 +746,25 @@ document.getElementById('emissiveGlowToggle').addEventListener('change', (e) => 
   spectrogramMaterial.uniforms.uEmissiveGlow.value = emissiveGlowEnabled ? 1.0 : 0.0;
 });
 
-// =====================================================
-// Audio File
-// =====================================================
-
-const fileInput = document.getElementById('fileInput');
-
-fileInput.addEventListener('change', async (e) => {
+document.getElementById('fileInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
-
   await audioContext.resume();
-
-  const arrayBuffer = await file.arrayBuffer();
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
+  const buffer = await audioContext.decodeAudioData(await file.arrayBuffer());
   const source = audioContext.createBufferSource();
-  source.buffer = audioBuffer;
+  source.buffer = buffer;
   source.connect(analyser);
   analyser.connect(audioContext.destination);
   source.start();
-
   audioStarted = true;
 });
 
-// =====================================================
-// Animation Loop
-// =====================================================
-
-const clock = new THREE.Clock();
-let accumulator = 0;
-
-updateColorLUTTexture();
-
-function animate() {
-  requestAnimationFrame(animate);
-
-  const delta = clock.getDelta();
-  spectrogramMaterial.uniforms.uTime.value += delta;
-
-  analyser.getByteFrequencyData(frequencyData);
-
-  if (hueShiftEnabled) {
-    hueShiftOffset += delta * 0.03;
-    if (hueShiftOffset > 1) hueShiftOffset -= 1;
-
-    if (Math.abs(hueShiftOffset - lastHueUpdateOffset) > 0.001) {
-      lastHueUpdateOffset = hueShiftOffset;
-      updateShiftedColors();
-      updateColorLUTTexture();
-    }
-  }
-
-  accumulator += delta * scrollSpeed * 60;
-
-  if (accumulator >= 1) {
-    accumulator = 0;
-    pushNewRow();
-  }
-
-  if (rotationEnabled && audioStarted) {
-    mesh.rotation.y += delta * rotationSpeed;
-    if (lineSegments) lineSegments.rotation.y = mesh.rotation.y;
-  }
-
-  renderer.render(scene, camera);
-}
-
-animate();
-
-// =====================================================
-// Resize
-// =====================================================
-
 window.addEventListener('resize', () => {
-  if (isRecording) return;
-
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
 </script>
-
 </body>
 </html>
