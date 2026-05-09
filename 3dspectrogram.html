@@ -275,7 +275,9 @@ const CAM_HIGH = { x: 0, y: 32, z: -80 };
 const CAM_LOW  = { x: 0, y: 12, z: -70 };
 let lowAngle = false;
 
-camera.position.set(CAM_HIGH.x, CAM_HIGH.y, CAM_HIGH.z);
+// #6: Smooth Camera Transition
+const targetCamPos = new THREE.Vector3(CAM_HIGH.x, CAM_HIGH.y, CAM_HIGH.z);
+camera.position.copy(targetCamPos);
 camera.lookAt(0, 0, 0);
 
 let renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -663,6 +665,11 @@ function animate() {
   if (rotationEnabled && audioStarted) {
     mesh.rotation.y += delta * rotationSpeed;
   }
+
+  // Smooth camera transition
+  camera.position.lerp(targetCamPos, 0.005);
+  camera.lookAt(0, 0, 0);
+
   renderer.render(scene, camera);
 }
 animate();
@@ -702,8 +709,7 @@ document.getElementById('rotSpeedSlider').addEventListener('input', (e) => {
 document.getElementById('lowAngleToggle').addEventListener('change', (e) => {
   lowAngle = e.target.checked;
   const cam = lowAngle ? CAM_LOW : CAM_HIGH;
-  camera.position.set(cam.x, cam.y, cam.z);
-  camera.lookAt(0, 0, 0);
+  targetCamPos.set(cam.x, cam.y, cam.z);
 });
 
 document.getElementById('colorLow').addEventListener('input', (e) => {
