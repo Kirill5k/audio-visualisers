@@ -216,34 +216,7 @@
   </div>
 
   <!-- Depth Fade Section -->
-  <div class="section-label">Depth Fade</div>
-
-  <label>
-    Fade Amount: <span id="fadeLabel">0.0</span>
-  </label>
-  <input
-    type="range"
-    id="fadeSlider"
-    min="0"
-    max="1"
-    step="0.05"
-    value="0.0"
-  />
-
-  <!-- Rendering -->
   <div class="section-label">Rendering</div>
-
-  <label>
-    Bloom Strength: <span id="bloomLabel">1.4</span>
-  </label>
-  <input
-    type="range"
-    id="bloomSlider"
-    min="0"
-    max="4"
-    step="0.1"
-    value="1.4"
-  />
 
   <label>
     Wireframe Width: <span id="wireWidthLabel">0.5</span>
@@ -256,6 +229,19 @@
     step="0.5"
     value="0.5"
   />
+
+  <!-- Effects -->
+  <div class="section-label">Effects</div>
+
+  <div class="checkbox-row">
+    <input type="checkbox" id="filmGrainToggle" />
+    <span>Film Grain</span>
+  </div>
+
+  <div class="checkbox-row">
+    <input type="checkbox" id="emissiveGlowToggle" checked />
+    <span>Emissive Glow</span>
+  </div>
 </div>
 
 <script type="importmap">
@@ -272,7 +258,7 @@
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { FilmPass } from 'three/addons/postprocessing/FilmPass.js';
 
 // =====================================================
 // Scene
@@ -311,14 +297,9 @@ const composer = new EffectComposer(renderer);
 
 composer.addPass(new RenderPass(scene, camera));
 
-const bloomPass = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight),
-  1.4,
-  0.4,
-  0.85
-);
-
-composer.addPass(bloomPass);
+const filmPass = new FilmPass(0.35);
+filmPass.enabled = false;
+composer.addPass(filmPass);
 
 // =====================================================
 // Lights
@@ -354,7 +335,6 @@ const LOW_BIN_SKIP = 10;
 let scrollSpeed = 0.8;
 let rotationEnabled = true;
 let rotationSpeed = 0.02;
-let fadeAmount = 0.0;
 
 // Track whether audio has been loaded
 let audioStarted = false;
@@ -370,6 +350,10 @@ let hueShiftOffset = 0;
 
 // Rendering options
 let wireframeWidth = 0.5;
+
+// Effect toggles
+let filmGrainEnabled = false;
+let emissiveGlowEnabled = true;
 
 // =====================================================
 // Geometry
@@ -389,18 +373,46 @@ const vertexCount = geometry.attributes.position.count;
 const colorsAttr = new Float32Array(vertexCount * 3);
 geometry.setAttribute('color', new THREE.BufferAttribute(colorsAttr, 3));
 
+// Emissive color attribute (per-vertex, driven by amplitude)
+const emissiveAttr = new Float32Array(vertexCount * 3);
+geometry.setAttribute('emissive', new THREE.BufferAttribute(emissiveAttr, 3));
+
 // =====================================================
 // Wireframe Mesh (main visual)
 // =====================================================
 
 const material = new THREE.MeshStandardMaterial({
   vertexColors: true,
-  emissive: 0x000000,
-  emissiveIntensity: 0.5,
+  emissive: 0xffffff,
+  emissiveIntensity: 0.6,
   wireframe: true,
   transparent: true,
   opacity: 0.95
 });
+
+material.onBeforeCompile = (shader) => {
+  shader.vertexShader = shader.vertexShader.replace(
+    '#include <color_pars_vertex>',
+    `#include <color_pars_vertex>
+     attribute vec3 emissive;
+     varying vec3 vEmissiveColor;`
+  );
+  shader.vertexShader = shader.vertexShader.replace(
+    '#include <color_vertex>',
+    `#include <color_vertex>
+     vEmissiveColor = emissive;`
+  );
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <color_pars_fragment>',
+    `#include <color_pars_fragment>
+     varying vec3 vEmissiveColor;`
+  );
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <emissivemap_fragment>',
+    `#include <emissivemap_fragment>
+     totalEmissiveRadiance = vEmissiveColor;`
+  );
+};
 
 const mesh = new THREE.Mesh(geometry, material);
 scene.add(mesh);
@@ -664,24 +676,6 @@ document.getElementById('hueShiftToggle').addEventListener('change', (e) => {
   }
 });
 
-// Fade slider
-const fadeSlider = document.getElementById('fadeSlider');
-const fadeLabel = document.getElementById('fadeLabel');
-
-fadeSlider.addEventListener('input', (e) => {
-  fadeAmount = parseFloat(e.target.value);
-  fadeLabel.textContent = fadeAmount.toFixed(2);
-});
-
-// Bloom strength slider
-const bloomSlider = document.getElementById('bloomSlider');
-const bloomLabel = document.getElementById('bloomLabel');
-
-bloomSlider.addEventListener('input', (e) => {
-  bloomPass.strength = parseFloat(e.target.value);
-  bloomLabel.textContent = parseFloat(e.target.value).toFixed(1);
-});
-
 // Wireframe width slider
 const wireWidthSlider = document.getElementById('wireWidthSlider');
 const wireWidthLabel = document.getElementById('wireWidthLabel');
@@ -700,6 +694,50 @@ wireWidthSlider.addEventListener('input', (e) => {
     useLineSegments = false;
     mesh.visible = true;
     if (lineSegments) lineSegments.visible = false;
+  }
+});
+
+// Effect toggles
+document.getElementById('filmGrainToggle').addEventListener('change', (e) => {
+  filmGrainEnabled = e.target.checked;
+  filmPass.enabled = filmGrainEnabled;
+});
+
+document.getElementById('emissiveGlowToggle').addEventListener('change', (e) => {
+  emissiveGlowEnabled = e.target.checked;
+  if (emissiveGlowEnabled) {
+    material.emissive.set(0xffffff);
+    material.emissiveIntensity = 0.6;
+    material.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <color_pars_vertex>',
+        `#include <color_pars_vertex>
+         attribute vec3 emissive;
+         varying vec3 vEmissiveColor;`
+      );
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <color_vertex>',
+        `#include <color_vertex>
+         vEmissiveColor = emissive;`
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <color_pars_fragment>',
+        `#include <color_pars_fragment>
+         varying vec3 vEmissiveColor;`
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+         totalEmissiveRadiance = vEmissiveColor;`
+      );
+    };
+    material.needsUpdate = true;
+  } else {
+    material.emissive.set(0x000000);
+    material.onBeforeCompile = () => {};
+    material.needsUpdate = true;
+    emissiveArray.fill(0);
+    geometry.attributes.emissive.needsUpdate = true;
   }
 });
 
@@ -739,6 +777,7 @@ fileInput.addEventListener('change', async (e) => {
 
 const positions = geometry.attributes.position.array;
 const colorArray = geometry.attributes.color.array;
+const emissiveArray = geometry.attributes.emissive.array;
 
 const clock = new THREE.Clock();
 
@@ -763,7 +802,7 @@ function updateSpectrogram(delta) {
 
   accumulator = 0;
 
-  // Write new row directly into ring buffer (no array creation, no unshift)
+  // Write new row into ring buffer
   const rowOffset = historyHead * FFT_BINS;
   for (let i = 0; i < FFT_BINS; i++) {
     historyBuffer[rowOffset + i] = frequencyData[logIndexTable[i]];
@@ -776,9 +815,6 @@ function updateSpectrogram(delta) {
   let ptr = 0;
 
   for (let z = 0; z < HISTORY; z++) {
-
-    const depthRatio = z / (HISTORY - 1);
-    const depthMultiplier = 1.0 - (depthRatio * fadeAmount);
 
     // Read from ring buffer: newest row is at (historyHead - 1), oldest at historyHead
     const rowIndex = ((historyHead - 1 - z) % HISTORY + HISTORY) % HISTORY;
@@ -794,9 +830,17 @@ function updateSpectrogram(delta) {
 
       const color = getGradientColor(value);
 
-      colorArray[ptr]     = color.r * depthMultiplier;
-      colorArray[ptr + 1] = color.g * depthMultiplier;
-      colorArray[ptr + 2] = color.b * depthMultiplier;
+      colorArray[ptr]     = color.r;
+      colorArray[ptr + 1] = color.g;
+      colorArray[ptr + 2] = color.b;
+
+      // Per-vertex emissive: bright peaks self-illuminate
+      if (emissiveGlowEnabled) {
+        const glow = Math.pow(value, 2.5);
+        emissiveArray[ptr]     = color.r * glow;
+        emissiveArray[ptr + 1] = color.g * glow;
+        emissiveArray[ptr + 2] = color.b * glow;
+      }
 
       ptr += 3;
     }
@@ -804,6 +848,10 @@ function updateSpectrogram(delta) {
 
   geometry.attributes.position.needsUpdate = true;
   geometry.attributes.color.needsUpdate = true;
+
+  if (emissiveGlowEnabled) {
+    geometry.attributes.emissive.needsUpdate = true;
+  }
 
   needsLineRebuild = true;
 }
