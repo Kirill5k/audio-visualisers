@@ -549,6 +549,8 @@ function pushNewRow() {
 let mediaRecorder = null;
 let recordedChunks = [];
 let isRecording = false;
+let videoTrack = null;
+let lastCaptureMs = 0;
 let preRecordWidth = 0;
 let preRecordHeight = 0;
 let preRecordPixelRatio = 1;
@@ -564,7 +566,12 @@ function startRecording() {
   camera.updateProjectionMatrix();
 
   const canvas = renderer.domElement;
-  const videoStream = canvas.captureStream(60);
+  // captureStream(0) = manual mode: no internal timer.
+  // We call videoTrack.requestFrame() ourselves right after each render,
+  // so the stream always receives the exact frame we just finished drawing.
+  const videoStream = canvas.captureStream(0);
+  videoTrack = videoStream.getVideoTracks()[0];
+  lastCaptureMs = 0;
 
   const audioStreamDest = audioContext.createMediaStreamDestination();
   audioDestNode = audioStreamDest;
@@ -607,6 +614,7 @@ function startRecording() {
 
     try { analyser.disconnect(audioDestNode); } catch(e) {}
     audioDestNode = null;
+    videoTrack = null;
 
     renderer.setPixelRatio(preRecordPixelRatio);
     renderer.setSize(preRecordWidth, preRecordHeight);
@@ -696,6 +704,17 @@ function tickFrame(delta) {
 function animate() {
   requestAnimationFrame(animate);
   tickFrame(clock.getDelta());
+  // Submit the just-rendered frame to the recording stream.
+  // glCtx.finish() in tickFrame guarantees the GPU is done before we get here,
+  // so requestFrame() always captures a fully-rendered frame at a consistent
+  // 60 fps cadence regardless of display refresh rate.
+  if (isRecording && videoTrack) {
+    const now = performance.now();
+    if (now - lastCaptureMs >= 16.5) {
+      videoTrack.requestFrame();
+      lastCaptureMs = now;
+    }
+  }
 }
 
 animate();
