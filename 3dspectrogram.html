@@ -153,6 +153,7 @@
     canvas {
       display: block;
     }
+
   </style>
 </head>
 <body>
@@ -256,6 +257,14 @@
     <input type="checkbox" id="emissiveGlowToggle" checked />
     <span>Emissive Glow</span>
   </div>
+
+  <!-- Recording -->
+  <div class="section-label">Recording</div>
+
+  <div class="checkbox-row">
+    <input type="checkbox" id="lock60fpsToggle" />
+    <span>Lock 60fps</span>
+  </div>
 </div>
 
 <script type="importmap">
@@ -328,6 +337,8 @@ let scrollSpeed = 0.8;
 let rotationEnabled = true;
 let rotationSpeed = 0.02;
 let audioStarted = false;
+let audioBuffer = null;
+let lockRecordingFps = false;
 
 let colorLow  = new THREE.Color(0x000020);
 let colorMid  = new THREE.Color(0x39a7c0);
@@ -643,7 +654,6 @@ function stopRecording() {
 // UI & Animation
 // =====================================================
 
-
 document.getElementById('recordBtn').addEventListener('click', () => {
   if (isRecording) stopRecording();
   else startRecording();
@@ -703,17 +713,12 @@ function tickFrame(delta) {
 
 function animate() {
   requestAnimationFrame(animate);
+  const now = performance.now();
+  if (isRecording && lockRecordingFps && now - lastCaptureMs < 16.5) return;
   tickFrame(clock.getDelta());
-  // Submit the just-rendered frame to the recording stream.
-  // glCtx.finish() in tickFrame guarantees the GPU is done before we get here,
-  // so requestFrame() always captures a fully-rendered frame at a consistent
-  // 60 fps cadence regardless of display refresh rate.
   if (isRecording && videoTrack) {
-    const now = performance.now();
-    if (now - lastCaptureMs >= 16.5) {
-      videoTrack.requestFrame();
-      lastCaptureMs = now;
-    }
+    videoTrack.requestFrame();
+    lastCaptureMs = now;
   }
 }
 
@@ -797,13 +802,17 @@ document.getElementById('emissiveGlowToggle').addEventListener('change', (e) => 
   spectrogramMaterial.uniforms.uEmissiveGlow.value = emissiveGlowEnabled ? 1.0 : 0.0;
 });
 
+document.getElementById('lock60fpsToggle').addEventListener('change', (e) => {
+  lockRecordingFps = e.target.checked;
+});
+
 document.getElementById('fileInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
   await audioContext.resume();
-  const buffer = await audioContext.decodeAudioData(await file.arrayBuffer());
+  audioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
   const source = audioContext.createBufferSource();
-  source.buffer = buffer;
+  source.buffer = audioBuffer;
   source.connect(analyser);
   analyser.connect(audioContext.destination);
   source.start();
