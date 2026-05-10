@@ -280,7 +280,7 @@ const targetCamPos = new THREE.Vector3(CAM_HIGH.x, CAM_HIGH.y, CAM_HIGH.z);
 camera.position.copy(targetCamPos);
 camera.lookAt(0, 0, 0);
 
-let renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 document.body.appendChild(renderer.domElement);
@@ -540,13 +540,10 @@ let preRecordHeight = 0;
 let preRecordPixelRatio = 1;
 
 function startRecording() {
-  recreateRenderer(true);
-
   preRecordWidth = window.innerWidth;
   preRecordHeight = window.innerHeight;
   preRecordPixelRatio = renderer.getPixelRatio();
 
-  // Force 1080p for recording
   renderer.setPixelRatio(1);
   renderer.setSize(1920, 1080);
   camera.aspect = 1920 / 1080;
@@ -555,15 +552,12 @@ function startRecording() {
   const canvas = renderer.domElement;
   const videoStream = canvas.captureStream(60);
 
-  // Capture Audio
   const audioStreamDest = audioContext.createMediaStreamDestination();
   audioDestNode = audioStreamDest;
   analyser.connect(audioStreamDest);
 
   const audioTrack = audioStreamDest.stream.getAudioTracks()[0];
-  if (audioTrack) {
-    videoStream.addTrack(audioTrack);
-  }
+  if (audioTrack) videoStream.addTrack(audioTrack);
 
   recordedChunks = [];
   const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
@@ -573,8 +567,8 @@ function startRecording() {
     : 'video/webm';
 
   mediaRecorder = new MediaRecorder(videoStream, {
-    mimeType: mimeType,
-    videoBitsPerSecond: 20000000
+    mimeType,
+    videoBitsPerSecond: 60_000_000
   });
 
   mediaRecorder.ondataavailable = (e) => {
@@ -593,7 +587,7 @@ function startRecording() {
     try { analyser.disconnect(audioDestNode); } catch(e) {}
     audioDestNode = null;
 
-    recreateRenderer(false);
+    stopFixedLoop();
     renderer.setPixelRatio(preRecordPixelRatio);
     renderer.setSize(preRecordWidth, preRecordHeight);
     camera.aspect = preRecordWidth / preRecordHeight;
@@ -602,6 +596,7 @@ function startRecording() {
 
   mediaRecorder.start(100);
   isRecording = true;
+  startFixedLoop();
   const btn = document.getElementById('recordBtn');
   btn.textContent = '⏹ Stop';
   btn.classList.add('recording');
@@ -621,18 +616,6 @@ function stopRecording() {
 // UI & Animation
 // =====================================================
 
-function recreateRenderer(preserveBuffer) {
-  const oldCanvas = renderer.domElement;
-  const parent = oldCanvas.parentElement;
-  renderer.dispose();
-  parent.removeChild(oldCanvas);
-  renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: preserveBuffer });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(window.devicePixelRatio);
-  parent.appendChild(renderer.domElement);
-  dataTexture.needsUpdate = true;
-  colorLUTTexture.needsUpdate = true;
-}
 
 document.getElementById('recordBtn').addEventListener('click', () => {
   if (isRecording) stopRecording();
@@ -641,10 +624,10 @@ document.getElementById('recordBtn').addEventListener('click', () => {
 
 const clock = new THREE.Clock();
 let accumulator = 0;
+let useFixedLoop = false;
+let recordInterval = null;
 
-function animate() {
-  requestAnimationFrame(animate);
-  const delta = clock.getDelta();
+function tickFrame(delta) {
   spectrogramMaterial.uniforms.uTime.value += delta;
   analyser.getByteFrequencyData(frequencyData);
 
@@ -660,19 +643,39 @@ function animate() {
 
   accumulator += delta * scrollSpeed * 60;
   if (accumulator >= 1) {
-    accumulator = 0;
+    accumulator -= 1;
     pushNewRow();
   }
   if (rotationEnabled && audioStarted) {
     mesh.rotation.y += delta * rotationSpeed;
   }
 
-  // Smooth camera transition
   camera.position.lerp(targetCamPos, 0.001);
   camera.lookAt(0, 0, 0);
 
   renderer.render(scene, camera);
 }
+
+function animate() {
+  if (useFixedLoop) return;
+  requestAnimationFrame(animate);
+  tickFrame(clock.getDelta());
+}
+
+function startFixedLoop() {
+  useFixedLoop = true;
+  clock.getDelta(); // flush accumulated delta before handing off to fixed step
+  recordInterval = setInterval(() => tickFrame(1 / 60), 1000 / 60);
+}
+
+function stopFixedLoop() {
+  clearInterval(recordInterval);
+  recordInterval = null;
+  useFixedLoop = false;
+  clock.getDelta(); // reset so rAF loop doesn't get a huge first delta
+  requestAnimationFrame(animate);
+}
+
 animate();
 
 // UI Listeners
