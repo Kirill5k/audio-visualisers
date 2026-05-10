@@ -574,15 +574,22 @@ function startRecording() {
   if (audioTrack) videoStream.addTrack(audioTrack);
 
   recordedChunks = [];
-  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-    ? 'video/webm;codecs=vp9,opus'
-    : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-    ? 'video/webm;codecs=vp8,opus'
-    : 'video/webm';
+
+  // Prefer H.264 (hardware-accelerated on Mac via VideoToolbox/Metal — offloads
+  // encoding from CPU entirely). Fall back to VP9/VP8 software encoding.
+  const codecCandidates = [
+    { mime: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', ext: 'mp4', bps: 20_000_000 },
+    { mime: 'video/webm;codecs=h264,opus',             ext: 'webm', bps: 20_000_000 },
+    { mime: 'video/webm;codecs=vp9,opus',              ext: 'webm', bps: 60_000_000 },
+    { mime: 'video/webm;codecs=vp8,opus',              ext: 'webm', bps: 40_000_000 },
+    { mime: 'video/webm',                              ext: 'webm', bps: 40_000_000 },
+  ];
+  const codec = codecCandidates.find(c => MediaRecorder.isTypeSupported(c.mime))
+    ?? codecCandidates.at(-1);
 
   mediaRecorder = new MediaRecorder(videoStream, {
-    mimeType,
-    videoBitsPerSecond: 60_000_000
+    mimeType: codec.mime,
+    videoBitsPerSecond: codec.bps
   });
 
   mediaRecorder.ondataavailable = (e) => {
@@ -590,11 +597,11 @@ function startRecording() {
   };
 
   mediaRecorder.onstop = () => {
-    const blob = new Blob(recordedChunks, { type: mimeType });
+    const blob = new Blob(recordedChunks, { type: codec.mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'spectrogram_1080p.webm';
+    a.download = `spectrogram_1080p.${codec.ext}`;
     a.click();
     URL.revokeObjectURL(url);
 
