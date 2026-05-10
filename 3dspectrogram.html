@@ -79,6 +79,19 @@
       background: rgba(255,255,255,0.1);
     }
 
+    #fpsCounter {
+      background: rgba(0,0,0,0.7);
+      color: #aaa;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      backdrop-filter: blur(10px);
+      min-width: 60px;
+      text-align: center;
+      pointer-events: none;
+    }
+
     .top-btn.recording {
       background: rgba(200,0,0,0.7);
       border-color: rgba(255,100,100,0.5);
@@ -147,6 +160,7 @@
 <button id="togglePanel" class="shifted">☰ Hide Panel</button>
 
 <div class="top-right-buttons">
+  <div id="fpsCounter">-- fps</div>
   <button id="recordBtn" class="top-btn">⏺ Record</button>
   <button id="fullscreenBtn" class="top-btn">⛶ Fullscreen</button>
 </div>
@@ -623,6 +637,12 @@ document.getElementById('recordBtn').addEventListener('click', () => {
 const clock = new THREE.Clock();
 let accumulator = 0;
 
+const fpsCounter = document.getElementById('fpsCounter');
+const glCtx = renderer.getContext();
+let fpsFrames = 0;
+let fpsElapsed = 0;
+let lastTickTime = performance.now();
+
 function tickFrame(delta) {
   spectrogramMaterial.uniforms.uTime.value += delta;
   analyser.getByteFrequencyData(frequencyData);
@@ -630,7 +650,7 @@ function tickFrame(delta) {
   if (hueShiftEnabled) {
     hueShiftOffset += delta * 0.03;
     if (hueShiftOffset > 1) hueShiftOffset -= 1;
-    if (Math.abs(hueShiftOffset - lastHueUpdateOffset) > 0.001) {
+    if (Math.abs(hueShiftOffset - lastHueUpdateOffset) > 0.002) {
       lastHueUpdateOffset = hueShiftOffset;
       updateShiftedColors();
       updateColorLUTTexture();
@@ -650,6 +670,20 @@ function tickFrame(delta) {
   camera.lookAt(0, 0, 0);
 
   renderer.render(scene, camera);
+  // Stall until the GPU has finished this frame. This gives accurate wall-clock
+  // frame timing for the fps counter, and ensures captureStream always captures
+  // a fully-rendered frame during recording.
+  glCtx.finish();
+
+  const now = performance.now();
+  fpsElapsed += now - lastTickTime;
+  lastTickTime = now;
+  fpsFrames++;
+  if (fpsElapsed >= 500) {
+    fpsCounter.textContent = Math.round(fpsFrames / (fpsElapsed / 1000)) + ' fps';
+    fpsFrames = 0;
+    fpsElapsed = 0;
+  }
 }
 
 function animate() {
