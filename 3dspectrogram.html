@@ -587,7 +587,6 @@ function startRecording() {
     try { analyser.disconnect(audioDestNode); } catch(e) {}
     audioDestNode = null;
 
-    stopFixedLoop();
     renderer.setPixelRatio(preRecordPixelRatio);
     renderer.setSize(preRecordWidth, preRecordHeight);
     camera.aspect = preRecordWidth / preRecordHeight;
@@ -596,7 +595,6 @@ function startRecording() {
 
   mediaRecorder.start(100);
   isRecording = true;
-  startFixedLoop();
   const btn = document.getElementById('recordBtn');
   btn.textContent = '⏹ Stop';
   btn.classList.add('recording');
@@ -624,8 +622,6 @@ document.getElementById('recordBtn').addEventListener('click', () => {
 
 const clock = new THREE.Clock();
 let accumulator = 0;
-let useFixedLoop = false;
-let recordInterval = null;
 
 function tickFrame(delta) {
   spectrogramMaterial.uniforms.uTime.value += delta;
@@ -657,23 +653,8 @@ function tickFrame(delta) {
 }
 
 function animate() {
-  if (useFixedLoop) return;
   requestAnimationFrame(animate);
   tickFrame(clock.getDelta());
-}
-
-function startFixedLoop() {
-  useFixedLoop = true;
-  clock.getDelta(); // flush accumulated delta before handing off to fixed step
-  recordInterval = setInterval(() => tickFrame(1 / 60), 1000 / 60);
-}
-
-function stopFixedLoop() {
-  clearInterval(recordInterval);
-  recordInterval = null;
-  useFixedLoop = false;
-  clock.getDelta(); // reset so rAF loop doesn't get a huge first delta
-  requestAnimationFrame(animate);
 }
 
 animate();
