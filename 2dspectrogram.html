@@ -21,6 +21,7 @@
             gap: 12px;
             align-items: center;
             flex-wrap: wrap;
+            max-width: 600px;
         }
         .btn {
             padding: 10px 20px;
@@ -70,6 +71,65 @@
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+        #effectsPanel {
+            position: absolute;
+            top: 70px;
+            left: 15px;
+            z-index: 100;
+            background: rgba(15, 15, 30, 0.92);
+            border: 1px solid rgba(80, 80, 130, 0.5);
+            border-radius: 10px;
+            padding: 15px;
+            backdrop-filter: blur(12px);
+            min-width: 250px;
+            display: none;
+        }
+        #effectsPanel.visible { display: block; }
+        #effectsPanel h3 {
+            margin-bottom: 12px;
+            font-size: 14px;
+            color: rgba(180, 180, 220, 0.9);
+            border-bottom: 1px solid rgba(80, 80, 130, 0.4);
+            padding-bottom: 8px;
+        }
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 13px;
+            color: rgba(200, 200, 220, 0.85);
+        }
+        .toggle-row:last-child { margin-bottom: 0; }
+        .toggle-switch {
+            position: relative;
+            width: 40px;
+            height: 22px;
+            background: rgba(50, 50, 70, 0.8);
+            border-radius: 11px;
+            cursor: pointer;
+            transition: background 0.3s;
+            border: 1px solid rgba(80, 80, 120, 0.5);
+            flex-shrink: 0;
+        }
+        .toggle-switch.active {
+            background: rgba(80, 140, 255, 0.7);
+            border-color: rgba(100, 160, 255, 0.8);
+        }
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            background: rgba(220, 220, 240, 0.9);
+            border-radius: 50%;
+            transition: transform 0.3s;
+        }
+        .toggle-switch.active::after {
+            transform: translateX(18px);
+        }
     </style>
 </head>
 <body>
@@ -77,11 +137,36 @@
 <script type="x-shader/x-vertex" id="vertexshader">
     attribute float displacement;
     uniform vec3 vLut[256];
+    uniform float uHueShift;
+    uniform int uDynamicColor;
     varying vec3 vColor;
+
+    vec3 hsv2rgb(vec3 c) {
+        vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+    }
+
+    vec3 rgb2hsv(vec3 c) {
+        vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+        vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+        vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+        float d = q.x - min(q.w, q.y);
+        float e = 1.0e-10;
+        return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+    }
 
     void main() {
         int index = int(displacement);
-        vColor = vLut[index];
+        vec3 color = vLut[index];
+
+        if (uDynamicColor == 1) {
+            vec3 hsv = rgb2hsv(color);
+            hsv.x = fract(hsv.x + uHueShift);
+            color = hsv2rgb(hsv);
+        }
+
+        vColor = color;
         vec3 newPosition = position + normal * displacement / 25.5;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
     }
@@ -89,9 +174,48 @@
 
 <script type="x-shader/x-fragment" id="fragmentshader">
     varying vec3 vColor;
-
     void main() {
         gl_FragColor = vec4(vColor, 1.0);
+    }
+</script>
+
+<script type="x-shader/x-fragment" id="fragmentshader-reflection">
+    varying vec3 vColor;
+    void main() {
+        gl_FragColor = vec4(vColor * 0.3, 0.45);
+    }
+</script>
+
+<script type="x-shader/x-vertex" id="vignette-vs">
+    varying vec2 vUv;
+    void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+</script>
+
+<script type="x-shader/x-fragment" id="vignette-fs">
+    uniform sampler2D tDiffuse;
+    uniform float uVignetteIntensity;
+    uniform float uChromaticAberration;
+    varying vec2 vUv;
+
+    void main() {
+        vec2 uv = vUv;
+        vec2 center = uv - 0.5;
+        float dist = length(center);
+
+        float r = texture2D(tDiffuse, uv + center * uChromaticAberration).r;
+        float g = texture2D(tDiffuse, uv).g;
+        float b = texture2D(tDiffuse, uv - center * uChromaticAberration).b;
+        vec3 color = vec3(r, g, b);
+
+        float vignette = 1.0 - dist * uVignetteIntensity;
+        vignette = clamp(vignette, 0.0, 1.0);
+        vignette = smoothstep(0.0, 1.0, vignette);
+        color *= vignette;
+
+        gl_FragColor = vec4(color, 1.0);
     }
 </script>
 
@@ -100,14 +224,60 @@
     <input type="file" id="fileInput" accept="audio/*">
     <button class="btn" id="playBtn" disabled>&#9654; Play</button>
     <button class="btn" id="recordBtn" disabled>&#9899; Record Video</button>
+    <button class="btn" id="effectsBtn">&#9881; Effects</button>
 </div>
+
+<div id="effectsPanel">
+    <h3>&#10024; Visual Effects</h3>
+    <div class="toggle-row">
+        <span>Bloom / Glow</span>
+        <div class="toggle-switch active" id="toggleBloom"></div>
+    </div>
+    <div class="toggle-row">
+        <span>Dynamic Color Shift</span>
+        <div class="toggle-switch" id="toggleColorShift"></div>
+    </div>
+    <div class="toggle-row">
+        <span>Wireframe Overlay</span>
+        <div class="toggle-switch" id="toggleWireframe"></div>
+    </div>
+    <div class="toggle-row">
+        <span>Displacement Smoothing</span>
+        <div class="toggle-switch active" id="toggleSmoothing"></div>
+    </div>
+    <div class="toggle-row">
+        <span>Reflective Ground</span>
+        <div class="toggle-switch" id="toggleReflection"></div>
+    </div>
+    <div class="toggle-row">
+        <span>Vignette + Aberration</span>
+        <div class="toggle-switch active" id="toggleVignette"></div>
+    </div>
+</div>
+
 <div id="Spectrogram"></div>
 <div id="status">Load an audio file to begin</div>
 <div id="audioName" style="display:none;"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
 <script>
 "use strict";
+
+// ============ EFFECT STATE ============
+let fx = {
+    bloom: true,
+    colorShift: false,
+    wireframe: false,
+    smoothing: true,
+    reflection: false,
+    vignette: true
+};
 
 // ============ STATE ============
 let ACTX, ANALYSER, SOURCE, audioElement, mediaStreamDest;
@@ -119,17 +289,50 @@ let mediaRecorder = null;
 let recordedChunks = [];
 
 // Three.js state
-let camera, scene, renderer, mesh, heights;
+let camera, scene, renderer, mesh, wireframeMesh, reflectionMesh, heights;
 let time_samples = 1200;
 let n_vertices = (frequency_samples + 1) * (time_samples + 1);
 let animationId;
+let composer, bloomPass, vignettePass;
+let clock = new THREE.Clock();
+let prevData;
 
 // ============ DOM ELEMENTS ============
 const fileInput = document.getElementById('fileInput');
 const playBtn = document.getElementById('playBtn');
 const recordBtn = document.getElementById('recordBtn');
+const effectsBtn = document.getElementById('effectsBtn');
+const effectsPanel = document.getElementById('effectsPanel');
 const statusEl = document.getElementById('status');
 const audioNameEl = document.getElementById('audioName');
+
+// Toggle panel visibility
+effectsBtn.addEventListener('click', () => {
+    effectsPanel.classList.toggle('visible');
+});
+
+// Toggle switches
+function setupToggle(id, key) {
+    const el = document.getElementById(id);
+    el.addEventListener('click', () => {
+        fx[key] = !fx[key];
+        el.classList.toggle('active', fx[key]);
+        applyEffectChanges();
+    });
+}
+setupToggle('toggleBloom', 'bloom');
+setupToggle('toggleColorShift', 'colorShift');
+setupToggle('toggleWireframe', 'wireframe');
+setupToggle('toggleSmoothing', 'smoothing');
+setupToggle('toggleReflection', 'reflection');
+setupToggle('toggleVignette', 'vignette');
+
+function applyEffectChanges() {
+    if (wireframeMesh) wireframeMesh.visible = fx.wireframe;
+    if (reflectionMesh) reflectionMesh.visible = fx.reflection;
+    if (bloomPass) bloomPass.strength = fx.bloom ? 1.5 : 0.0;
+    if (vignettePass) vignettePass.enabled = fx.vignette;
+}
 
 // ============ AUDIO SETUP ============
 function initAudio() {
@@ -139,45 +342,30 @@ function initAudio() {
     ANALYSER.fftSize = 4 * frequency_samples;
     ANALYSER.smoothingTimeConstant = 0.5;
     DATA = new Uint8Array(ANALYSER.frequencyBinCount);
-
-    // Create a destination for recording audio
+    prevData = new Float32Array(ANALYSER.frequencyBinCount);
     mediaStreamDest = ACTX.createMediaStreamDestination();
 }
 
 function loadAudioFile(file) {
     initAudio();
-
     const url = URL.createObjectURL(file);
-
-    // If we already have an audio element with a MediaElementSource, 
-    // we need to create a fresh one (can't re-attach source)
-    if (SOURCE) {
-        SOURCE.disconnect();
-        SOURCE = null;
-    }
-
-    if (audioElement) {
-        audioElement.pause();
-        audioElement.src = '';
-    }
+    if (SOURCE) { SOURCE.disconnect(); SOURCE = null; }
+    if (audioElement) { audioElement.pause(); audioElement.src = ''; }
 
     audioElement = new Audio();
     audioElement.crossOrigin = "anonymous";
     audioElement.src = url;
-
     audioElement.addEventListener('ended', () => {
         isPlaying = false;
         playBtn.textContent = '\u25B6 Play';
         statusEl.textContent = 'Playback ended';
-        if (isRecording) {
-            stopRecording();
-        }
+        if (isRecording) stopRecording();
     });
 
     SOURCE = ACTX.createMediaElementSource(audioElement);
     SOURCE.connect(ANALYSER);
-    SOURCE.connect(ACTX.destination);       // So we hear it
-    SOURCE.connect(mediaStreamDest);        // So recording captures audio
+    SOURCE.connect(ACTX.destination);
+    SOURCE.connect(mediaStreamDest);
 
     playBtn.disabled = false;
     recordBtn.disabled = false;
@@ -185,20 +373,13 @@ function loadAudioFile(file) {
     audioNameEl.style.display = 'block';
     statusEl.textContent = 'Audio loaded. Press Play to start.';
 
-    // Init visualizer if not already
-    if (!renderer) {
-        initVisualizer();
-    }
+    if (!renderer) initVisualizer();
 }
 
 // ============ PLAYBACK ============
 function togglePlay() {
     if (!audioElement) return;
-
-    if (ACTX.state === 'suspended') {
-        ACTX.resume();
-    }
-
+    if (ACTX.state === 'suspended') ACTX.resume();
     if (isPlaying) {
         audioElement.pause();
         isPlaying = false;
@@ -213,93 +394,50 @@ function togglePlay() {
 }
 
 // ============ RECORDING ============
-function toggleRecord() {
-    if (isRecording) {
-        stopRecording();
-    } else {
-        startRecording();
-    }
-}
+function toggleRecord() { isRecording ? stopRecording() : startRecording(); }
 
 function startRecording() {
     if (!renderer) return;
-
-    // Get canvas video stream
     const canvasStream = renderer.domElement.captureStream(30);
     const videoTrack = canvasStream.getVideoTracks()[0];
-
-    // Get audio track from media stream destination
     const audioTrack = mediaStreamDest.stream.getAudioTracks()[0];
-
-    // Combine into one stream
     const combinedStream = new MediaStream();
     if (videoTrack) combinedStream.addTrack(videoTrack);
     if (audioTrack) combinedStream.addTrack(audioTrack);
 
-    // Find supported mime type (prefer H.264)
     let mimeType = '';
     const types = [
-        'video/webm;codecs=h264,opus',
-        'video/webm;codecs=h264',
+        'video/webm;codecs=h264,opus','video/webm;codecs=h264',
         'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-        'video/webm;codecs=vp9,opus',
-        'video/webm;codecs=vp8,opus',
-        'video/webm'
+        'video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'
     ];
-    for (const type of types) {
-        if (MediaRecorder.isTypeSupported(type)) {
-            mimeType = type;
-            break;
-        }
-    }
-
-    if (!mimeType) {
-        statusEl.textContent = 'Error: No supported video codec found in this browser.';
-        return;
-    }
+    for (const type of types) { if (MediaRecorder.isTypeSupported(type)) { mimeType = type; break; } }
+    if (!mimeType) { statusEl.textContent = 'Error: No supported codec.'; return; }
 
     recordedChunks = [];
     try {
-        mediaRecorder = new MediaRecorder(combinedStream, {
-            mimeType: mimeType,
-            videoBitsPerSecond: 8000000
-        });
-    } catch (e) {
-        statusEl.textContent = 'Error creating recorder: ' + e.message;
-        return;
-    }
+        mediaRecorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 8000000 });
+    } catch (e) { statusEl.textContent = 'Error: ' + e.message; return; }
 
-    mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-            recordedChunks.push(event.data);
-        }
-    };
-
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
     mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: mimeType });
-        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-        a.download = 'dj_visualizer_recording.' + ext;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        statusEl.textContent = 'Recording saved! (codec: ' + mimeType + ')';
+        a.href = URL.createObjectURL(blob);
+        a.download = 'dj_visualizer.' + (mimeType.includes('mp4') ? 'mp4' : 'webm');
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        statusEl.textContent = 'Recording saved!';
     };
 
     mediaRecorder.start(100);
     isRecording = true;
     recordBtn.textContent = '\u23F9 Stop Recording';
     recordBtn.classList.add('recording');
-    statusEl.textContent = 'Recording... (codec: ' + mimeType + ')';
+    statusEl.textContent = 'Recording... (' + mimeType + ')';
 }
 
 function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-    }
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
     isRecording = false;
     recordBtn.textContent = '\u26AB Record Video';
     recordBtn.classList.remove('recording');
@@ -319,13 +457,14 @@ function initVisualizer() {
     camera.position.z = 64;
 
     scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050510);
 
     let geometry = new THREE.BufferGeometry();
     let indices = [];
     let heightsArr = [];
     let vertices = [];
 
-    // Logarithmic y-axis positioning
+    // Logarithmic y-axis
     let ypow_max = Math.log(ysize);
     let ybase = Math.E;
 
@@ -339,7 +478,6 @@ function initVisualizer() {
         }
     }
 
-    // Generate indices
     for (let i = 0; i < xsegments; i++) {
         for (let j = 0; j < ysegments; j++) {
             let a = i * (ysegments + 1) + (j + 1);
@@ -371,8 +509,11 @@ function initVisualizer() {
 
     let vShader = document.getElementById('vertexshader');
     let fShader = document.getElementById('fragmentshader');
+
     let uniforms = {
-        vLut: { type: "v3v", value: lut }
+        vLut: { type: "v3v", value: lut },
+        uHueShift: { value: 0.0 },
+        uDynamicColor: { value: 0 }
     };
 
     let material = new THREE.ShaderMaterial({
@@ -384,17 +525,83 @@ function initVisualizer() {
     mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
 
+    // --- Wireframe overlay ---
+    let wireframeUniforms = {
+        vLut: { type: "v3v", value: lut },
+        uHueShift: { value: 0.0 },
+        uDynamicColor: { value: 0 }
+    };
+    let wireframeMat = new THREE.ShaderMaterial({
+        uniforms: wireframeUniforms,
+        vertexShader: vShader.text,
+        fragmentShader: fShader.text,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.35
+    });
+    wireframeMesh = new THREE.Mesh(geometry, wireframeMat);
+    wireframeMesh.visible = fx.wireframe;
+    scene.add(wireframeMesh);
+
+    // --- Reflective ground plane ---
+    let reflectionUniforms = {
+        vLut: { type: "v3v", value: lut },
+        uHueShift: { value: 0.0 },
+        uDynamicColor: { value: 0 }
+    };
+    let reflectionMat = new THREE.ShaderMaterial({
+        uniforms: reflectionUniforms,
+        vertexShader: vShader.text,
+        fragmentShader: document.getElementById('fragmentshader-reflection').text,
+        transparent: true
+    });
+    reflectionMesh = new THREE.Mesh(geometry, reflectionMat);
+    reflectionMesh.scale.z = -1;
+    reflectionMesh.position.z = -0.5;
+    reflectionMesh.visible = fx.reflection;
+    scene.add(reflectionMesh);
+
+    // --- Renderer ---
     renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ReinhardToneMapping;
+    renderer.toneMappingExposure = 1.0;
 
     let container = document.getElementById('Spectrogram');
     container.appendChild(renderer.domElement);
 
     mesh.geometry.computeVertexNormals();
 
-    window.addEventListener('resize', onWindowResize, false);
+    // --- Post-processing ---
+    composer = new THREE.EffectComposer(renderer);
+    let renderPass = new THREE.RenderPass(scene, camera);
+    composer.addPass(renderPass);
 
+    // Bloom pass
+    bloomPass = new THREE.UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        fx.bloom ? 1.5 : 0.0,
+        0.4,
+        0.85
+    );
+    composer.addPass(bloomPass);
+
+    // Vignette + Chromatic Aberration pass
+    let vignetteShader = {
+        uniforms: {
+            tDiffuse: { value: null },
+            uVignetteIntensity: { value: 1.3 },
+            uChromaticAberration: { value: 0.003 }
+        },
+        vertexShader: document.getElementById('vignette-vs').text,
+        fragmentShader: document.getElementById('vignette-fs').text
+    };
+    vignettePass = new THREE.ShaderPass(vignetteShader);
+    vignettePass.enabled = fx.vignette;
+    composer.addPass(vignettePass);
+
+    window.addEventListener('resize', onWindowResize, false);
     animate();
 }
 
@@ -402,6 +609,7 @@ function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
 }
 
 function animate() {
@@ -411,30 +619,60 @@ function animate() {
 
 function render() {
     updateGeometry();
-    renderer.render(scene, camera);
+
+    // Update dynamic color shift
+    let elapsed = clock.getElapsedTime();
+    let dynVal = fx.colorShift ? 1 : 0;
+    let hueVal = elapsed * 0.05;
+
+    mesh.material.uniforms.uDynamicColor.value = dynVal;
+    mesh.material.uniforms.uHueShift.value = hueVal;
+    wireframeMesh.material.uniforms.uDynamicColor.value = dynVal;
+    wireframeMesh.material.uniforms.uHueShift.value = hueVal;
+    reflectionMesh.material.uniforms.uDynamicColor.value = dynVal;
+    reflectionMesh.material.uniforms.uHueShift.value = hueVal;
+
+    composer.render();
 }
 
 function updateGeometry() {
     if (!ANALYSER || !DATA) return;
 
     ANALYSER.getByteFrequencyData(DATA);
+
+    // Displacement smoothing
+    let smoothedData;
+    if (fx.smoothing) {
+        smoothedData = new Uint8Array(DATA.length);
+        let smoothFactor = 0.35;
+        for (let i = 0; i < DATA.length; i++) {
+            prevData[i] = prevData[i] + (DATA[i] - prevData[i]) * smoothFactor;
+            smoothedData[i] = Math.round(prevData[i]);
+        }
+    } else {
+        smoothedData = DATA;
+        for (let i = 0; i < DATA.length; i++) {
+            prevData[i] = DATA[i];
+        }
+    }
+
     let start_val = frequency_samples + 1;
     let end_val = n_vertices - start_val;
 
     heights.copyWithin(0, start_val, n_vertices + 1);
-    heights.set(DATA, end_val - start_val);
+    heights.set(smoothedData, end_val - start_val);
 
-    mesh.geometry.setAttribute('displacement', new THREE.Uint8BufferAttribute(heights, 1));
+    let dispAttr = new THREE.Uint8BufferAttribute(heights, 1);
+    mesh.geometry.setAttribute('displacement', dispAttr);
+    wireframeMesh.geometry.setAttribute('displacement', dispAttr);
+    reflectionMesh.geometry.setAttribute('displacement', dispAttr);
 }
 
 // ============ EVENT LISTENERS ============
 fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
-    if (file) {
-        loadAudioFile(file);
-    }
+    if (file) loadAudioFile(file);
 });
-
 playBtn.addEventListener('click', togglePlay);
 recordBtn.addEventListener('click', toggleRecord);
 
