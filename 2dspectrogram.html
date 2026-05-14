@@ -222,20 +222,23 @@
 <div id="controls">
     <label class="btn" for="fileInput">&#128193; Import Audio</label>
     <input type="file" id="fileInput" accept="audio/*">
-    <button class="btn" id="playBtn" disabled>&#9654; Play</button>
     <button class="btn" id="recordBtn" disabled>&#9899; Record Video</button>
-    <button class="btn" id="effectsBtn">&#9881; Effects</button>
+    <button class="btn" id="effectsBtn">&#9881; Settings</button>
 </div>
 
 <div id="effectsPanel">
-    <h3>&#10024; Visual Effects</h3>
+    <h3>&#9881; Settings</h3>
+    <div class="toggle-row">
+        <span>Auto-Record on Import</span>
+        <div class="toggle-switch" id="toggleAutoRecord"></div>
+    </div>
     <div class="toggle-row">
         <span>Bloom / Glow</span>
-        <div class="toggle-switch active" id="toggleBloom"></div>
+        <div class="toggle-switch" id="toggleBloom"></div>
     </div>
     <div class="toggle-row">
         <span>Dynamic Color Shift</span>
-        <div class="toggle-switch" id="toggleColorShift"></div>
+        <div class="toggle-switch active" id="toggleColorShift"></div>
     </div>
     <div class="toggle-row">
         <span>Wireframe Overlay</span>
@@ -243,7 +246,7 @@
     </div>
     <div class="toggle-row">
         <span>Displacement Smoothing</span>
-        <div class="toggle-switch active" id="toggleSmoothing"></div>
+        <div class="toggle-switch" id="toggleSmoothing"></div>
     </div>
     <div class="toggle-row">
         <span>Reflective Ground</span>
@@ -271,12 +274,13 @@
 
 // ============ EFFECT STATE ============
 let fx = {
-    bloom: true,
-    colorShift: false,
+    bloom: false,
+    colorShift: true,
     wireframe: false,
-    smoothing: true,
+    smoothing: false,
     reflection: false,
-    vignette: true
+    vignette: true,
+    autoRecord: false
 };
 
 // ============ STATE ============
@@ -299,7 +303,6 @@ let prevData;
 
 // ============ DOM ELEMENTS ============
 const fileInput = document.getElementById('fileInput');
-const playBtn = document.getElementById('playBtn');
 const recordBtn = document.getElementById('recordBtn');
 const effectsBtn = document.getElementById('effectsBtn');
 const effectsPanel = document.getElementById('effectsPanel');
@@ -320,6 +323,7 @@ function setupToggle(id, key) {
         applyEffectChanges();
     });
 }
+setupToggle('toggleAutoRecord', 'autoRecord');
 setupToggle('toggleBloom', 'bloom');
 setupToggle('toggleColorShift', 'colorShift');
 setupToggle('toggleWireframe', 'wireframe');
@@ -357,7 +361,6 @@ function loadAudioFile(file) {
     audioElement.src = url;
     audioElement.addEventListener('ended', () => {
         isPlaying = false;
-        playBtn.textContent = '\u25B6 Play';
         statusEl.textContent = 'Playback ended';
         if (isRecording) stopRecording();
     });
@@ -367,29 +370,20 @@ function loadAudioFile(file) {
     SOURCE.connect(ACTX.destination);
     SOURCE.connect(mediaStreamDest);
 
-    playBtn.disabled = false;
     recordBtn.disabled = false;
     audioNameEl.textContent = '\u266B ' + file.name;
     audioNameEl.style.display = 'block';
-    statusEl.textContent = 'Audio loaded. Press Play to start.';
 
     if (!renderer) initVisualizer();
-}
 
-// ============ PLAYBACK ============
-function togglePlay() {
-    if (!audioElement) return;
-    if (ACTX.state === 'suspended') ACTX.resume();
-    if (isPlaying) {
-        audioElement.pause();
-        isPlaying = false;
-        playBtn.textContent = '\u25B6 Play';
-        statusEl.textContent = 'Paused';
-    } else {
-        audioElement.play();
-        isPlaying = true;
-        playBtn.textContent = '\u23F8 Pause';
-        statusEl.textContent = 'Playing...';
+    // Auto-play
+    audioElement.play();
+    isPlaying = true;
+    statusEl.textContent = 'Playing...';
+
+    // Auto-record if enabled
+    if (fx.autoRecord && !isRecording) {
+        startRecording();
     }
 }
 
@@ -673,7 +667,6 @@ fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) loadAudioFile(file);
 });
-playBtn.addEventListener('click', togglePlay);
 recordBtn.addEventListener('click', toggleRecord);
 
 </script>
