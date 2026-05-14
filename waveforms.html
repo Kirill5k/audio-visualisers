@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audio Visualiser</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #000;
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+.container {
+  display: grid;
+  grid-template-rows: 36px 1fr auto 1fr;
+  height: 100vh;
+  width: 100vw;
+  gap: 1px;
+  background: #222;
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: #000;
+  border-bottom: 1px solid #333;
+}
+.header-left { display: flex; align-items: center; gap: 16px; }
+.upload-btn {
+  background: none;
+  border: 1px solid #555;
+  color: #fff;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 4px 14px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.upload-btn:hover { border-color: #fff; }
+.track-name { color: #888; font-size: 11px; }
+.header-right { color: #666; font-size: 10px; letter-spacing: 1px; }
+
+.config-panel {
+  display: none;
+  position: absolute;
+  top: 36px;
+  left: 0;
+  right: 0;
+  background: #0a0a0a;
+  border-bottom: 1px solid #333;
+  padding: 16px 20px;
+  z-index: 10;
+  font-size: 11px;
+}
+.config-panel.visible { display: block; }
+.config-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.config-row:last-child { margin-bottom: 0; }
+.config-label {
+  color: #888;
+  width: 120px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.config-input {
+  background: #111;
+  border: 1px solid #333;
+  color: #fff;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  width: 70px;
+  text-align: center;
+}
+.config-input:focus { border-color: #666; outline: none; }
+.config-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #222;
+  height: 4px;
+  border-radius: 2px;
+  outline: none;
+  width: 150px;
+}
+.config-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+}
+.config-unit { color: #555; font-size: 10px; }
+
+.main-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap: 1px;
+  background: #222;
+  min-height: 0;
+}
+.main-panels .spectrum-area {
+  grid-column: 1;
+  grid-row: 1 / 4;
+}
+.main-panels .osc-stack {
+  grid-column: 2;
+  grid-row: 1 / 4;
+  display: grid;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap: 1px;
+}
+.osc-stack .panel {
+  padding-bottom: 0;
+}
+.panel {
+  background: #000;
+  position: relative;
+  overflow: hidden;
+  padding: 4px 12px;
+}
+.panel-label {
+  position: absolute;
+  top: 4px;
+  left: 12px;
+  font-size: 9px;
+  color: #555;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  z-index: 2;
+  pointer-events: none;
+}
+.panel canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.bottom-section {
+  display: grid;
+  grid-template-columns: 1fr 80px;
+  grid-template-rows: 1fr 80px;
+  gap: 1px;
+  background: #222;
+  height: 220px;
+}
+.bottom-section .meters-area {
+  grid-column: 2;
+  grid-row: 1 / 3;
+}
+.bottom-section .waveform-area {
+  padding: 8px 12px;
+}
+
+.track-info-overlay {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 9px;
+  color: #555;
+  text-align: right;
+  z-index: 2;
+  pointer-events: none;
+  line-height: 1.5;
+}
+.track-info-bottom {
+  background: #000;
+  padding: 12px 16px;
+  color: #555;
+  font-size: 10px;
+  line-height: 1.8;
+  letter-spacing: 1px;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="header-left">
+      <input type="file" id="file-input" accept="audio/*" style="display:none">
+      <button class="upload-btn" id="upload-btn">LOAD AUDIO FILE</button>
+      <button class="upload-btn" id="config-btn">CONFIG</button>
+      <span class="track-name" id="track-name">NO FILE LOADED</span>
+    </div>
+    <div class="header-right" id="header-info">48000 Hz &middot; 2ch &middot; 00:00 / 00:00</div>
+  </div>
+
+  <div class="config-panel" id="config-panel">
+    <div class="config-row">
+      <span class="config-label">KICK</span>
+      <input class="config-input" id="cfg-kick-lo" type="number" value="50">
+      <span class="config-unit">–</span>
+      <input class="config-input" id="cfg-kick-hi" type="number" value="350">
+      <span class="config-unit">Hz</span>
+      <span class="config-unit" style="margin-left:12px">GAIN</span>
+      <input class="config-slider" id="cfg-kick-gain" type="range" min="0.5" max="10" step="0.5" value="5.0">
+      <span class="config-unit" id="cfg-kick-gain-val">5.0</span>
+    </div>
+    <div class="config-row">
+      <span class="config-label">SNARE</span>
+      <input class="config-input" id="cfg-snare-lo" type="number" value="2500">
+      <span class="config-unit">–</span>
+      <input class="config-input" id="cfg-snare-hi" type="number" value="4500">
+      <span class="config-unit">Hz</span>
+      <span class="config-unit" style="margin-left:12px">GAIN</span>
+      <input class="config-slider" id="cfg-snare-gain" type="range" min="0.5" max="10" step="0.5" value="1.0">
+      <span class="config-unit" id="cfg-snare-gain-val">1.0</span>
+    </div>
+    <div class="config-row">
+      <span class="config-label">HIHAT</span>
+      <input class="config-input" id="cfg-hihat-lo" type="number" value="8000">
+      <span class="config-unit">–</span>
+      <input class="config-input" id="cfg-hihat-hi" type="number" value="15000">
+      <span class="config-unit">Hz</span>
+      <span class="config-unit" style="margin-left:12px">GAIN</span>
+      <input class="config-slider" id="cfg-hihat-gain" type="range" min="0.5" max="10" step="0.5" value="0.5">
+      <span class="config-unit" id="cfg-hihat-gain-val">0.5</span>
+    </div>
+    <div class="config-row">
+      <span class="config-label">SPECTRUM BARS</span>
+      <input class="config-slider" id="cfg-bars" type="range" min="20" max="256" value="200">
+      <span class="config-unit" id="cfg-bars-val">200</span>
+    </div>
+    <div class="config-row">
+      <span class="config-label">LABEL SIZE</span>
+      <input class="config-slider" id="cfg-label-size" type="range" min="6" max="18" value="9">
+      <span class="config-unit" id="cfg-label-size-val">9px</span>
+    </div>
+  </div>
+
+  <div class="main-panels">
+    <div class="spectrum-area">
+      <div class="panel" id="spectrum-panel" style="height:100%">
+        <canvas id="spectrum-canvas"></canvas>
+      </div>
+    </div>
+    <div class="osc-stack">
+      <div class="panel">
+        <span class="panel-label">HIHAT</span>
+        <canvas id="osc-high"></canvas>
+      </div>
+      <div class="panel">
+        <span class="panel-label">SNARE</span>
+        <canvas id="osc-mid"></canvas>
+      </div>
+      <div class="panel">
+        <span class="panel-label">KICK</span>
+        <canvas id="osc-low"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-section">
+    <div class="panel" id="spectrogram-panel">
+      <canvas id="spectrogram-canvas"></canvas>
+    </div>
+    <div class="panel meters-area" id="meters-panel">
+      <span class="panel-label" style="left:0;right:0;text-align:center">L &nbsp; R</span>
+      <canvas id="meters-canvas"></canvas>
+    </div>
+    <div class="panel waveform-area" id="waveform-panel">
+      <canvas id="waveform-canvas"></canvas>
+    </div>
+  </div>
+
+  <div class="track-info-bottom" id="track-details"></div>
+</div>
+
+<audio id="audio-el" style="display:none"></audio>
+
+<script>
+(function() {
+  const $ = id => document.getElementById(id);
+  const dpr = window.devicePixelRatio || 1;
+
+  // DOM refs
+  const fileInput = $('file-input');
+  const uploadBtn = $('upload-btn');
+  const trackNameEl = $('track-name');
+  const headerInfo = $('header-info');
+  const audioEl = $('audio-el');
+  const trackDetails = $('track-details');
+  const configPanel = $('config-panel');
+  const configBtn = $('config-btn');
+
+  // Config state
+  var config = {
+    kick: { lo: 50, hi: 350, gain: 5.0 },
+    snare: { lo: 2500, hi: 4500, gain: 1.0 },
+    hihat: { lo: 8000, hi: 15000, gain: 0.5 },
+    numBars: 200,
+    labelSize: 9,
+  };
+
+  // Config toggle
+  configBtn.addEventListener('click', () => {
+    configPanel.classList.toggle('visible');
+  });
+
+  // Config inputs
+  function bindCfg(id, obj, key, applyFn) {
+    const el = $(id);
+    el.addEventListener('change', () => {
+      obj[key] = Number(el.value) || obj[key];
+      if (applyFn) applyFn();
+    });
+  }
+  bindCfg('cfg-kick-lo', config.kick, 'lo', applyFilters);
+  bindCfg('cfg-kick-hi', config.kick, 'hi', applyFilters);
+  bindCfg('cfg-snare-lo', config.snare, 'lo', applyFilters);
+  bindCfg('cfg-snare-hi', config.snare, 'hi', applyFilters);
+  bindCfg('cfg-hihat-lo', config.hihat, 'lo', applyFilters);
+  bindCfg('cfg-hihat-hi', config.hihat, 'hi', applyFilters);
+  function bindGain(id, obj, valId) {
+    $(id).addEventListener('input', e => {
+      obj.gain = Number(e.target.value);
+      $(valId).textContent = obj.gain.toFixed(1);
+    });
+  }
+  bindGain('cfg-kick-gain', config.kick, 'cfg-kick-gain-val');
+  bindGain('cfg-snare-gain', config.snare, 'cfg-snare-gain-val');
+  bindGain('cfg-hihat-gain', config.hihat, 'cfg-hihat-gain-val');
+  $('cfg-bars').addEventListener('input', e => {
+    config.numBars = Number(e.target.value);
+    $('cfg-bars-val').textContent = config.numBars;
+  });
+  $('cfg-label-size').addEventListener('input', e => {
+    config.labelSize = Number(e.target.value);
+    $('cfg-label-size-val').textContent = config.labelSize + 'px';
+    document.querySelectorAll('.panel-label').forEach(el => {
+      el.style.fontSize = config.labelSize + 'px';
+    });
+  });
+
+  // Canvases
+  const spectrumC = $('spectrum-canvas');
+  const spectrogramC = $('spectrogram-canvas');
+  const metersC = $('meters-canvas');
+  const oscLowC = $('osc-low');
+  const oscMidC = $('osc-mid');
+  const oscHighC = $('osc-high');
+  const waveformC = $('waveform-canvas');
+
+  const allCanvases = [spectrumC, spectrogramC, metersC, oscLowC, oscMidC, oscHighC, waveformC];
+  const contexts = {};
+
+  function sizeCanvas(c) {
+    const r = c.parentElement.getBoundingClientRect();
+    c.width = Math.round(r.width * dpr);
+    c.height = Math.round(r.height * dpr);
+  }
+  function sizeAll() { allCanvases.forEach(sizeCanvas); spectrogramImg = null; }
+
+  allCanvases.forEach(c => { contexts[c.id] = c.getContext('2d'); });
+  sizeAll();
+  window.addEventListener('resize', () => { sizeAll(); if (waveformData) drawWaveformStatic(0); });
+
+  // Audio state
+  let actx, source, mainAnalyser, analyserL, analyserR, analyserLow, analyserMid, analyserHigh;
+  let splitterNode, filterNodes;
+  let freqData, timeData, freqDataL, freqDataR, timeLow, timeMid, timeHigh;
+  var waveformData = null;
+  var spectrogramImg = null;
+  let peakL = 0, peakR = 0, peakDecay = 0.97;
+  let peakHoldL = 0, peakHoldR = 0, peakHoldDecayCounter = 0;
+  let animating = false;
+  let fileInfo = {};
+
+  // Upload
+  uploadBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    loadFile(file);
+  });
+
+  function loadFile(file) {
+    fileInfo.name = file.name;
+    trackNameEl.textContent = file.name;
+
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+      const arrayBuf = ev.target.result;
+
+      // Init audio context on first load
+      if (!actx) initAudioContext();
+
+      // Decode for waveform overview
+      actx.decodeAudioData(arrayBuf.slice(0), buf => {
+        fileInfo.sampleRate = buf.sampleRate;
+        fileInfo.channels = buf.numberOfChannels;
+        fileInfo.duration = buf.duration;
+        renderWaveformOverview(buf);
+      });
+
+      // Play via element
+      const blob = new Blob([arrayBuf], { type: file.type || 'audio/mpeg' });
+      const url = URL.createObjectURL(blob);
+      audioEl.src = url;
+      audioEl.onloadeddata = () => {
+        connectSource();
+        audioEl.play();
+        if (!animating) { animating = true; animate(); }
+      };
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function initAudioContext() {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Main analyser (spectrum + spectrogram)
+    mainAnalyser = actx.createAnalyser();
+    mainAnalyser.fftSize = 8192;
+    mainAnalyser.smoothingTimeConstant = 0.8;
+    freqData = new Uint8Array(mainAnalyser.frequencyBinCount);
+    timeData = new Uint8Array(mainAnalyser.frequencyBinCount);
+
+    // L/R splitter
+    const splitter = actx.createChannelSplitter(2);
+    analyserL = actx.createAnalyser(); analyserL.fftSize = 2048; analyserL.smoothingTimeConstant = 0.8;
+    analyserR = actx.createAnalyser(); analyserR.fftSize = 2048; analyserR.smoothingTimeConstant = 0.8;
+    freqDataL = new Uint8Array(analyserL.frequencyBinCount);
+    freqDataR = new Uint8Array(analyserR.frequencyBinCount);
+
+    // Band filters — each band uses highpass → lowpass pair
+    var kickHP = actx.createBiquadFilter(); kickHP.type = 'highpass';
+    var kickLP = actx.createBiquadFilter(); kickLP.type = 'lowpass';
+    var snareHP = actx.createBiquadFilter(); snareHP.type = 'highpass';
+    var snareLP = actx.createBiquadFilter(); snareLP.type = 'lowpass';
+    var hihatHP = actx.createBiquadFilter(); hihatHP.type = 'highpass';
+    var hihatLP = actx.createBiquadFilter(); hihatLP.type = 'lowpass';
+
+    analyserLow = actx.createAnalyser(); analyserLow.fftSize = 2048; analyserLow.smoothingTimeConstant = 0.7;
+    analyserMid = actx.createAnalyser(); analyserMid.fftSize = 2048; analyserMid.smoothingTimeConstant = 0.7;
+    analyserHigh = actx.createAnalyser(); analyserHigh.fftSize = 2048; analyserHigh.smoothingTimeConstant = 0.7;
+    timeLow = new Uint8Array(analyserLow.frequencyBinCount);
+    timeMid = new Uint8Array(analyserMid.frequencyBinCount);
+    timeHigh = new Uint8Array(analyserHigh.frequencyBinCount);
+
+    // Store filter nodes
+    splitterNode = splitter;
+    filterNodes = { kickHP, kickLP, snareHP, snareLP, hihatHP, hihatLP };
+
+    // Wire filters: HP → LP → analyser
+    kickHP.connect(kickLP); kickLP.connect(analyserLow);
+    snareHP.connect(snareLP); snareLP.connect(analyserMid);
+    hihatHP.connect(hihatLP); hihatLP.connect(analyserHigh);
+
+    splitter.connect(analyserL, 0);
+    splitter.connect(analyserR, 1);
+    mainAnalyser.connect(actx.destination);
+
+    applyFilters();
+  }
+
+  function applyFilters() {
+    if (!filterNodes) return;
+    filterNodes.kickHP.frequency.value = config.kick.lo;
+    filterNodes.kickLP.frequency.value = config.kick.hi;
+    filterNodes.snareHP.frequency.value = config.snare.lo;
+    filterNodes.snareLP.frequency.value = config.snare.hi;
+    filterNodes.hihatHP.frequency.value = config.hihat.lo;
+    filterNodes.hihatLP.frequency.value = config.hihat.hi;
+  }
+
+  function connectSource() {
+    if (source) return;
+    source = actx.createMediaElementSource(audioEl);
+    source.connect(mainAnalyser);
+    source.connect(splitterNode);
+    source.connect(filterNodes.kickHP);
+    source.connect(filterNodes.snareHP);
+    source.connect(filterNodes.hihatHP);
+  }
+
+  // Waveform overview from AudioBuffer
+  function renderWaveformOverview(buf) {
+    const ch0 = buf.getChannelData(0);
+    const c = waveformC;
+    const w = c.width;
+    const samplesPerPixel = Math.floor(ch0.length / w);
+    const mins = new Float32Array(w);
+    const maxs = new Float32Array(w);
+    for (let i = 0; i < w; i++) {
+      let min = 1, max = -1;
+      const start = i * samplesPerPixel;
+      for (let j = 0; j < samplesPerPixel; j++) {
+        const s = ch0[start + j] || 0;
+        if (s < min) min = s;
+        if (s > max) max = s;
+      }
+      mins[i] = min;
+      maxs[i] = max;
+    }
+    waveformData = { mins, maxs };
+    drawWaveformStatic();
+  }
+
+  function drawWaveformStatic(playX) {
+    if (!waveformData) return;
+    const ctx = contexts['waveform-canvas'];
+    const w = waveformC.width, h = waveformC.height;
+    ctx.clearRect(0, 0, w, h);
+    const { mins, maxs } = waveformData;
+    const mid = h / 2;
+    const len = Math.min(mins.length, w);
+    const px = playX || 0;
+    for (let i = 0; i < len; i++) {
+      const top = mid + maxs[i] * mid;
+      const bot = mid + mins[i] * mid;
+      ctx.fillStyle = i < px ? '#aaa' : '#444';
+      ctx.fillRect(i, top, 1, bot - top);
+    }
+  }
+
+  // Format time
+  function fmt(s) {
+    if (!isFinite(s) || isNaN(s)) s = 0;
+    const neg = s < 0; s = Math.abs(s);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = Math.floor(s % 60);
+    const str = (h > 0 ? String(h).padStart(2,'0') + ':' : '') + String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+    return neg ? '-' + str : str;
+  }
+
+  // Drawing functions
+  function drawSpectrum() {
+    mainAnalyser.getByteFrequencyData(freqData);
+    const ctx = contexts['spectrum-canvas'];
+    const w = spectrumC.width, h = spectrumC.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const topPad = 12 * dpr;
+    const baseline = h - 12 * dpr;
+    const drawH = baseline - topPad;
+
+    // Grid
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    const gridFreqs = [60, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+    const nyquist = (fileInfo.sampleRate || 48000) / 2;
+    const binCount = mainAnalyser.frequencyBinCount;
+    for (const f of gridFreqs) {
+      const x = freqToX(f, nyquist, binCount, w);
+      ctx.beginPath(); ctx.moveTo(x, topPad); ctx.lineTo(x, baseline); ctx.stroke();
+      ctx.fillStyle = '#666';
+      ctx.font = `${config.labelSize * dpr}px Inter, sans-serif`;
+      ctx.fillText(f >= 1000 ? (f/1000) + 'k' : f + '', x + 2, topPad - 3 * dpr);
+    }
+    // dB grid lines
+    for (let i = 1; i <= 4; i++) {
+      const y = topPad + drawH * i / 5;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+
+    // Bars with log frequency mapping
+    const numBars = config.numBars;
+    for (let i = 0; i < numBars; i++) {
+      const fLow = nyquist * Math.pow(i / numBars, 2);
+      const fHigh = nyquist * Math.pow((i + 1) / numBars, 2);
+      const binLow = Math.floor(fLow / nyquist * binCount);
+      const binHigh = Math.max(binLow + 1, Math.floor(fHigh / nyquist * binCount));
+      let sum = 0, count = 0;
+      for (let b = binLow; b < binHigh && b < binCount; b++) { sum += freqData[b]; count++; }
+      const val = count > 0 ? sum / count / 255 : 0;
+      const barH = val * drawH;
+      const x = (i / numBars) * w;
+      const bw = w / numBars;
+      if (barH > 0) {
+        const grad = ctx.createLinearGradient(0, baseline, 0, baseline - barH);
+        grad.addColorStop(0, '#222');
+        grad.addColorStop(0.4, '#666');
+        grad.addColorStop(0.7, '#aaa');
+        grad.addColorStop(1, '#fff');
+        ctx.fillStyle = grad;
+        ctx.fillRect(x, baseline - barH, bw - (bw > 2 ? 1 : 0), barH);
+      }
+    }
+  }
+
+  function freqToX(freq, nyquist, binCount, w) {
+    const ratio = freq / nyquist;
+    const logPos = Math.sqrt(ratio);
+    return logPos * w;
+  }
+
+  function drawSpectrogram() {
+    mainAnalyser.getByteFrequencyData(freqData);
+    const ctx = contexts['spectrogram-canvas'];
+    const w = spectrogramC.width, h = spectrogramC.height;
+
+    if (!spectrogramImg || spectrogramImg.width !== w || spectrogramImg.height !== h) {
+      spectrogramImg = ctx.createImageData(w, h);
+      for (let i = 3; i < spectrogramImg.data.length; i += 4) spectrogramImg.data[i] = 255;
+    }
+
+    // Shift left by 1 pixel
+    const d = spectrogramImg.data;
+    for (let y = 0; y < h; y++) {
+      const row = y * w * 4;
+      for (let x = 0; x < (w - 1); x++) {
+        const dst = row + x * 4;
+        const src = row + (x + 1) * 4;
+        d[dst] = d[src]; d[dst+1] = d[src+1]; d[dst+2] = d[src+2];
+      }
+    }
+
+    // Draw new column at right edge
+    const binCount = mainAnalyser.frequencyBinCount;
+    const col = (w - 1) * 4;
+    for (let y = 0; y < h; y++) {
+      const freqRatio = 1 - y / h;
+      const bin = Math.floor(freqRatio * freqRatio * binCount);
+      const val = bin < binCount ? freqData[bin] : 0;
+      const idx = y * w * 4 + col;
+      d[idx] = val; d[idx+1] = val; d[idx+2] = val;
+    }
+
+    ctx.putImageData(spectrogramImg, 0, 0);
+  }
+
+  function drawMeters() {
+    analyserL.getByteFrequencyData(freqDataL);
+    analyserR.getByteFrequencyData(freqDataR);
+    const ctx = contexts['meters-canvas'];
+    const w = metersC.width, h = metersC.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // RMS levels
+    let sumL = 0, sumR = 0;
+    for (let i = 0; i < freqDataL.length; i++) sumL += freqDataL[i];
+    for (let i = 0; i < freqDataR.length; i++) sumR += freqDataR[i];
+    let lvlL = sumL / (freqDataL.length * 255);
+    let lvlR = sumR / (freqDataR.length * 255);
+
+    // Peak hold
+    if (lvlL > peakHoldL) { peakHoldL = lvlL; peakHoldDecayCounter = 0; }
+    if (lvlR > peakHoldR) { peakHoldR = lvlR; peakHoldDecayCounter = 0; }
+    peakHoldDecayCounter++;
+    if (peakHoldDecayCounter > 30) { peakHoldL *= 0.995; peakHoldR *= 0.995; }
+
+    const meterW = w * 0.25;
+    const gap = w * 0.1;
+    const xL = w / 2 - meterW - gap / 2;
+    const xR = w / 2 + gap / 2;
+    const topPad = 18 * dpr;
+    const botPad = 30 * dpr;
+    const meterH = h - topPad - botPad;
+
+    // Meter backgrounds
+    ctx.fillStyle = '#111';
+    ctx.fillRect(xL, topPad, meterW, meterH);
+    ctx.fillRect(xR, topPad, meterW, meterH);
+
+    // Meter fills
+    const hL = lvlL * meterH;
+    const hR = lvlR * meterH;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(xL, topPad + meterH - hL, meterW, hL);
+    ctx.fillRect(xR, topPad + meterH - hR, meterW, hR);
+
+    // Peak hold lines
+    ctx.fillStyle = '#888';
+    const phL = peakHoldL * meterH;
+    const phR = peakHoldR * meterH;
+    ctx.fillRect(xL, topPad + meterH - phL, meterW, 1 * dpr);
+    ctx.fillRect(xR, topPad + meterH - phR, meterW, 1 * dpr);
+
+    // dB scale
+    ctx.fillStyle = '#444';
+    ctx.font = `${8 * dpr}px monospace`;
+    ctx.textAlign = 'center';
+    const dbMarks = [0, -6, -12, -24, -48];
+    for (const db of dbMarks) {
+      const ratio = Math.pow(10, db / 20);
+      const y = topPad + meterH - ratio * meterH;
+      if (y >= topPad && y <= topPad + meterH) {
+        ctx.fillText(db + '', w / 2, y + 3 * dpr);
+        ctx.fillStyle = '#222';
+        ctx.fillRect(xL, y, meterW, 1);
+        ctx.fillRect(xR, y, meterW, 1);
+        ctx.fillStyle = '#444';
+      }
+    }
+
+    // dB readout
+    const dbL = lvlL > 0 ? (20 * Math.log10(lvlL)).toFixed(1) : '-inf';
+    const dbR = lvlR > 0 ? (20 * Math.log10(lvlR)).toFixed(1) : '-inf';
+    ctx.fillStyle = '#888';
+    ctx.font = `${10 * dpr}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(dbL, xL + meterW / 2, h - 8 * dpr);
+    ctx.fillText(dbR, xR + meterW / 2, h - 8 * dpr);
+  }
+
+  // Heartbeat ECG state per channel
+  const ecgBufferSize = 600;
+  const ecgState = {
+    'osc-low':  { buffer: new Float32Array(ecgBufferSize), pos: 0, avg: 0, peak: 0 },
+    'osc-mid':  { buffer: new Float32Array(ecgBufferSize), pos: 0, avg: 0, peak: 0 },
+    'osc-high': { buffer: new Float32Array(ecgBufferSize), pos: 0, avg: 0, peak: 0 },
+  };
+
+  const ecgGainMap = { 'osc-low': 'kick', 'osc-mid': 'snare', 'osc-high': 'hihat' };
+
+  function drawOscilloscope(canvas, analyser, dataArr) {
+    analyser.getByteFrequencyData(dataArr);
+    const ctx = contexts[canvas.id];
+    const w = canvas.width, h = canvas.height;
+    const state = ecgState[canvas.id];
+    const gain = config[ecgGainMap[canvas.id]].gain;
+
+    // Compute current energy (RMS of frequency data)
+    let sum = 0;
+    for (let i = 0; i < dataArr.length; i++) sum += dataArr[i];
+    const energy = sum / (dataArr.length * 255);
+
+    // Onset detection: compare to running average
+    const alpha = 0.95;
+    state.avg = state.avg * alpha + energy * (1 - alpha);
+    const onset = Math.max(0, energy - state.avg);
+    const spike = Math.pow(onset * 8 * gain, 1.5);
+    const val = Math.min(1, spike);
+
+    // Peak decay for sharper spikes
+    if (val > state.peak) state.peak = val;
+    else state.peak *= 0.92;
+
+    // Write to circular buffer
+    state.buffer[state.pos % ecgBufferSize] = state.peak;
+    state.pos++;
+
+    // Draw
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+
+    // Grid lines
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 4; i++) {
+      const y = h * i / 4;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+
+    // ECG trace
+    const baseline = h * 0.75 + 10 * dpr;
+    const amplitude = h * 0.65;
+    const len = Math.min(state.pos, ecgBufferSize);
+    const startIdx = state.pos - len;
+
+    // Glow
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 8 * dpr;
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 2 * dpr;
+    ctx.beginPath();
+    for (let i = 0; i < len; i++) {
+      const bufIdx = (startIdx + i) % ecgBufferSize;
+      const x = (i / ecgBufferSize) * w;
+      const v = state.buffer[bufIdx];
+      const y = baseline - v * amplitude;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Core line
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1 * dpr;
+    ctx.beginPath();
+    for (let i = 0; i < len; i++) {
+      const bufIdx = (startIdx + i) % ecgBufferSize;
+      const x = (i / ecgBufferSize) * w;
+      const v = state.buffer[bufIdx];
+      const y = baseline - v * amplitude;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Scanning dot at the write head
+    if (len > 0) {
+      const dotIdx = (state.pos - 1) % ecgBufferSize;
+      const dotX = ((len - 1) / ecgBufferSize) * w;
+      const dotY = baseline - state.buffer[dotIdx] * amplitude;
+      ctx.beginPath();
+      ctx.arc(dotX, dotY, 3 * dpr, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur = 12 * dpr;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  function drawPlayhead() {
+    if (!waveformData) return;
+    drawWaveformStatic();
+    const ctx = contexts['waveform-canvas'];
+    const w = waveformC.width, h = waveformC.height;
+    const dur = audioEl.duration || 1;
+    const cur = audioEl.currentTime || 0;
+    const x = (cur / dur) * w;
+
+    drawWaveformStatic(x);
+
+    // Playhead line
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1 * dpr;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+
+    // Header info
+    const sr = fileInfo.sampleRate || 48000;
+    const ch = fileInfo.channels || 2;
+    headerInfo.textContent = `${sr} Hz \u00b7 ${ch}ch \u00b7 ${fmt(cur)} / ${fmt(dur)}`;
+
+    // Track details
+    trackDetails.innerHTML = `${fileInfo.name || ''}<br>${sr} Hz &middot; ${ch} channels &middot; ${fmt(dur)} duration`;
+  }
+
+  // Click on waveform to seek
+  $('waveform-panel').addEventListener('click', e => {
+    if (!audioEl.duration) return;
+    const rect = waveformC.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    audioEl.currentTime = ratio * audioEl.duration;
+  });
+
+  // Animation loop
+  function animate() {
+    if (!mainAnalyser) { requestAnimationFrame(animate); return; }
+    drawSpectrum();
+    drawSpectrogram();
+    drawMeters();
+    drawOscilloscope(oscLowC, analyserLow, timeLow);
+    drawOscilloscope(oscMidC, analyserMid, timeMid);
+    drawOscilloscope(oscHighC, analyserHigh, timeHigh);
+    drawPlayhead();
+    requestAnimationFrame(animate);
+  }
+})();
+</script>
+</body>
+</html>

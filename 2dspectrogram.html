@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DJ Mix Audio Visualizer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a0f;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            overflow: hidden;
+            color: #fff;
+        }
+        #controls {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            z-index: 100;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            max-width: 600px;
+        }
+        .btn {
+            padding: 10px 20px;
+            background: rgba(30, 30, 50, 0.85);
+            color: #ddd;
+            border: 1px solid rgba(100, 100, 150, 0.5);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            backdrop-filter: blur(10px);
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+        .btn:hover { background: rgba(50, 50, 80, 0.9); border-color: rgba(150, 150, 200, 0.7); color: #fff; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn.recording { background: rgba(150, 20, 20, 0.85); border-color: #f44; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        #fileInput { display: none; }
+        label.btn { display: inline-flex; align-items: center; gap: 6px; }
+        #Spectrogram { width: 100vw; height: 100vh; }
+        #status {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            color: rgba(180, 180, 200, 0.8);
+            font-size: 12px;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+            background: rgba(0,0,0,0.3);
+            padding: 6px 12px;
+            border-radius: 4px;
+        }
+        #audioName {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            color: rgba(180, 180, 200, 0.8);
+            font-size: 13px;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+            background: rgba(0,0,0,0.3);
+            padding: 6px 12px;
+            border-radius: 4px;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        #effectsPanel {
+            position: absolute;
+            top: 70px;
+            left: 15px;
+            z-index: 100;
+            background: rgba(15, 15, 30, 0.92);
+            border: 1px solid rgba(80, 80, 130, 0.5);
+            border-radius: 10px;
+            padding: 15px;
+            backdrop-filter: blur(12px);
+            min-width: 250px;
+            display: none;
+        }
+        #effectsPanel.visible { display: block; }
+        #effectsPanel h3 {
+            margin-bottom: 12px;
+            font-size: 14px;
+            color: rgba(180, 180, 220, 0.9);
+            border-bottom: 1px solid rgba(80, 80, 130, 0.4);
+            padding-bottom: 8px;
+        }
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 13px;
+            color: rgba(200, 200, 220, 0.85);
+        }
+        .toggle-row:last-child { margin-bottom: 0; }
+        .toggle-switch {
+            position: relative;
+            width: 40px;
+            height: 22px;
+            background: rgba(50, 50, 70, 0.8);
+            border-radius: 11px;
+            cursor: pointer;
+            transition: background 0.3s;
+            border: 1px solid rgba(80, 80, 120, 0.5);
+            flex-shrink: 0;
+        }
+        .toggle-switch.active {
+            background: rgba(80, 140, 255, 0.7);
+            border-color: rgba(100, 160, 255, 0.8);
+        }
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            background: rgba(220, 220, 240, 0.9);
+            border-radius: 50%;
+            transition: transform 0.3s;
+        }
+        .toggle-switch.active::after {
+            transform: translateX(18px);
+        }
+    </style>
+</head>
+<body>
+
+<script type="x-shader/x-vertex" id="vertexshader">
+    attribute float displacement;
+    uniform vec3 vLut[256];
+    uniform float uHueShift;
+    uniform int uDynamicColor;
+    varying vec3 vColor;
+
+    vec3 hsv2rgb(vec3 c) {
+        vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+    }
+
+    vec3 rgb2hsv(vec3 c) {
+        vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+        vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+        vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+        float d = q.x - min(q.w, q.y);
+        float e = 1.0e-10;
+        return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+    }
+
+    void main() {
+        int index = int(displacement);
+        vec3 color = vLut[index];
+
+        if (uDynamicColor == 1) {
+            vec3 hsv = rgb2hsv(color);
+            hsv.x = fract(hsv.x + uHueShift);
+            color = hsv2rgb(hsv);
+        }
+
+        vColor = color;
+        vec3 newPosition = position + normal * displacement / 25.5;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
+    }
+</script>
+
+<script type="x-shader/x-fragment" id="fragmentshader">
+    varying vec3 vColor;
+    void main() {
+        gl_FragColor = vec4(vColor, 1.0);
+    }
+</script>
+
+<script type="x-shader/x-fragment" id="fragmentshader-reflection">
+    varying vec3 vColor;
+    void main() {
+        gl_FragColor = vec4(vColor * 0.3, 0.45);
+    }
+</script>
+
+<script type="x-shader/x-vertex" id="vignette-vs">
+    varying vec2 vUv;
+    void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+</script>
+
+<script type="x-shader/x-fragment" id="vignette-fs">
+    uniform sampler2D tDiffuse;
+    uniform float uVignetteIntensity;
+    uniform float uChromaticAberration;
+    varying vec2 vUv;
+
+    void main() {
+        vec2 uv = vUv;
+        vec2 center = uv - 0.5;
+        float dist = length(center);
+
+        float r = texture2D(tDiffuse, uv + center * uChromaticAberration).r;
+        float g = texture2D(tDiffuse, uv).g;
+        float b = texture2D(tDiffuse, uv - center * uChromaticAberration).b;
+        vec3 color = vec3(r, g, b);
+
+        float vignette = 1.0 - dist * uVignetteIntensity;
+        vignette = clamp(vignette, 0.0, 1.0);
+        vignette = smoothstep(0.0, 1.0, vignette);
+        color *= vignette;
+
+        gl_FragColor = vec4(color, 1.0);
+    }
+</script>
+
+<div id="controls">
+    <label class="btn" for="fileInput">&#128193; Import Audio</label>
+    <input type="file" id="fileInput" accept="audio/*">
+    <button class="btn" id="recordBtn" disabled>&#9899; Record Video</button>
+    <button class="btn" id="effectsBtn">&#9881; Settings</button>
+</div>
+
+<div id="effectsPanel">
+    <h3>&#9881; Settings</h3>
+    <div class="toggle-row">
+        <span>Auto-Record on Import</span>
+        <div class="toggle-switch" id="toggleAutoRecord"></div>
+    </div>
+    <div class="toggle-row">
+        <span>Bloom / Glow</span>
+        <div class="toggle-switch" id="toggleBloom"></div>
+    </div>
+    <div class="toggle-row">
+        <span>Dynamic Color Shift</span>
+        <div class="toggle-switch active" id="toggleColorShift"></div>
+    </div>
+    <div class="toggle-row">
+        <span>Wireframe Overlay</span>
+        <div class="toggle-switch" id="toggleWireframe"></div>
+    </div>
+    <div class="toggle-row">
+        <span>Displacement Smoothing</span>
+        <div class="toggle-switch" id="toggleSmoothing"></div>
+    </div>
+    <div class="toggle-row">
+        <span>Reflective Ground</span>
+        <div class="toggle-switch" id="toggleReflection"></div>
+    </div>
+    <div class="toggle-row">
+        <span>Vignette + Aberration</span>
+        <div class="toggle-switch active" id="toggleVignette"></div>
+    </div>
+</div>
+
+<div id="Spectrogram"></div>
+<div id="status">Load an audio file to begin</div>
+<div id="audioName" style="display:none;"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script>
+"use strict";
+
+// ============ EFFECT STATE ============
+let fx = {
+    bloom: false,
+    colorShift: true,
+    wireframe: false,
+    smoothing: false,
+    reflection: false,
+    vignette: true,
+    autoRecord: false
+};
+
+// ============ STATE ============
+let ACTX, ANALYSER, SOURCE, audioElement, mediaStreamDest;
+let frequency_samples = 512;
+let DATA;
+let isPlaying = false;
+let isRecording = false;
+let mediaRecorder = null;
+let recordedChunks = [];
+
+// Three.js state
+let camera, scene, renderer, mesh, wireframeMesh, reflectionMesh, heights;
+let time_samples = 1200;
+let n_vertices = (frequency_samples + 1) * (time_samples + 1);
+let animationId;
+let composer, bloomPass, vignettePass;
+let clock = new THREE.Clock();
+let prevData, smoothedData, dispAttr;
+
+// ============ DOM ELEMENTS ============
+const fileInput = document.getElementById('fileInput');
+const recordBtn = document.getElementById('recordBtn');
+const effectsBtn = document.getElementById('effectsBtn');
+const effectsPanel = document.getElementById('effectsPanel');
+const statusEl = document.getElementById('status');
+const audioNameEl = document.getElementById('audioName');
+
+// Toggle panel visibility
+effectsBtn.addEventListener('click', () => {
+    effectsPanel.classList.toggle('visible');
+});
+
+// Toggle switches
+function setupToggle(id, key) {
+    const el = document.getElementById(id);
+    el.addEventListener('click', () => {
+        fx[key] = !fx[key];
+        el.classList.toggle('active', fx[key]);
+        applyEffectChanges();
+    });
+}
+setupToggle('toggleAutoRecord', 'autoRecord');
+setupToggle('toggleBloom', 'bloom');
+setupToggle('toggleColorShift', 'colorShift');
+setupToggle('toggleWireframe', 'wireframe');
+setupToggle('toggleSmoothing', 'smoothing');
+setupToggle('toggleReflection', 'reflection');
+setupToggle('toggleVignette', 'vignette');
+
+function applyEffectChanges() {
+    if (wireframeMesh) wireframeMesh.visible = fx.wireframe;
+    if (reflectionMesh) reflectionMesh.visible = fx.reflection;
+    if (bloomPass) { bloomPass.enabled = fx.bloom; bloomPass.strength = 1.5; }
+    if (vignettePass) vignettePass.enabled = fx.vignette;
+}
+
+// ============ AUDIO SETUP ============
+function initAudio() {
+    if (ACTX) return;
+    ACTX = new AudioContext();
+    ANALYSER = ACTX.createAnalyser();
+    ANALYSER.fftSize = 4 * frequency_samples;
+    ANALYSER.smoothingTimeConstant = 0.5;
+    DATA = new Uint8Array(ANALYSER.frequencyBinCount);
+    prevData = new Float32Array(ANALYSER.frequencyBinCount);
+    smoothedData = new Uint8Array(ANALYSER.frequencyBinCount);
+    mediaStreamDest = ACTX.createMediaStreamDestination();
+}
+
+function loadAudioFile(file) {
+    initAudio();
+    const url = URL.createObjectURL(file);
+    if (SOURCE) { SOURCE.disconnect(); SOURCE = null; }
+    if (audioElement) { audioElement.pause(); audioElement.src = ''; }
+
+    audioElement = new Audio();
+    audioElement.crossOrigin = "anonymous";
+    audioElement.src = url;
+    audioElement.addEventListener('ended', () => {
+        isPlaying = false;
+        statusEl.textContent = 'Playback ended';
+        if (isRecording) stopRecording();
+    });
+
+    SOURCE = ACTX.createMediaElementSource(audioElement);
+    SOURCE.connect(ANALYSER);
+    SOURCE.connect(ACTX.destination);
+    SOURCE.connect(mediaStreamDest);
+
+    recordBtn.disabled = false;
+    audioNameEl.textContent = '\u266B ' + file.name;
+    audioNameEl.style.display = 'block';
+
+    if (!renderer) initVisualizer();
+
+    // Auto-play
+    audioElement.play();
+    isPlaying = true;
+    statusEl.textContent = 'Playing...';
+
+    // Auto-record if enabled
+    if (fx.autoRecord && !isRecording) {
+        startRecording();
+    }
+}
+
+// ============ RECORDING ============
+function toggleRecord() { isRecording ? stopRecording() : startRecording(); }
+
+function startRecording() {
+    if (!renderer) return;
+    const canvasStream = renderer.domElement.captureStream(30);
+    const videoTrack = canvasStream.getVideoTracks()[0];
+    const audioTrack = mediaStreamDest.stream.getAudioTracks()[0];
+    const combinedStream = new MediaStream();
+    if (videoTrack) combinedStream.addTrack(videoTrack);
+    if (audioTrack) combinedStream.addTrack(audioTrack);
+
+    let mimeType = '';
+    const types = [
+        'video/webm;codecs=h264,opus','video/webm;codecs=h264',
+        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+        'video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'
+    ];
+    for (const type of types) { if (MediaRecorder.isTypeSupported(type)) { mimeType = type; break; } }
+    if (!mimeType) { statusEl.textContent = 'Error: No supported codec.'; return; }
+
+    recordedChunks = [];
+    try {
+        mediaRecorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 8000000 });
+    } catch (e) { statusEl.textContent = 'Error: ' + e.message; return; }
+
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: mimeType });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'dj_visualizer.' + (mimeType.includes('mp4') ? 'mp4' : 'webm');
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        statusEl.textContent = 'Recording saved!';
+    };
+
+    mediaRecorder.start(100);
+    isRecording = true;
+    recordBtn.textContent = '\u23F9 Stop Recording';
+    recordBtn.classList.add('recording');
+    statusEl.textContent = 'Recording... (' + mimeType + ')';
+}
+
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    isRecording = false;
+    recordBtn.textContent = '\u26AB Record Video';
+    recordBtn.classList.remove('recording');
+}
+
+// ============ THREE.JS VISUALIZER ============
+function initVisualizer() {
+    let xsegments = time_samples;
+    let ysegments = frequency_samples;
+    let xsize = 35;
+    let ysize = 20;
+    let xhalfSize = xsize / 2;
+    let yhalfSize = ysize / 2;
+    let xsegmentSize = xsize / xsegments;
+
+    camera = new THREE.PerspectiveCamera(27, window.innerWidth / window.innerHeight, 1, 1000);
+    camera.position.z = 64;
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050510);
+
+    let geometry = new THREE.BufferGeometry();
+    let indices = [];
+    let heightsArr = [];
+    let vertices = [];
+
+    // Logarithmic y-axis
+    let ypow_max = Math.log(ysize);
+    let ybase = Math.E;
+
+    for (let i = 0; i <= xsegments; i++) {
+        let x = (i * xsegmentSize) - xhalfSize;
+        for (let j = 0; j <= ysegments; j++) {
+            let powr = (ysegments - j) / ysegments * ypow_max;
+            let y = -Math.pow(ybase, powr) + yhalfSize + 1;
+            vertices.push(x, y, 0);
+            heightsArr.push(0);
+        }
+    }
+
+    for (let i = 0; i < xsegments; i++) {
+        for (let j = 0; j < ysegments; j++) {
+            let a = i * (ysegments + 1) + (j + 1);
+            let b = i * (ysegments + 1) + j;
+            let c = (i + 1) * (ysegments + 1) + j;
+            let d = (i + 1) * (ysegments + 1) + (j + 1);
+            indices.push(a, b, d);
+            indices.push(b, c, d);
+        }
+    }
+
+    // Color LUT
+    let string = [[0.18995,0.07176,0.23217],[0.19483,0.08339,0.26149],[0.19956,0.09498,0.29024],[0.20415,0.10652,0.31844],[0.20860,0.11802,0.34607],[0.21291,0.12947,0.37314],[0.21708,0.14087,0.39964],[0.22111,0.15223,0.42558],[0.22500,0.16354,0.45096],[0.22875,0.17481,0.47578],[0.23236,0.18603,0.50004],[0.23582,0.19720,0.52373],[0.23915,0.20833,0.54686],[0.24234,0.21941,0.56942],[0.24539,0.23044,0.59142],[0.24830,0.24143,0.61286],[0.25107,0.25237,0.63374],[0.25369,0.26327,0.65406],[0.25618,0.27412,0.67381],[0.25853,0.28492,0.69300],[0.26074,0.29568,0.71162],[0.26280,0.30639,0.72968],[0.26473,0.31706,0.74718],[0.26652,0.32768,0.76412],[0.26816,0.33825,0.78050],[0.26967,0.34878,0.79631],[0.27103,0.35926,0.81156],[0.27226,0.36970,0.82624],[0.27334,0.38008,0.84037],[0.27429,0.39043,0.85393],[0.27509,0.40072,0.86692],[0.27576,0.41097,0.87936],[0.27628,0.42118,0.89123],[0.27667,0.43134,0.90254],[0.27691,0.44145,0.91328],[0.27701,0.45152,0.92347],[0.27698,0.46153,0.93309],[0.27680,0.47151,0.94214],[0.27648,0.48144,0.95064],[0.27603,0.49132,0.95857],[0.27543,0.50115,0.96594],[0.27469,0.51094,0.97275],[0.27381,0.52069,0.97899],[0.27273,0.53040,0.98461],[0.27106,0.54015,0.98930],[0.26878,0.54995,0.99303],[0.26592,0.55979,0.99583],[0.26252,0.56967,0.99773],[0.25862,0.57958,0.99876],[0.25425,0.58950,0.99896],[0.24946,0.59943,0.99835],[0.24427,0.60937,0.99697],[0.23874,0.61931,0.99485],[0.23288,0.62923,0.99202],[0.22676,0.63913,0.98851],[0.22039,0.64901,0.98436],[0.21382,0.65886,0.97959],[0.20708,0.66866,0.97423],[0.20021,0.67842,0.96833],[0.19326,0.68812,0.96190],[0.18625,0.69775,0.95498],[0.17923,0.70732,0.94761],[0.17223,0.71680,0.93981],[0.16529,0.72620,0.93161],[0.15844,0.73551,0.92305],[0.15173,0.74472,0.91416],[0.14519,0.75381,0.90496],[0.13886,0.76279,0.89550],[0.13278,0.77165,0.88580],[0.12698,0.78037,0.87590],[0.12151,0.78896,0.86581],[0.11639,0.79740,0.85559],[0.11167,0.80569,0.84525],[0.10738,0.81381,0.83484],[0.10357,0.82177,0.82437],[0.10026,0.82955,0.81389],[0.09750,0.83714,0.80342],[0.09532,0.84455,0.79299],[0.09377,0.85175,0.78264],[0.09287,0.85875,0.77240],[0.09267,0.86554,0.76230],[0.09320,0.87211,0.75237],[0.09451,0.87844,0.74265],[0.09662,0.88454,0.73316],[0.09958,0.89040,0.72393],[0.10342,0.89600,0.71500],[0.10815,0.90142,0.70599],[0.11374,0.90673,0.69651],[0.12014,0.91193,0.68660],[0.12733,0.91701,0.67627],[0.13526,0.92197,0.66556],[0.14391,0.92680,0.65448],[0.15323,0.93151,0.64308],[0.16319,0.93609,0.63137],[0.17377,0.94053,0.61938],[0.18491,0.94484,0.60713],[0.19659,0.94901,0.59466],[0.20877,0.95304,0.58199],[0.22142,0.95692,0.56914],[0.23449,0.96065,0.55614],[0.24797,0.96423,0.54303],[0.26180,0.96765,0.52981],[0.27597,0.97092,0.51653],[0.29042,0.97403,0.50321],[0.30513,0.97697,0.48987],[0.32006,0.97974,0.47654],[0.33517,0.98234,0.46325],[0.35043,0.98477,0.45002],[0.36581,0.98702,0.43688],[0.38127,0.98909,0.42386],[0.39678,0.99098,0.41098],[0.41229,0.99268,0.39826],[0.42778,0.99419,0.38575],[0.44321,0.99551,0.37345],[0.45854,0.99663,0.36140],[0.47375,0.99755,0.34963],[0.48879,0.99828,0.33816],[0.50362,0.99879,0.32701],[0.51822,0.99910,0.31622],[0.53255,0.99919,0.30581],[0.54658,0.99907,0.29581],[0.56026,0.99873,0.28623],[0.57357,0.99817,0.27712],[0.58646,0.99739,0.26849],[0.59891,0.99638,0.26038],[0.61088,0.99514,0.25280],[0.62233,0.99366,0.24579],[0.63323,0.99195,0.23937],[0.64362,0.98999,0.23356],[0.65394,0.98775,0.22835],[0.66428,0.98524,0.22370],[0.67462,0.98246,0.21960],[0.68494,0.97941,0.21602],[0.69525,0.97610,0.21294],[0.70553,0.97255,0.21032],[0.71577,0.96875,0.20815],[0.72596,0.96470,0.20640],[0.73610,0.96043,0.20504],[0.74617,0.95593,0.20406],[0.75617,0.95121,0.20343],[0.76608,0.94627,0.20311],[0.77591,0.94113,0.20310],[0.78563,0.93579,0.20336],[0.79524,0.93025,0.20386],[0.80473,0.92452,0.20459],[0.81410,0.91861,0.20552],[0.82333,0.91253,0.20663],[0.83241,0.90627,0.20788],[0.84133,0.89986,0.20926],[0.85010,0.89328,0.21074],[0.85868,0.88655,0.21230],[0.86709,0.87968,0.21391],[0.87530,0.87267,0.21555],[0.88331,0.86553,0.21719],[0.89112,0.85826,0.21880],[0.89870,0.85087,0.22038],[0.90605,0.84337,0.22188],[0.91317,0.83576,0.22328],[0.92004,0.82806,0.22456],[0.92666,0.82025,0.22570],[0.93301,0.81236,0.22667],[0.93909,0.80439,0.22744],[0.94489,0.79634,0.22800],[0.95039,0.78823,0.22831],[0.95560,0.78005,0.22836],[0.96049,0.77181,0.22811],[0.96507,0.76352,0.22754],[0.96931,0.75519,0.22663],[0.97323,0.74682,0.22536],[0.97679,0.73842,0.22369],[0.98000,0.73000,0.22161],[0.98289,0.72140,0.21918],[0.98549,0.71250,0.21650],[0.98781,0.70330,0.21358],[0.98986,0.69382,0.21043],[0.99163,0.68408,0.20706],[0.99314,0.67408,0.20348],[0.99438,0.66386,0.19971],[0.99535,0.65341,0.19577],[0.99607,0.64277,0.19165],[0.99654,0.63193,0.18738],[0.99675,0.62093,0.18297],[0.99672,0.60977,0.17842],[0.99644,0.59846,0.17376],[0.99593,0.58703,0.16899],[0.99517,0.57549,0.16412],[0.99419,0.56386,0.15918],[0.99297,0.55214,0.15417],[0.99153,0.54036,0.14910],[0.98987,0.52854,0.14398],[0.98799,0.51667,0.13883],[0.98590,0.50479,0.13367],[0.98360,0.49291,0.12849],[0.98108,0.48104,0.12332],[0.97837,0.46920,0.11817],[0.97545,0.45740,0.11305],[0.97234,0.44565,0.10797],[0.96904,0.43399,0.10294],[0.96555,0.42241,0.09798],[0.96187,0.41093,0.09310],[0.95801,0.39958,0.08831],[0.95398,0.38836,0.08362],[0.94977,0.37729,0.07905],[0.94538,0.36638,0.07461],[0.94084,0.35566,0.07031],[0.93612,0.34513,0.06616],[0.93125,0.33482,0.06218],[0.92623,0.32473,0.05837],[0.92105,0.31489,0.05475],[0.91572,0.30530,0.05134],[0.91024,0.29599,0.04814],[0.90463,0.28696,0.04516],[0.89888,0.27824,0.04243],[0.89298,0.26981,0.03993],[0.88691,0.26152,0.03753],[0.88066,0.25334,0.03521],[0.87422,0.24526,0.03297],[0.86760,0.23730,0.03082],[0.86079,0.22945,0.02875],[0.85380,0.22170,0.02677],[0.84662,0.21407,0.02487],[0.83926,0.20654,0.02305],[0.83172,0.19912,0.02131],[0.82399,0.19182,0.01966],[0.81608,0.18462,0.01809],[0.80799,0.17753,0.01660],[0.79971,0.17055,0.01520],[0.79125,0.16368,0.01387],[0.78260,0.15693,0.01264],[0.77377,0.15028,0.01148],[0.76476,0.14374,0.01041],[0.75556,0.13731,0.00942],[0.74617,0.13098,0.00851],[0.73661,0.12477,0.00769],[0.72686,0.11867,0.00695],[0.71692,0.11268,0.00629],[0.70680,0.10680,0.00571],[0.69650,0.10102,0.00522],[0.68602,0.09536,0.00481],[0.67535,0.08980,0.00449],[0.66449,0.08436,0.00424],[0.65345,0.07902,0.00408],[0.64223,0.07380,0.00401],[0.63082,0.06868,0.00401],[0.61923,0.06367,0.00410],[0.60746,0.05878,0.00427],[0.59550,0.05399,0.00453],[0.58336,0.04931,0.00486],[0.57103,0.04474,0.00529],[0.55852,0.04028,0.00579],[0.54583,0.03593,0.00638],[0.53295,0.03169,0.00705],[0.51989,0.02756,0.00780],[0.50664,0.02354,0.00863],[0.49321,0.01963,0.00955],[0.47960,0.01583,0.01055]];
+
+    let lut = [];
+    for (let n = 0; n < 256; n++) {
+        lut.push(new THREE.Vector3(
+            (string[n][0] * 255 - 49) / 206.0,
+            (string[n][1] * 255 - 19) / 236.0,
+            (string[n][2] * 255 - 50) / 190.0
+        ));
+    }
+
+    heights = new Uint8Array(heightsArr);
+
+    geometry.setIndex(indices);
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    dispAttr = new THREE.Uint8BufferAttribute(heights, 1);
+    geometry.setAttribute('displacement', dispAttr);
+
+    let vShader = document.getElementById('vertexshader');
+    let fShader = document.getElementById('fragmentshader');
+
+    let uniforms = {
+        vLut: { type: "v3v", value: lut },
+        uHueShift: { value: 0.0 },
+        uDynamicColor: { value: 0 }
+    };
+
+    let material = new THREE.ShaderMaterial({
+        uniforms: uniforms,
+        vertexShader: vShader.text,
+        fragmentShader: fShader.text
+    });
+
+    mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+
+    // --- Wireframe overlay ---
+    let wireframeUniforms = {
+        vLut: { type: "v3v", value: lut },
+        uHueShift: { value: 0.0 },
+        uDynamicColor: { value: 0 }
+    };
+    let wireframeMat = new THREE.ShaderMaterial({
+        uniforms: wireframeUniforms,
+        vertexShader: vShader.text,
+        fragmentShader: fShader.text,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.35
+    });
+    wireframeMesh = new THREE.Mesh(geometry, wireframeMat);
+    wireframeMesh.visible = fx.wireframe;
+    scene.add(wireframeMesh);
+
+    // --- Reflective ground plane ---
+    let reflectionUniforms = {
+        vLut: { type: "v3v", value: lut },
+        uHueShift: { value: 0.0 },
+        uDynamicColor: { value: 0 }
+    };
+    let reflectionMat = new THREE.ShaderMaterial({
+        uniforms: reflectionUniforms,
+        vertexShader: vShader.text,
+        fragmentShader: document.getElementById('fragmentshader-reflection').text,
+        transparent: true
+    });
+    reflectionMesh = new THREE.Mesh(geometry, reflectionMat);
+    reflectionMesh.scale.z = -1;
+    reflectionMesh.position.z = -0.5;
+    reflectionMesh.visible = fx.reflection;
+    scene.add(reflectionMesh);
+
+    // --- Renderer ---
+    renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ReinhardToneMapping;
+    renderer.toneMappingExposure = 1.0;
+
+    let container = document.getElementById('Spectrogram');
+    container.appendChild(renderer.domElement);
+
+    mesh.geometry.computeVertexNormals();
+
+    // --- Post-processing ---
+    composer = new THREE.EffectComposer(renderer);
+    let renderPass = new THREE.RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    // Bloom pass
+    bloomPass = new THREE.UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        1.5,
+        0.4,
+        0.85
+    );
+    bloomPass.enabled = fx.bloom;
+    composer.addPass(bloomPass);
+
+    // Vignette + Chromatic Aberration pass
+    let vignetteShader = {
+        uniforms: {
+            tDiffuse: { value: null },
+            uVignetteIntensity: { value: 1.3 },
+            uChromaticAberration: { value: 0.003 }
+        },
+        vertexShader: document.getElementById('vignette-vs').text,
+        fragmentShader: document.getElementById('vignette-fs').text
+    };
+    vignettePass = new THREE.ShaderPass(vignetteShader);
+    vignettePass.enabled = fx.vignette;
+    composer.addPass(vignettePass);
+
+    window.addEventListener('resize', onWindowResize, false);
+    animate();
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animate() {
+    animationId = requestAnimationFrame(animate);
+    render();
+}
+
+function render() {
+    updateGeometry();
+
+    // Update dynamic color shift
+    let elapsed = clock.getElapsedTime();
+    let dynVal = fx.colorShift ? 1 : 0;
+    let hueVal = elapsed * 0.05;
+
+    mesh.material.uniforms.uDynamicColor.value = dynVal;
+    mesh.material.uniforms.uHueShift.value = hueVal;
+    if (fx.wireframe) {
+        wireframeMesh.material.uniforms.uDynamicColor.value = dynVal;
+        wireframeMesh.material.uniforms.uHueShift.value = hueVal;
+    }
+    if (fx.reflection) {
+        reflectionMesh.material.uniforms.uDynamicColor.value = dynVal;
+        reflectionMesh.material.uniforms.uHueShift.value = hueVal;
+    }
+
+    composer.render();
+}
+
+function updateGeometry() {
+    if (!ANALYSER || !DATA) return;
+
+    ANALYSER.getByteFrequencyData(DATA);
+
+    let src;
+    if (fx.smoothing) {
+        let smoothFactor = 0.35;
+        for (let i = 0; i < DATA.length; i++) {
+            prevData[i] = prevData[i] + (DATA[i] - prevData[i]) * smoothFactor;
+            smoothedData[i] = Math.round(prevData[i]);
+        }
+        src = smoothedData;
+    } else {
+        src = DATA;
+    }
+
+    let buf = dispAttr.array;
+    let start_val = frequency_samples + 1;
+    let end_val = n_vertices - start_val;
+
+    buf.copyWithin(0, start_val, n_vertices + 1);
+    buf.set(src, end_val - start_val);
+
+    dispAttr.needsUpdate = true;
+}
+
+// ============ EVENT LISTENERS ============
+fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) loadAudioFile(file);
+});
+recordBtn.addEventListener('click', toggleRecord);
+
+</script>
+</body>
+</html>

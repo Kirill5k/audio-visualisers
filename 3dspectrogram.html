@@ -262,6 +262,11 @@
   <div class="section-label">Recording</div>
 
   <div class="checkbox-row">
+    <input type="checkbox" id="autoRecordToggle" />
+    <span>Record on Play</span>
+  </div>
+
+  <div class="checkbox-row">
     <input type="checkbox" id="lock60fpsToggle" />
     <span>Lock 60fps</span>
   </div>
@@ -817,6 +822,10 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
   analyser.connect(audioContext.destination);
   source.start();
   audioStarted = true;
+
+  if (document.getElementById('autoRecordToggle').checked && !isRecording) {
+    startRecording();
+  }
 });
 
 window.addEventListener('resize', () => {
