@@ -299,7 +299,7 @@ let n_vertices = (frequency_samples + 1) * (time_samples + 1);
 let animationId;
 let composer, bloomPass, vignettePass;
 let clock = new THREE.Clock();
-let prevData;
+let prevData, smoothedData, dispAttr;
 
 // ============ DOM ELEMENTS ============
 const fileInput = document.getElementById('fileInput');
@@ -334,7 +334,7 @@ setupToggle('toggleVignette', 'vignette');
 function applyEffectChanges() {
     if (wireframeMesh) wireframeMesh.visible = fx.wireframe;
     if (reflectionMesh) reflectionMesh.visible = fx.reflection;
-    if (bloomPass) bloomPass.strength = fx.bloom ? 1.5 : 0.0;
+    if (bloomPass) { bloomPass.enabled = fx.bloom; bloomPass.strength = 1.5; }
     if (vignettePass) vignettePass.enabled = fx.vignette;
 }
 
@@ -347,6 +347,7 @@ function initAudio() {
     ANALYSER.smoothingTimeConstant = 0.5;
     DATA = new Uint8Array(ANALYSER.frequencyBinCount);
     prevData = new Float32Array(ANALYSER.frequencyBinCount);
+    smoothedData = new Uint8Array(ANALYSER.frequencyBinCount);
     mediaStreamDest = ACTX.createMediaStreamDestination();
 }
 
@@ -499,7 +500,8 @@ function initVisualizer() {
 
     geometry.setIndex(indices);
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.setAttribute('displacement', new THREE.Uint8BufferAttribute(heights, 1));
+    dispAttr = new THREE.Uint8BufferAttribute(heights, 1);
+    geometry.setAttribute('displacement', dispAttr);
 
     let vShader = document.getElementById('vertexshader');
     let fShader = document.getElementById('fragmentshader');
@@ -557,7 +559,7 @@ function initVisualizer() {
 
     // --- Renderer ---
     renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.toneMapping = THREE.ReinhardToneMapping;
     renderer.toneMappingExposure = 1.0;
@@ -575,10 +577,11 @@ function initVisualizer() {
     // Bloom pass
     bloomPass = new THREE.UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),
-        fx.bloom ? 1.5 : 0.0,
+        1.5,
         0.4,
         0.85
     );
+    bloomPass.enabled = fx.bloom;
     composer.addPass(bloomPass);
 
     // Vignette + Chromatic Aberration pass
@@ -621,10 +624,14 @@ function render() {
 
     mesh.material.uniforms.uDynamicColor.value = dynVal;
     mesh.material.uniforms.uHueShift.value = hueVal;
-    wireframeMesh.material.uniforms.uDynamicColor.value = dynVal;
-    wireframeMesh.material.uniforms.uHueShift.value = hueVal;
-    reflectionMesh.material.uniforms.uDynamicColor.value = dynVal;
-    reflectionMesh.material.uniforms.uHueShift.value = hueVal;
+    if (fx.wireframe) {
+        wireframeMesh.material.uniforms.uDynamicColor.value = dynVal;
+        wireframeMesh.material.uniforms.uHueShift.value = hueVal;
+    }
+    if (fx.reflection) {
+        reflectionMesh.material.uniforms.uDynamicColor.value = dynVal;
+        reflectionMesh.material.uniforms.uHueShift.value = hueVal;
+    }
 
     composer.render();
 }
@@ -634,32 +641,26 @@ function updateGeometry() {
 
     ANALYSER.getByteFrequencyData(DATA);
 
-    // Displacement smoothing
-    let smoothedData;
+    let src;
     if (fx.smoothing) {
-        smoothedData = new Uint8Array(DATA.length);
         let smoothFactor = 0.35;
         for (let i = 0; i < DATA.length; i++) {
             prevData[i] = prevData[i] + (DATA[i] - prevData[i]) * smoothFactor;
             smoothedData[i] = Math.round(prevData[i]);
         }
+        src = smoothedData;
     } else {
-        smoothedData = DATA;
-        for (let i = 0; i < DATA.length; i++) {
-            prevData[i] = DATA[i];
-        }
+        src = DATA;
     }
 
+    let buf = dispAttr.array;
     let start_val = frequency_samples + 1;
     let end_val = n_vertices - start_val;
 
-    heights.copyWithin(0, start_val, n_vertices + 1);
-    heights.set(smoothedData, end_val - start_val);
+    buf.copyWithin(0, start_val, n_vertices + 1);
+    buf.set(src, end_val - start_val);
 
-    let dispAttr = new THREE.Uint8BufferAttribute(heights, 1);
-    mesh.geometry.setAttribute('displacement', dispAttr);
-    wireframeMesh.geometry.setAttribute('displacement', dispAttr);
-    reflectionMesh.geometry.setAttribute('displacement', dispAttr);
+    dispAttr.needsUpdate = true;
 }
 
 // ============ EVENT LISTENERS ============
