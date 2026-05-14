@@ -395,7 +395,6 @@ body {
 
     // Bars with log frequency mapping
     const numBars = 85;
-    ctx.fillStyle = '#fff';
     for (let i = 0; i < numBars; i++) {
       const fLow = nyquist * Math.pow(i / numBars, 2);
       const fHigh = nyquist * Math.pow((i + 1) / numBars, 2);
@@ -407,7 +406,15 @@ body {
       const barH = val * h;
       const x = (i / numBars) * w;
       const bw = w / numBars;
-      ctx.fillRect(x, h - barH, bw - (bw > 2 ? 1 : 0), barH);
+      if (barH > 0) {
+        const grad = ctx.createLinearGradient(0, h, 0, h - barH);
+        grad.addColorStop(0, '#222');
+        grad.addColorStop(0.4, '#666');
+        grad.addColorStop(0.7, '#aaa');
+        grad.addColorStop(1, '#fff');
+        ctx.fillStyle = grad;
+        ctx.fillRect(x, h - barH, bw - (bw > 2 ? 1 : 0), barH);
+      }
     }
   }
 
