@@ -237,6 +237,11 @@ body {
       <input class="config-slider" id="cfg-bars" type="range" min="20" max="256" value="200">
       <span class="config-unit" id="cfg-bars-val">200</span>
     </div>
+    <div class="config-row">
+      <span class="config-label">LABEL SIZE</span>
+      <input class="config-slider" id="cfg-label-size" type="range" min="6" max="18" value="9">
+      <span class="config-unit" id="cfg-label-size-val">9px</span>
+    </div>
   </div>
 
   <div class="main-panels">
@@ -266,7 +271,7 @@ body {
       <canvas id="spectrogram-canvas"></canvas>
     </div>
     <div class="panel meters-area" id="meters-panel">
-      <span class="panel-label">L &nbsp; R</span>
+      <span class="panel-label" style="left:0;right:0;text-align:center">L &nbsp; R</span>
       <canvas id="meters-canvas"></canvas>
     </div>
     <div class="panel waveform-area" id="waveform-panel">
@@ -300,6 +305,7 @@ body {
     snare: { lo: 2500, hi: 4500, gain: 1.0 },
     hihat: { lo: 8000, hi: 15000, gain: 0.5 },
     numBars: 200,
+    labelSize: 9,
   };
 
   // Config toggle
@@ -333,6 +339,13 @@ body {
   $('cfg-bars').addEventListener('input', e => {
     config.numBars = Number(e.target.value);
     $('cfg-bars-val').textContent = config.numBars;
+  });
+  $('cfg-label-size').addEventListener('input', e => {
+    config.labelSize = Number(e.target.value);
+    $('cfg-label-size-val').textContent = config.labelSize + 'px';
+    document.querySelectorAll('.panel-label').forEach(el => {
+      el.style.fontSize = config.labelSize + 'px';
+    });
   });
 
   // Canvases
@@ -549,7 +562,7 @@ body {
       const x = freqToX(f, nyquist, binCount, w);
       ctx.beginPath(); ctx.moveTo(x, topPad); ctx.lineTo(x, baseline); ctx.stroke();
       ctx.fillStyle = '#666';
-      ctx.font = `${9 * dpr}px Inter, sans-serif`;
+      ctx.font = `${config.labelSize * dpr}px Inter, sans-serif`;
       ctx.fillText(f >= 1000 ? (f/1000) + 'k' : f + '', x + 2, topPad - 3 * dpr);
     }
     // dB grid lines
