@@ -77,7 +77,7 @@ function createRecorder(opts) {
       if (opts.onStop) opts.onStop();
     };
 
-    state.mediaRecorder.start(1000);
+    state.mediaRecorder.start(200);
     state.isRecording = true;
     if (opts.onStart) opts.onStart(state.codec);
   }

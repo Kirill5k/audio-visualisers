@@ -282,6 +282,11 @@
   </div>
 
   <div class="checkbox-row">
+    <input type="checkbox" id="autoExportToggle" />
+    <span>Export on Play</span>
+  </div>
+
+  <div class="checkbox-row">
     <input type="checkbox" id="lock60fpsToggle" />
     <span>Lock 60fps</span>
   </div>
@@ -703,10 +708,10 @@ function tickFrame(delta) {
   camera.lookAt(0, 0, 0);
 
   renderer.render(scene, camera);
-  // Stall until the GPU has finished this frame. This gives accurate wall-clock
-  // frame timing for the fps counter, and ensures captureStream always captures
-  // a fully-rendered frame during recording.
-  glCtx.finish();
+  // Stall until the GPU has finished this frame during recording/export
+  // to ensure captureStream always captures a fully-rendered frame.
+  // Skip during normal playback to avoid unnecessary GPU pipeline stalls.
+  if (recorder.isRecording || offlineExporting) glCtx.finish();
 
   const now = performance.now();
   fpsElapsed += now - lastTickTime;
@@ -827,15 +832,36 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
+  const autoExport = document.getElementById('autoExportToggle').checked;
   const autoRecord = document.getElementById('autoRecordToggle').checked;
+
+  let writable;
+  if (autoExport) {
+    if (offlineExporting) return;
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: 'spectrogram_export.mp4',
+        types: [{ description: 'MP4 Video', accept: { 'video/mp4': ['.mp4'] } }]
+      });
+      writable = await handle.createWritable();
+    } catch (err) { return; }
+  }
+
   let prepared;
-  if (autoRecord) {
+  if (autoRecord && !autoExport) {
     prepared = await recorder.prepareAutoRecord();
     if (!prepared) return;
   }
 
   await audioContext.resume();
   audioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
+
+  if (autoExport) {
+    document.getElementById('exportBtn').writable = writable;
+    document.getElementById('exportBtn').click();
+    return;
+  }
+
   audioSource = audioContext.createBufferSource();
   audioSource.buffer = audioBuffer;
   audioSource.connect(analyser);
@@ -860,7 +886,8 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   if (!audioBuffer) { alert('Load an audio file first.'); return; }
   if (offlineExporting) return;
 
-  const writable = await (async () => {
+  const btn = document.getElementById('exportBtn');
+  const writable = btn.writable || await (async () => {
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName: 'spectrogram_export.mp4',
@@ -869,6 +896,7 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
       return await handle.createWritable();
     } catch (e) { return null; }
   })();
+  btn.writable = null;
   if (!writable) return;
 
   const overlay = document.getElementById('exportOverlay');

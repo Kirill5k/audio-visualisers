@@ -216,11 +216,14 @@ async function offlineExport(opts) {
       audioData.close();
     }
 
-    if (onProgress) onProgress(frame / totalFrames);
+    if (onProgress && frame % 4 === 0) onProgress(frame / totalFrames);
 
-    // Yield to browser every 4 frames to keep UI responsive
-    if (frame % 4 === 0) {
-      await videoEncoder.flush();
+    // Backpressure: wait for encoder to catch up if queue grows too large
+    if (videoEncoder.encodeQueueSize > 10) {
+      await new Promise(r => { videoEncoder.ondequeue = () => { videoEncoder.ondequeue = null; r(); }; });
+    }
+    // Yield to browser periodically to keep UI responsive
+    if (frame % 8 === 0) {
       await new Promise(r => setTimeout(r, 0));
     }
   }
