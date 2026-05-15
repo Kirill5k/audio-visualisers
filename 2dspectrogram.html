@@ -269,6 +269,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="recorder.js"></script>
 <script>
 "use strict";
 
@@ -288,9 +289,6 @@ let ACTX, ANALYSER, SOURCE, audioElement, mediaStreamDest;
 let frequency_samples = 1024;
 let DATA;
 let isPlaying = false;
-let isRecording = false;
-let mediaRecorder = null;
-let recordedChunks = [];
 
 // Three.js state
 let camera, scene, renderer, mesh, wireframeMesh, reflectionMesh, heights;
@@ -308,6 +306,32 @@ const effectsBtn = document.getElementById('effectsBtn');
 const effectsPanel = document.getElementById('effectsPanel');
 const statusEl = document.getElementById('status');
 const audioNameEl = document.getElementById('audioName');
+
+const recorder = createRecorder({
+    defaultFilename: 'dj_visualizer',
+    videoBitsPerSecond: 8_000_000,
+    onStatus: (msg) => { statusEl.textContent = msg; },
+    onStart: (codec) => {
+        recordBtn.textContent = '\u23F9 Stop Recording';
+        recordBtn.classList.add('recording');
+        statusEl.textContent = 'Recording... (' + codec.mime + ')';
+    },
+    onStop: () => {
+        recordBtn.textContent = '\u26AB Record Video';
+        recordBtn.classList.remove('recording');
+    },
+});
+
+function makeRecordingStream() {
+    if (!renderer) return null;
+    const canvasStream = renderer.domElement.captureStream(30);
+    const videoTrack = canvasStream.getVideoTracks()[0];
+    const audioTrack = mediaStreamDest.stream.getAudioTracks()[0];
+    const combinedStream = new MediaStream();
+    if (videoTrack) combinedStream.addTrack(videoTrack);
+    if (audioTrack) combinedStream.addTrack(audioTrack);
+    return combinedStream;
+}
 
 // Toggle panel visibility
 effectsBtn.addEventListener('click', () => {
@@ -351,7 +375,7 @@ function initAudio() {
     mediaStreamDest = ACTX.createMediaStreamDestination();
 }
 
-async function loadAudioFile(file, writable) {
+async function loadAudioFile(file, prepared) {
     initAudio();
     const url = URL.createObjectURL(file);
     if (SOURCE) { SOURCE.disconnect(); SOURCE = null; }
@@ -363,7 +387,7 @@ async function loadAudioFile(file, writable) {
     audioElement.addEventListener('ended', () => {
         isPlaying = false;
         statusEl.textContent = 'Playback ended';
-        if (isRecording) stopRecording();
+        if (recorder.isRecording) recorder.stop();
     });
 
     SOURCE = ACTX.createMediaElementSource(audioElement);
@@ -383,104 +407,9 @@ async function loadAudioFile(file, writable) {
     statusEl.textContent = 'Playing...';
 
     // Auto-record if enabled (writable already obtained from user gesture)
-    if (writable !== undefined && !isRecording) {
-        const mimeType = getRecordingMime();
-        if (mimeType) beginRecording(mimeType, writable);
+    if (prepared && !recorder.isRecording) {
+        recorder.startAutoRecord(prepared, makeRecordingStream);
     }
-}
-
-// ============ RECORDING ============
-let fileWritable = null;
-
-async function pickSaveFile(ext) {
-    if (!window.showSaveFilePicker) return null;
-    try {
-        const handle = await window.showSaveFilePicker({
-            suggestedName: `dj_visualizer.${ext}`,
-            types: [{ description: 'Video', accept: { ['video/' + ext]: ['.' + ext] } }]
-        });
-        return await handle.createWritable();
-    } catch (e) {
-        if (e.name !== 'AbortError') statusEl.textContent = 'Error: ' + e.message;
-        return null;
-    }
-}
-
-function getRecordingMime() {
-    const types = [
-        'video/webm;codecs=h264,opus','video/webm;codecs=h264',
-        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-        'video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'
-    ];
-    for (const type of types) { if (MediaRecorder.isTypeSupported(type)) return type; }
-    return '';
-}
-
-function getRecordingExt(mimeType) {
-    return mimeType.includes('mp4') ? 'mp4' : 'webm';
-}
-
-async function toggleRecord() {
-    if (isRecording) { stopRecording(); return; }
-    const mimeType = getRecordingMime();
-    if (!mimeType) { statusEl.textContent = 'Error: No supported codec.'; return; }
-    const writable = await pickSaveFile(getRecordingExt(mimeType));
-    if (!writable && window.showSaveFilePicker) return;
-    beginRecording(mimeType, writable);
-}
-
-function beginRecording(mimeType, writable) {
-    if (!renderer) return;
-    fileWritable = writable;
-
-    const canvasStream = renderer.domElement.captureStream(30);
-    const videoTrack = canvasStream.getVideoTracks()[0];
-    const audioTrack = mediaStreamDest.stream.getAudioTracks()[0];
-    const combinedStream = new MediaStream();
-    if (videoTrack) combinedStream.addTrack(videoTrack);
-    if (audioTrack) combinedStream.addTrack(audioTrack);
-
-    recordedChunks = [];
-    try {
-        mediaRecorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 8000000 });
-    } catch (e) { statusEl.textContent = 'Error: ' + e.message; return; }
-
-    mediaRecorder.ondataavailable = async (e) => {
-        if (e.data.size > 0) {
-            if (fileWritable) {
-                await fileWritable.write(e.data);
-            } else {
-                recordedChunks.push(e.data);
-            }
-        }
-    };
-    mediaRecorder.onstop = async () => {
-        if (fileWritable) {
-            await fileWritable.close();
-            fileWritable = null;
-            statusEl.textContent = 'Recording saved to disk!';
-        } else {
-            const blob = new Blob(recordedChunks, { type: mimeType });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = 'dj_visualizer.' + getRecordingExt(mimeType);
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            statusEl.textContent = 'Recording saved!';
-        }
-    };
-
-    mediaRecorder.start(1000);
-    isRecording = true;
-    recordBtn.textContent = '\u23F9 Stop Recording';
-    recordBtn.classList.add('recording');
-    statusEl.textContent = 'Recording... (' + mimeType + ')';
-}
-
-function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-    isRecording = false;
-    recordBtn.textContent = '\u26AB Record Video';
-    recordBtn.classList.remove('recording');
 }
 
 // ============ THREE.JS VISUALIZER ============
@@ -712,15 +641,14 @@ function updateGeometry() {
 fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    let writable;
+    let prepared;
     if (fx.autoRecord) {
-        const mimeType = getRecordingMime();
-        writable = await pickSaveFile(getRecordingExt(mimeType));
-        if (!writable && window.showSaveFilePicker) return;
+        prepared = await recorder.prepareAutoRecord();
+        if (!prepared) return;
     }
-    loadAudioFile(file, writable);
+    loadAudioFile(file, prepared);
 });
-recordBtn.addEventListener('click', toggleRecord);
+recordBtn.addEventListener('click', () => recorder.toggle(makeRecordingStream));
 
 </script>
 </body>

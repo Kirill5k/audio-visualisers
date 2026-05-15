@@ -280,6 +280,8 @@
 }
 </script>
 
+<script src="recorder.js"></script>
+
 <script type="module">
 
 import * as THREE from 'three';
@@ -562,52 +564,36 @@ function pushNewRow() {
 // Recording
 // =====================================================
 
-let mediaRecorder = null;
-let recordedChunks = [];
-let isRecording = false;
 let videoTrack = null;
 let lastCaptureMs = 0;
 let preRecordWidth = 0;
 let preRecordHeight = 0;
 let preRecordPixelRatio = 1;
-let fileWritable = null;
 
-async function pickSaveFile(ext) {
-    if (!window.showSaveFilePicker) return null;
-    try {
-        const handle = await window.showSaveFilePicker({
-            suggestedName: `spectrogram_1080p.${ext}`,
-            types: [{ description: 'Video', accept: { ['video/' + ext]: ['.' + ext] } }]
-        });
-        return await handle.createWritable();
-    } catch (e) {
-        return null;
-    }
-}
+const recorder = createRecorder({
+  defaultFilename: 'spectrogram_1080p',
+  onStart: (codec) => {
+    const btn = document.getElementById('recordBtn');
+    btn.textContent = '⏹ Stop';
+    btn.classList.add('recording');
+  },
+  onStop: () => {
+    const btn = document.getElementById('recordBtn');
+    btn.textContent = '⏺ Record';
+    btn.classList.remove('recording');
 
-function getCodec() {
-  const codecCandidates = [
-    { mime: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', ext: 'mp4', bps: 20_000_000 },
-    { mime: 'video/webm;codecs=h264,opus',             ext: 'webm', bps: 20_000_000 },
-    { mime: 'video/webm;codecs=vp9,opus',              ext: 'webm', bps: 60_000_000 },
-    { mime: 'video/webm;codecs=vp8,opus',              ext: 'webm', bps: 40_000_000 },
-    { mime: 'video/webm',                              ext: 'webm', bps: 40_000_000 },
-  ];
-  return codecCandidates.find(c => MediaRecorder.isTypeSupported(c.mime))
-    ?? codecCandidates.at(-1);
-}
+    try { analyser.disconnect(audioDestNode); } catch(e) {}
+    audioDestNode = null;
+    videoTrack = null;
 
-async function handleRecordClick() {
-  if (isRecording) { stopRecording(); return; }
-  const codec = getCodec();
-  const writable = await pickSaveFile(codec.ext);
-  if (!writable && window.showSaveFilePicker) return;
-  beginRecording(codec, writable);
-}
+    renderer.setPixelRatio(preRecordPixelRatio);
+    renderer.setSize(preRecordWidth, preRecordHeight);
+    camera.aspect = preRecordWidth / preRecordHeight;
+    camera.updateProjectionMatrix();
+  },
+});
 
-function beginRecording(codec, writable) {
-  fileWritable = writable;
-
+function makeRecordingStream() {
   preRecordWidth = window.innerWidth;
   preRecordHeight = window.innerHeight;
   preRecordPixelRatio = renderer.getPixelRatio();
@@ -629,62 +615,7 @@ function beginRecording(codec, writable) {
   const audioTrack = audioStreamDest.stream.getAudioTracks()[0];
   if (audioTrack) videoStream.addTrack(audioTrack);
 
-  recordedChunks = [];
-
-  mediaRecorder = new MediaRecorder(videoStream, {
-    mimeType: codec.mime,
-    videoBitsPerSecond: codec.bps
-  });
-
-  mediaRecorder.ondataavailable = async (e) => {
-    if (e.data.size > 0) {
-      if (fileWritable) {
-        await fileWritable.write(e.data);
-      } else {
-        recordedChunks.push(e.data);
-      }
-    }
-  };
-
-  mediaRecorder.onstop = async () => {
-    if (fileWritable) {
-      await fileWritable.close();
-      fileWritable = null;
-    } else {
-      const blob = new Blob(recordedChunks, { type: codec.mime });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `spectrogram_1080p.${codec.ext}`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-
-    try { analyser.disconnect(audioDestNode); } catch(e) {}
-    audioDestNode = null;
-    videoTrack = null;
-
-    renderer.setPixelRatio(preRecordPixelRatio);
-    renderer.setSize(preRecordWidth, preRecordHeight);
-    camera.aspect = preRecordWidth / preRecordHeight;
-    camera.updateProjectionMatrix();
-  };
-
-  mediaRecorder.start(1000);
-  isRecording = true;
-  const btn = document.getElementById('recordBtn');
-  btn.textContent = '⏹ Stop';
-  btn.classList.add('recording');
-}
-
-function stopRecording() {
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop();
-  }
-  isRecording = false;
-  const btn = document.getElementById('recordBtn');
-  btn.textContent = '⏺ Record';
-  btn.classList.remove('recording');
+  return videoStream;
 }
 
 // =====================================================
@@ -692,7 +623,7 @@ function stopRecording() {
 // =====================================================
 
 document.getElementById('recordBtn').addEventListener('click', () => {
-  handleRecordClick();
+  recorder.toggle(makeRecordingStream);
 });
 
 const clock = new THREE.Clock();
@@ -750,9 +681,9 @@ function tickFrame(delta) {
 function animate() {
   requestAnimationFrame(animate);
   const now = performance.now();
-  if (isRecording && lockRecordingFps && now - lastCaptureMs < 16.5) return;
+  if (recorder.isRecording && lockRecordingFps && now - lastCaptureMs < 16.5) return;
   tickFrame(clock.getDelta());
-  if (isRecording && videoTrack) {
+  if (recorder.isRecording && videoTrack) {
     videoTrack.requestFrame();
     lastCaptureMs = now;
   }
@@ -847,11 +778,10 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
   if (!file) return;
 
   const autoRecord = document.getElementById('autoRecordToggle').checked;
-  let writable;
+  let prepared;
   if (autoRecord) {
-    const codec = getCodec();
-    writable = await pickSaveFile(codec.ext);
-    if (!writable && window.showSaveFilePicker) return;
+    prepared = await recorder.prepareAutoRecord();
+    if (!prepared) return;
   }
 
   await audioContext.resume();
@@ -863,9 +793,8 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
   source.start();
   audioStarted = true;
 
-  if (autoRecord && !isRecording) {
-    const codec = getCodec();
-    beginRecording(codec, writable);
+  if (prepared && !recorder.isRecording) {
+    recorder.startAutoRecord(prepared, makeRecordingStream);
   }
 });
 
