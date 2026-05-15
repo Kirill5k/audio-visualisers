@@ -135,7 +135,7 @@ async function offlineExport(opts) {
   });
 
   videoEncoder.configure({
-    codec: 'avc1.42003d',
+    codec: 'avc1.64002A',
     width,
     height,
     bitrate: 20_000_000,
@@ -221,7 +221,6 @@ async function offlineExport(opts) {
     // Yield to browser every 4 frames to keep UI responsive
     if (frame % 4 === 0) {
       await videoEncoder.flush();
-      await audioEncoder.flush();
       await new Promise(r => setTimeout(r, 0));
     }
   }
