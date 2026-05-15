@@ -130,6 +130,35 @@
         .toggle-switch.active::after {
             transform: translateX(18px);
         }
+        .settings-section {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: rgba(130, 130, 180, 0.7);
+            margin: 14px 0 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid rgba(80, 80, 130, 0.3);
+        }
+        .settings-section:first-child { margin-top: 0; }
+        .slider-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 13px;
+            color: rgba(200, 200, 220, 0.85);
+        }
+        .slider-row input[type="range"] {
+            width: 90px;
+            margin: 0 8px;
+            accent-color: rgba(80, 140, 255, 0.7);
+        }
+        .slider-row .slider-val {
+            min-width: 28px;
+            text-align: right;
+            font-size: 12px;
+            color: rgba(160, 160, 200, 0.8);
+        }
     </style>
 </head>
 <body>
@@ -228,6 +257,8 @@
 
 <div id="effectsPanel">
     <h3>&#9881; Settings</h3>
+
+    <div class="settings-section">Recording</div>
     <div class="toggle-row">
         <span>Auto-Record on Import</span>
         <div class="toggle-switch" id="toggleAutoRecord"></div>
@@ -236,6 +267,19 @@
         <span>Lock 60fps Recording</span>
         <div class="toggle-switch" id="toggleLock60fps"></div>
     </div>
+
+    <div class="settings-section">Visualiser</div>
+    <div class="slider-row">
+        <span>Scroll Speed</span>
+        <input type="range" id="scrollSpeedSlider" min="0.1" max="3.0" step="0.1" value="1.0">
+        <span class="slider-val" id="scrollSpeedLabel">1.0</span>
+    </div>
+    <div class="toggle-row">
+        <span>Displacement Smoothing</span>
+        <div class="toggle-switch" id="toggleSmoothing"></div>
+    </div>
+
+    <div class="settings-section">Effects</div>
     <div class="toggle-row">
         <span>Bloom / Glow</span>
         <div class="toggle-switch" id="toggleBloom"></div>
@@ -247,10 +291,6 @@
     <div class="toggle-row">
         <span>Wireframe Overlay</span>
         <div class="toggle-switch" id="toggleWireframe"></div>
-    </div>
-    <div class="toggle-row">
-        <span>Displacement Smoothing</span>
-        <div class="toggle-switch" id="toggleSmoothing"></div>
     </div>
     <div class="toggle-row">
         <span>Reflective Ground</span>
@@ -294,6 +334,8 @@ let ACTX, ANALYSER, SOURCE, audioElement, mediaStreamDest;
 let frequency_samples = 1024;
 let DATA;
 let isPlaying = false;
+let scrollSpeed = 1.0;
+let scrollAccumulator = 0;
 
 // Three.js state
 let camera, scene, renderer, mesh, wireframeMesh, reflectionMesh, heights;
@@ -360,6 +402,11 @@ setupToggle('toggleWireframe', 'wireframe');
 setupToggle('toggleSmoothing', 'smoothing');
 setupToggle('toggleReflection', 'reflection');
 setupToggle('toggleVignette', 'vignette');
+
+document.getElementById('scrollSpeedSlider').addEventListener('input', (e) => {
+    scrollSpeed = parseFloat(e.target.value);
+    document.getElementById('scrollSpeedLabel').textContent = scrollSpeed.toFixed(1);
+});
 
 function applyEffectChanges() {
     if (wireframeMesh) wireframeMesh.visible = fx.wireframe;
@@ -628,6 +675,11 @@ function updateGeometry() {
 
     ANALYSER.getByteFrequencyData(DATA);
 
+    scrollAccumulator += scrollSpeed;
+    if (scrollAccumulator < 1) return;
+    let steps = Math.floor(scrollAccumulator);
+    scrollAccumulator -= steps;
+
     let src;
     if (fx.smoothing) {
         let smoothFactor = 0.35;
@@ -644,7 +696,9 @@ function updateGeometry() {
     let start_val = frequency_samples + 1;
     let end_val = n_vertices - start_val;
 
-    buf.copyWithin(0, start_val, n_vertices + 1);
+    for (let s = 0; s < steps; s++) {
+        buf.copyWithin(0, start_val, n_vertices + 1);
+    }
     buf.set(src, end_val - start_val);
 
     dispAttr.needsUpdate = true;
