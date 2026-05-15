@@ -351,7 +351,7 @@ function initAudio() {
     mediaStreamDest = ACTX.createMediaStreamDestination();
 }
 
-function loadAudioFile(file) {
+async function loadAudioFile(file, writable) {
     initAudio();
     const url = URL.createObjectURL(file);
     if (SOURCE) { SOURCE.disconnect(); SOURCE = null; }
@@ -382,17 +382,57 @@ function loadAudioFile(file) {
     isPlaying = true;
     statusEl.textContent = 'Playing...';
 
-    // Auto-record if enabled
-    if (fx.autoRecord && !isRecording) {
-        startRecording();
+    // Auto-record if enabled (writable already obtained from user gesture)
+    if (writable !== undefined && !isRecording) {
+        const mimeType = getRecordingMime();
+        if (mimeType) beginRecording(mimeType, writable);
     }
 }
 
 // ============ RECORDING ============
-function toggleRecord() { isRecording ? stopRecording() : startRecording(); }
+let fileWritable = null;
 
-function startRecording() {
+async function pickSaveFile(ext) {
+    if (!window.showSaveFilePicker) return null;
+    try {
+        const handle = await window.showSaveFilePicker({
+            suggestedName: `dj_visualizer.${ext}`,
+            types: [{ description: 'Video', accept: { ['video/' + ext]: ['.' + ext] } }]
+        });
+        return await handle.createWritable();
+    } catch (e) {
+        if (e.name !== 'AbortError') statusEl.textContent = 'Error: ' + e.message;
+        return null;
+    }
+}
+
+function getRecordingMime() {
+    const types = [
+        'video/webm;codecs=h264,opus','video/webm;codecs=h264',
+        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+        'video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'
+    ];
+    for (const type of types) { if (MediaRecorder.isTypeSupported(type)) return type; }
+    return '';
+}
+
+function getRecordingExt(mimeType) {
+    return mimeType.includes('mp4') ? 'mp4' : 'webm';
+}
+
+async function toggleRecord() {
+    if (isRecording) { stopRecording(); return; }
+    const mimeType = getRecordingMime();
+    if (!mimeType) { statusEl.textContent = 'Error: No supported codec.'; return; }
+    const writable = await pickSaveFile(getRecordingExt(mimeType));
+    if (!writable && window.showSaveFilePicker) return;
+    beginRecording(mimeType, writable);
+}
+
+function beginRecording(mimeType, writable) {
     if (!renderer) return;
+    fileWritable = writable;
+
     const canvasStream = renderer.domElement.captureStream(30);
     const videoTrack = canvasStream.getVideoTracks()[0];
     const audioTrack = mediaStreamDest.stream.getAudioTracks()[0];
@@ -400,31 +440,36 @@ function startRecording() {
     if (videoTrack) combinedStream.addTrack(videoTrack);
     if (audioTrack) combinedStream.addTrack(audioTrack);
 
-    let mimeType = '';
-    const types = [
-        'video/webm;codecs=h264,opus','video/webm;codecs=h264',
-        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-        'video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'
-    ];
-    for (const type of types) { if (MediaRecorder.isTypeSupported(type)) { mimeType = type; break; } }
-    if (!mimeType) { statusEl.textContent = 'Error: No supported codec.'; return; }
-
     recordedChunks = [];
     try {
         mediaRecorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 8000000 });
     } catch (e) { statusEl.textContent = 'Error: ' + e.message; return; }
 
-    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
-    mediaRecorder.onstop = () => {
-        const blob = new Blob(recordedChunks, { type: mimeType });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'dj_visualizer.' + (mimeType.includes('mp4') ? 'mp4' : 'webm');
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        statusEl.textContent = 'Recording saved!';
+    mediaRecorder.ondataavailable = async (e) => {
+        if (e.data.size > 0) {
+            if (fileWritable) {
+                await fileWritable.write(e.data);
+            } else {
+                recordedChunks.push(e.data);
+            }
+        }
+    };
+    mediaRecorder.onstop = async () => {
+        if (fileWritable) {
+            await fileWritable.close();
+            fileWritable = null;
+            statusEl.textContent = 'Recording saved to disk!';
+        } else {
+            const blob = new Blob(recordedChunks, { type: mimeType });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'dj_visualizer.' + getRecordingExt(mimeType);
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            statusEl.textContent = 'Recording saved!';
+        }
     };
 
-    mediaRecorder.start(100);
+    mediaRecorder.start(1000);
     isRecording = true;
     recordBtn.textContent = '\u23F9 Stop Recording';
     recordBtn.classList.add('recording');
@@ -664,9 +709,16 @@ function updateGeometry() {
 }
 
 // ============ EVENT LISTENERS ============
-fileInput.addEventListener('change', (e) => {
+fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
-    if (file) loadAudioFile(file);
+    if (!file) return;
+    let writable;
+    if (fx.autoRecord) {
+        const mimeType = getRecordingMime();
+        writable = await pickSaveFile(getRecordingExt(mimeType));
+        if (!writable && window.showSaveFilePicker) return;
+    }
+    loadAudioFile(file, writable);
 });
 recordBtn.addEventListener('click', toggleRecord);
 
