@@ -189,8 +189,13 @@
     <span>Rotate</span>
   </div>
 
+  <div class="checkbox-row">
+    <input type="checkbox" id="driftToggle" />
+    <span>Drift</span>
+  </div>
+
   <label>
-    Rotation Speed: <span id="rotSpeedLabel">0.02</span>
+    Camera Speed: <span id="rotSpeedLabel">0.02</span>
   </label>
   <input
     type="range"
@@ -343,6 +348,8 @@ const LOW_BIN_SKIP = 10;
 let scrollSpeed = 0.8;
 let rotationEnabled = true;
 let rotationSpeed = 0.02;
+let driftEnabled = false;
+let driftAngle = 0;
 let audioStarted = false;
 let audioBuffer = null;
 let lockRecordingFps = false;
@@ -657,8 +664,22 @@ function tickFrame(delta) {
   if (rotationEnabled && audioStarted) {
     mesh.rotation.y += delta * rotationSpeed;
   }
+  if (driftEnabled && audioStarted) {
+    driftAngle += delta * rotationSpeed * 0.5;
+    const baseCam = lowAngle ? CAM_LOW : CAM_HIGH;
+    const radius = Math.sqrt(baseCam.x * baseCam.x + baseCam.z * baseCam.z);
+    const baseAngle = Math.atan2(baseCam.x, baseCam.z);
+    const orbitAngle = baseAngle + Math.sin(driftAngle) * (Math.PI / 2);
+    targetCamPos.x = Math.sin(orbitAngle) * radius;
+    targetCamPos.z = Math.cos(orbitAngle) * radius;
+    targetCamPos.y = baseCam.y;
+  } else if (!driftEnabled) {
+    const baseCam = lowAngle ? CAM_LOW : CAM_HIGH;
+    targetCamPos.x = baseCam.x;
+    targetCamPos.z = baseCam.z;
+  }
 
-  camera.position.lerp(targetCamPos, 0.001);
+  camera.position.lerp(targetCamPos, 0.05);
   camera.lookAt(0, 0, 0);
 
   renderer.render(scene, camera);
@@ -716,7 +737,16 @@ document.getElementById('speedSlider').addEventListener('input', (e) => {
   document.getElementById('speedLabel').textContent = scrollSpeed.toFixed(1);
 });
 
-document.getElementById('rotateToggle').addEventListener('change', (e) => rotationEnabled = e.target.checked);
+const rotateToggle = document.getElementById('rotateToggle');
+const driftToggle = document.getElementById('driftToggle');
+rotateToggle.addEventListener('change', (e) => {
+  rotationEnabled = e.target.checked;
+  if (rotationEnabled) { driftEnabled = false; driftToggle.checked = false; }
+});
+driftToggle.addEventListener('change', (e) => {
+  driftEnabled = e.target.checked;
+  if (driftEnabled) { rotationEnabled = false; rotateToggle.checked = false; }
+});
 
 document.getElementById('rotSpeedSlider').addEventListener('input', (e) => {
   rotationSpeed = parseFloat(e.target.value);

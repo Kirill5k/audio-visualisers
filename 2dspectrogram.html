@@ -366,18 +366,25 @@ const recorder = createRecorder({
     onStop: () => {
         recordBtn.textContent = '\u26AB Record Video';
         recordBtn.classList.remove('recording');
+        recordingVideoTrack = null;
+        renderer.setPixelRatio(preRecordPixelRatio);
     },
 });
 
+let recordingVideoTrack = null;
+let preRecordPixelRatio = 1;
+
 function makeRecordingStream() {
     if (!renderer) return null;
-    const canvasStream = renderer.domElement.captureStream(30);
-    const videoTrack = canvasStream.getVideoTracks()[0];
+
+    preRecordPixelRatio = renderer.getPixelRatio();
+    renderer.setPixelRatio(1);
+
+    const canvasStream = renderer.domElement.captureStream(0);
+    recordingVideoTrack = canvasStream.getVideoTracks()[0];
     const audioTrack = mediaStreamDest.stream.getAudioTracks()[0];
-    const combinedStream = new MediaStream();
-    if (videoTrack) combinedStream.addTrack(videoTrack);
-    if (audioTrack) combinedStream.addTrack(audioTrack);
-    return combinedStream;
+    if (audioTrack) canvasStream.addTrack(audioTrack);
+    return canvasStream;
 }
 
 // Toggle panel visibility
@@ -585,7 +592,7 @@ function initVisualizer() {
     scene.add(reflectionMesh);
 
     // --- Renderer ---
-    renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.toneMapping = THREE.ReinhardToneMapping;
@@ -646,6 +653,7 @@ function animate() {
         lastRenderMs = now;
     }
     render();
+    if (recordingVideoTrack) recordingVideoTrack.requestFrame();
 }
 
 function render() {
