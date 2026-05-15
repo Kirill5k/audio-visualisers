@@ -163,7 +163,17 @@
 <div class="top-right-buttons">
   <div id="fpsCounter">-- fps</div>
   <button id="recordBtn" class="top-btn">⏺ Record</button>
+  <button id="exportBtn" class="top-btn">⬇ Export</button>
   <button id="fullscreenBtn" class="top-btn">⛶ Fullscreen</button>
+</div>
+
+<div id="exportOverlay" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.85); display:none; align-items:center; justify-content:center; flex-direction:column; color:#fff; font-family:Arial,sans-serif;">
+  <div style="font-size:18px; margin-bottom:16px;" id="exportStatus">Exporting...</div>
+  <div style="width:400px; height:8px; background:#333; border-radius:4px; overflow:hidden;">
+    <div id="exportProgressBar" style="width:0%; height:100%; background:#4af; transition:width 0.1s;"></div>
+  </div>
+  <div style="font-size:14px; margin-top:8px; color:#aaa;" id="exportPercent">0%</div>
+  <button id="exportCancelBtn" style="margin-top:20px; padding:8px 20px; cursor:pointer; background:#c33; border:none; color:#fff; border-radius:4px; font-size:14px;">Cancel</button>
 </div>
 
 <div id="ui">
@@ -286,6 +296,8 @@
 </script>
 
 <script src="recorder.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
+<script src="offline-exporter.js"></script>
 
 <script type="module">
 
@@ -353,6 +365,7 @@ let driftAngle = 0;
 let driftRadius = Math.sqrt(CAM_HIGH.z * CAM_HIGH.z + CAM_HIGH.x * CAM_HIGH.x);
 let audioStarted = false;
 let audioBuffer = null;
+let audioSource = null;
 let lockRecordingFps = false;
 
 let colorLow  = new THREE.Color(0x000020);
@@ -642,10 +655,11 @@ const glCtx = renderer.getContext();
 let fpsFrames = 0;
 let fpsElapsed = 0;
 let lastTickTime = performance.now();
+let offlineExporting = false;
 
 function tickFrame(delta) {
   spectrogramMaterial.uniforms.uTime.value += delta;
-  analyser.getByteFrequencyData(frequencyData);
+  if (!offlineExporting) analyser.getByteFrequencyData(frequencyData);
 
   if (hueShiftEnabled) {
     hueShiftOffset += delta * 0.03;
@@ -822,11 +836,11 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
 
   await audioContext.resume();
   audioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
-  const source = audioContext.createBufferSource();
-  source.buffer = audioBuffer;
-  source.connect(analyser);
+  audioSource = audioContext.createBufferSource();
+  audioSource.buffer = audioBuffer;
+  audioSource.connect(analyser);
   analyser.connect(audioContext.destination);
-  source.start();
+  audioSource.start();
   audioStarted = true;
 
   if (prepared && !recorder.isRecording) {
@@ -838,6 +852,113 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Offline Export
+let exportCancelled = false;
+document.getElementById('exportBtn').addEventListener('click', async () => {
+  if (!audioBuffer) { alert('Load an audio file first.'); return; }
+  if (offlineExporting) return;
+
+  const writable = await (async () => {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: 'spectrogram_export.mp4',
+        types: [{ description: 'MP4 Video', accept: { 'video/mp4': ['.mp4'] } }]
+      });
+      return await handle.createWritable();
+    } catch (e) { return null; }
+  })();
+  if (!writable) return;
+
+  const overlay = document.getElementById('exportOverlay');
+  const progressBar = document.getElementById('exportProgressBar');
+  const percentText = document.getElementById('exportPercent');
+  const statusText = document.getElementById('exportStatus');
+  overlay.style.display = 'flex';
+  exportCancelled = false;
+
+  // Save and set export resolution
+  const savedWidth = renderer.domElement.width;
+  const savedHeight = renderer.domElement.height;
+  const savedAspect = camera.aspect;
+  renderer.setSize(1920, 1080);
+  camera.aspect = 1920 / 1080;
+  camera.updateProjectionMatrix();
+
+  // Save scene state to restore after
+  const savedRotationY = mesh.rotation.y;
+  const savedCamPos = camera.position.clone();
+  const savedTargetCamPos = targetCamPos.clone();
+  const savedDriftAngle = driftAngle;
+  const savedDriftRadius = driftRadius;
+  const savedHistoryHead = historyHead;
+  const savedAccumulator = accumulator;
+  const savedUTime = spectrogramMaterial.uniforms.uTime.value;
+  const savedHueOffset = hueShiftOffset;
+  const savedLastHueUpdateOffset = lastHueUpdateOffset;
+
+  offlineExporting = true;
+  await audioContext.suspend();
+
+  try {
+    await offlineExport({
+      audioBuffer,
+      fps: 60,
+      width: 1920,
+      height: 1080,
+      fftSize: analyser.fftSize,
+      smoothingTimeConstant: analyser.smoothingTimeConstant,
+      minDecibels: analyser.minDecibels,
+      maxDecibels: analyser.maxDecibels,
+      writable,
+      isCancelled: () => exportCancelled,
+      renderFrame: (fftData, delta) => {
+        frequencyData.set(fftData);
+        tickFrame(delta);
+      },
+      readCanvas: () => renderer.domElement,
+      onProgress: (frac) => {
+        const pct = Math.round(frac * 100);
+        progressBar.style.width = pct + '%';
+        percentText.textContent = pct + '%';
+        statusText.textContent = 'Exporting... frame ' + Math.round(frac * Math.ceil(audioBuffer.duration * 60)) + '/' + Math.ceil(audioBuffer.duration * 60);
+      },
+      onDone: () => {
+        statusText.textContent = 'Export complete!';
+        setTimeout(() => { overlay.style.display = 'none'; }, 1500);
+      },
+    });
+  } catch (e) {
+    console.error('Export error:', e);
+    statusText.textContent = 'Export failed: ' + e.message;
+    setTimeout(() => { overlay.style.display = 'none'; }, 3000);
+  }
+
+  offlineExporting = false;
+  await audioContext.resume();
+
+  // Restore scene state
+  mesh.rotation.y = savedRotationY;
+  camera.position.copy(savedCamPos);
+  targetCamPos.copy(savedTargetCamPos);
+  driftAngle = savedDriftAngle;
+  driftRadius = savedDriftRadius;
+  historyHead = savedHistoryHead;
+  accumulator = savedAccumulator;
+  spectrogramMaterial.uniforms.uTime.value = savedUTime;
+  hueShiftOffset = savedHueOffset;
+  lastHueUpdateOffset = savedLastHueUpdateOffset;
+  spectrogramMaterial.uniforms.uHistoryHead.value = historyHead;
+
+  renderer.setSize(savedWidth, savedHeight);
+  camera.aspect = savedAspect;
+  camera.updateProjectionMatrix();
+});
+
+document.getElementById('exportCancelBtn').addEventListener('click', () => {
+  exportCancelled = true;
+  document.getElementById('exportStatus').textContent = 'Cancelling...';
 });
 
 </script>
