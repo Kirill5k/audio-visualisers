@@ -45,6 +45,8 @@ body {
   letter-spacing: 1px;
 }
 .upload-btn:hover { border-color: #fff; }
+.upload-btn.recording { border-color: #f44; color: #f44; animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
 .track-name { color: #888; font-size: 11px; }
 .header-right { color: #666; font-size: 10px; letter-spacing: 1px; }
 
@@ -195,6 +197,7 @@ body {
     <div class="header-left">
       <input type="file" id="file-input" accept="audio/*" style="display:none">
       <button class="upload-btn" id="upload-btn">LOAD AUDIO FILE</button>
+      <button class="upload-btn" id="record-btn" disabled>⏺ RECORD</button>
       <button class="upload-btn" id="config-btn">CONFIG</button>
       <span class="track-name" id="track-name">NO FILE LOADED</span>
     </div>
@@ -242,6 +245,14 @@ body {
       <input class="config-slider" id="cfg-label-size" type="range" min="6" max="18" value="9">
       <span class="config-unit" id="cfg-label-size-val">9px</span>
     </div>
+    <div class="config-row">
+      <input type="checkbox" id="cfg-auto-record" style="margin-right:8px">
+      <span class="config-label">RECORD ON PLAY</span>
+    </div>
+    <div class="config-row">
+      <input type="checkbox" id="cfg-lock-60fps" style="margin-right:8px">
+      <span class="config-label">LOCK 60FPS RECORDING</span>
+    </div>
   </div>
 
   <div class="main-panels">
@@ -283,7 +294,9 @@ body {
 </div>
 
 <audio id="audio-el" style="display:none"></audio>
+<canvas id="record-canvas" style="display:none"></canvas>
 
+<script src="recorder.js"></script>
 <script>
 (function() {
   const $ = id => document.getElementById(id);
@@ -292,6 +305,7 @@ body {
   // DOM refs
   const fileInput = $('file-input');
   const uploadBtn = $('upload-btn');
+  const recordBtn = $('record-btn');
   const trackNameEl = $('track-name');
   const headerInfo = $('header-info');
   const audioEl = $('audio-el');
@@ -371,6 +385,63 @@ body {
   sizeAll();
   window.addEventListener('resize', () => { sizeAll(); if (waveformData) drawWaveformStatic(0); });
 
+  // Recording — composite canvas
+  const recordCanvas = $('record-canvas');
+  const recordCtx = recordCanvas.getContext('2d');
+  let mediaStreamDest = null;
+
+  const recorder = createRecorder({
+    defaultFilename: 'waveforms',
+    videoBitsPerSecond: 8_000_000,
+    onStart: () => {
+      recordBtn.textContent = '⏹ STOP';
+      recordBtn.classList.add('recording');
+    },
+    onStop: () => {
+      recordBtn.textContent = '⏺ RECORD';
+      recordBtn.classList.remove('recording');
+    },
+  });
+
+  function compositeFrame() {
+    if (!recorder.isRecording) return;
+    const container = document.querySelector('.container');
+    const rect = container.getBoundingClientRect();
+    if (recordCanvas.width !== rect.width || recordCanvas.height !== rect.height) {
+      recordCanvas.width = rect.width;
+      recordCanvas.height = rect.height;
+    }
+    recordCtx.fillStyle = '#222';
+    recordCtx.fillRect(0, 0, recordCanvas.width, recordCanvas.height);
+    for (const c of allCanvases) {
+      const panel = c.closest('.panel');
+      if (panel) {
+        const pr = panel.getBoundingClientRect();
+        recordCtx.fillStyle = '#000';
+        recordCtx.fillRect(pr.left - rect.left, pr.top - rect.top, pr.width, pr.height);
+      }
+      const cr = c.getBoundingClientRect();
+      recordCtx.drawImage(c,
+        cr.left - rect.left, cr.top - rect.top,
+        cr.width, cr.height
+      );
+    }
+  }
+
+  function makeRecordingStream() {
+    if (!actx) return null;
+    if (!mediaStreamDest) {
+      mediaStreamDest = actx.createMediaStreamDestination();
+      source.connect(mediaStreamDest);
+    }
+    const canvasStream = recordCanvas.captureStream(30);
+    const audioTrack = mediaStreamDest.stream.getAudioTracks()[0];
+    if (audioTrack) canvasStream.addTrack(audioTrack);
+    return canvasStream;
+  }
+
+  recordBtn.addEventListener('click', () => recorder.toggle(makeRecordingStream));
+
   // Audio state
   let actx, source, mainAnalyser, analyserL, analyserR, analyserLow, analyserMid, analyserHigh;
   let splitterNode, filterNodes;
@@ -384,13 +455,18 @@ body {
 
   // Upload
   uploadBtn.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', e => {
+  fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    loadFile(file);
+    let prepared;
+    if ($('cfg-auto-record').checked) {
+      prepared = await recorder.prepareAutoRecord();
+      if (!prepared) return;
+    }
+    loadFile(file, prepared);
   });
 
-  function loadFile(file) {
+  function loadFile(file, prepared) {
     fileInfo.name = file.name;
     trackNameEl.textContent = file.name;
 
@@ -413,10 +489,15 @@ body {
       const blob = new Blob([arrayBuf], { type: file.type || 'audio/mpeg' });
       const url = URL.createObjectURL(blob);
       audioEl.src = url;
+      audioEl.onended = () => { if (recorder.isRecording) recorder.stop(); };
       audioEl.onloadeddata = () => {
         connectSource();
         audioEl.play();
+        recordBtn.disabled = false;
         if (!animating) { animating = true; animate(); }
+        if (prepared && !recorder.isRecording) {
+          recorder.startAutoRecord(prepared, makeRecordingStream);
+        }
       };
     };
     reader.readAsArrayBuffer(file);
@@ -844,8 +925,14 @@ body {
   });
 
   // Animation loop
+  let lastRenderMs = 0;
   function animate() {
     if (!mainAnalyser) { requestAnimationFrame(animate); return; }
+    if (recorder.isRecording && $('cfg-lock-60fps').checked) {
+      const now = performance.now();
+      if (now - lastRenderMs < 16.5) { requestAnimationFrame(animate); return; }
+      lastRenderMs = now;
+    }
     drawSpectrum();
     drawSpectrogram();
     drawMeters();
@@ -853,6 +940,7 @@ body {
     drawOscilloscope(oscMidC, analyserMid, timeMid);
     drawOscilloscope(oscHighC, analyserHigh, timeHigh);
     drawPlayhead();
+    compositeFrame();
     requestAnimationFrame(animate);
   }
 })();

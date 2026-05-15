@@ -233,6 +233,10 @@
         <div class="toggle-switch" id="toggleAutoRecord"></div>
     </div>
     <div class="toggle-row">
+        <span>Lock 60fps Recording</span>
+        <div class="toggle-switch" id="toggleLock60fps"></div>
+    </div>
+    <div class="toggle-row">
         <span>Bloom / Glow</span>
         <div class="toggle-switch" id="toggleBloom"></div>
     </div>
@@ -281,7 +285,8 @@ let fx = {
     smoothing: false,
     reflection: false,
     vignette: true,
-    autoRecord: false
+    autoRecord: false,
+    lock60fps: false
 };
 
 // ============ STATE ============
@@ -348,6 +353,7 @@ function setupToggle(id, key) {
     });
 }
 setupToggle('toggleAutoRecord', 'autoRecord');
+setupToggle('toggleLock60fps', 'lock60fps');
 setupToggle('toggleBloom', 'bloom');
 setupToggle('toggleColorShift', 'colorShift');
 setupToggle('toggleWireframe', 'wireframe');
@@ -583,8 +589,15 @@ function onWindowResize() {
     composer.setSize(window.innerWidth, window.innerHeight);
 }
 
+let lastRenderMs = 0;
+
 function animate() {
     animationId = requestAnimationFrame(animate);
+    if (recorder.isRecording && fx.lock60fps) {
+        const now = performance.now();
+        if (now - lastRenderMs < 16.5) return;
+        lastRenderMs = now;
+    }
     render();
 }
 
