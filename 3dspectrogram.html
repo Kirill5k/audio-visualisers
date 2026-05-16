@@ -467,6 +467,7 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
     uDataTexture: { value: dataTexture },
     uColorLUT: { value: colorLUTTexture },
     uHistoryHead: { value: 0.0 },
+    uSubRow: { value: 0.0 },
     uHistorySize: { value: HISTORY },
     uHeightScale: { value: 22.0 },
     uEmissiveGlow: { value: 1.0 },
@@ -481,6 +482,7 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
     uniform sampler2D uDataTexture;
     uniform sampler2D uColorLUT;
     uniform float uHistoryHead;
+    uniform float uSubRow;
     uniform float uHistorySize;
     uniform float uHeightScale;
     uniform float uEmissiveGlow;
@@ -500,7 +502,7 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
       float logX = uLowBinSkip + pow(gridUV.x, 2.2) * usableRange;
 
       float row = gridUV.y * (uHistorySize - 1.0);
-      float texRow = mod(uHistoryHead - 1.0 - row + uHistorySize, uHistorySize);
+      float texRow = mod(uHistoryHead - 1.0 - row + uSubRow + uHistorySize, uHistorySize);
       float texV = (texRow + 0.5) / uHistorySize;
       
       float amplitude = texture2D(uDataTexture, vec2(logX, texV)).r;
@@ -681,6 +683,7 @@ function tickFrame(delta) {
     accumulator -= 1;
     pushNewRow();
   }
+  spectrogramMaterial.uniforms.uSubRow.value = accumulator;
   if (rotationEnabled && audioStarted) {
     mesh.rotation.y += delta * rotationSpeed;
   }
@@ -701,17 +704,17 @@ function tickFrame(delta) {
     driftRadius = Math.sqrt(baseCam.z * baseCam.z + baseCam.x * baseCam.x);
   }
 
-  const lerpXZ = driftEnabled ? 0.05 : 0.001;
+  const baseLerpXZ = driftEnabled ? 0.05 : 0.001;
+  const baseLerpY = 0.001;
+  const lerpXZ = 1 - Math.pow(1 - baseLerpXZ, delta * 60);
+  const lerpY = 1 - Math.pow(1 - baseLerpY, delta * 60);
   camera.position.x += (targetCamPos.x - camera.position.x) * lerpXZ;
   camera.position.z += (targetCamPos.z - camera.position.z) * lerpXZ;
-  camera.position.y += (targetCamPos.y - camera.position.y) * 0.001;
+  camera.position.y += (targetCamPos.y - camera.position.y) * lerpY;
   camera.lookAt(0, 0, 0);
 
   renderer.render(scene, camera);
-  // Stall until the GPU has finished this frame during recording/export
-  // to ensure captureStream always captures a fully-rendered frame.
-  // Skip during normal playback to avoid unnecessary GPU pipeline stalls.
-  if (recorder.isRecording || offlineExporting) glCtx.finish();
+  if (recorder.isRecording) glCtx.finish();
 
   const now = performance.now();
   fpsElapsed += now - lastTickTime;
@@ -948,6 +951,7 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
         tickFrame(delta);
       },
       readCanvas: () => renderer.domElement,
+      gpuFinish: () => glCtx.finish(),
       onProgress: (frac) => {
         const pct = Math.round(frac * 100);
         progressBar.style.width = pct + '%';

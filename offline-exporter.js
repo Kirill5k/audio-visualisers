@@ -81,6 +81,7 @@ async function offlineExport(opts) {
     maxDecibels = -30,
     renderFrame,        // (frequencyData: Uint8Array, delta: number) => void — must render to canvas
     readCanvas,         // () => HTMLCanvasElement — return the canvas to read pixels from
+    gpuFinish,          // () => void — flush GPU pipeline before frame capture
     onProgress,         // (fraction: number) => void
     onDone,             // () => void
     writable,           // FileSystemWritableFileStream from showSaveFilePicker
@@ -229,10 +230,11 @@ async function offlineExport(opts) {
       audioData.close();
     }
 
-    // Capture the rendered frame (GPU should be done or nearly done by now)
+    // Flush GPU pipeline and capture the rendered frame
+    if (gpuFinish) gpuFinish();
     const vf = new VideoFrame(canvas, {
-      timestamp: frame * delta * 1_000_000,
-      duration: delta * 1_000_000,
+      timestamp: Math.round(frame * 1_000_000 / fps),
+      duration: Math.round(1_000_000 / fps),
     });
     const keyFrame = frame % (fps * 2) === 0;
     videoEncoder.encode(vf, { keyFrame });
