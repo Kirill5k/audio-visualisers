@@ -194,6 +194,11 @@
     value="0.8"
   />
 
+  <label>
+    History Rows: <span id="historyLabel">300</span>
+  </label>
+  <input type="range" id="historySlider" min="100" max="500" step="20" value="300" />
+
   <div class="checkbox-row">
     <input type="checkbox" id="rotateToggle" checked />
     <span>Rotate</span>
@@ -364,7 +369,7 @@ let audioDestNode = null;
 // =====================================================
 
 const FFT_BINS = analyser.frequencyBinCount; // 1024
-const HISTORY = 300;
+let HISTORY = 300;
 const LOW_BIN_SKIP = 10;
 
 let scrollSpeed = 0.8;
@@ -436,8 +441,8 @@ function updateShiftedColors() {
 updateShiftedColors();
 
 // #1: Data Texture (Direct RedFormat for zero CPU loops)
-const dataTextureArray = new Uint8Array(FFT_BINS * HISTORY);
-const dataTexture = new THREE.DataTexture(
+let dataTextureArray = new Uint8Array(FFT_BINS * HISTORY);
+let dataTexture = new THREE.DataTexture(
   dataTextureArray,
   FFT_BINS,
   HISTORY,
@@ -473,7 +478,6 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
     uDataTexture: { value: dataTexture },
     uColorLUT: { value: colorLUTTexture },
     uHistoryHead: { value: 0.0 },
-    uSubRow: { value: 0.0 },
     uHistorySize: { value: HISTORY },
     uHeightScale: { value: 22.0 },
     uEmissiveGlow: { value: 1.0 },
@@ -488,7 +492,6 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
     uniform sampler2D uDataTexture;
     uniform sampler2D uColorLUT;
     uniform float uHistoryHead;
-    uniform float uSubRow;
     uniform float uHistorySize;
     uniform float uHeightScale;
     uniform float uEmissiveGlow;
@@ -508,7 +511,7 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
       float logX = uLowBinSkip + pow(gridUV.x, 2.2) * usableRange;
 
       float row = gridUV.y * (uHistorySize - 1.0);
-      float texRow = mod(uHistoryHead - 1.0 - row + uSubRow + uHistorySize, uHistorySize);
+      float texRow = mod(uHistoryHead - 1.0 - row + uHistorySize, uHistorySize);
       float texV = (texRow + 0.5) / uHistorySize;
       
       float amplitude = texture2D(uDataTexture, vec2(logX, texV)).r;
@@ -558,18 +561,44 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
 // Geometry (Restored 1:1)
 // =====================================================
 
-const geometry = new THREE.PlaneGeometry(110, 160, FFT_BINS - 1, HISTORY - 1);
+let geometry = new THREE.PlaneGeometry(110, 160, FFT_BINS - 1, HISTORY - 1);
 geometry.rotateX(-Math.PI / 2);
 
-// #4: Static Bounding Box & Frustum Culling Optimization
-// Pre-computing a fixed box prevents Three.js from re-scanning vertices every frame.
-// We expand it by 50 to safely encompass the maximum possible peak heights (uHeightScale = 22).
 geometry.computeBoundingBox();
 geometry.boundingBox.expandByScalar(50);
 
-const mesh = new THREE.Mesh(geometry, spectrogramMaterial);
-mesh.frustumCulled = true; // Explicitly enable efficient culling
+let mesh = new THREE.Mesh(geometry, spectrogramMaterial);
+mesh.frustumCulled = true;
 scene.add(mesh);
+
+function rebuildHistory(newSize) {
+  HISTORY = newSize;
+  historyHead = 0;
+
+  dataTexture.dispose();
+  dataTextureArray = new Uint8Array(FFT_BINS * HISTORY);
+  dataTexture = new THREE.DataTexture(
+    dataTextureArray, FFT_BINS, HISTORY,
+    THREE.RedFormat, THREE.UnsignedByteType
+  );
+  dataTexture.minFilter = THREE.NearestFilter;
+  dataTexture.magFilter = THREE.NearestFilter;
+  dataTexture.needsUpdate = true;
+
+  spectrogramMaterial.uniforms.uDataTexture.value = dataTexture;
+  spectrogramMaterial.uniforms.uHistorySize.value = HISTORY;
+  spectrogramMaterial.uniforms.uHistoryHead.value = 0;
+
+  scene.remove(mesh);
+  geometry.dispose();
+  geometry = new THREE.PlaneGeometry(110, 160, FFT_BINS - 1, HISTORY - 1);
+  geometry.rotateX(-Math.PI / 2);
+  geometry.computeBoundingBox();
+  geometry.boundingBox.expandByScalar(50);
+  mesh = new THREE.Mesh(geometry, spectrogramMaterial);
+  mesh.frustumCulled = true;
+  scene.add(mesh);
+}
 
 function pushNewRow() {
   const offset = historyHead * FFT_BINS;
@@ -689,7 +718,7 @@ function tickFrame(delta) {
     accumulator -= 1;
     pushNewRow();
   }
-  spectrogramMaterial.uniforms.uSubRow.value = accumulator;
+  spectrogramMaterial.uniforms.uHistoryHead.value = historyHead;
   if (rotationEnabled && audioStarted) {
     mesh.rotation.y += delta * rotationSpeed;
   }
@@ -771,6 +800,10 @@ document.getElementById('fullscreenBtn').addEventListener('click', () => {
 document.getElementById('speedSlider').addEventListener('input', (e) => {
   scrollSpeed = parseFloat(e.target.value);
   document.getElementById('speedLabel').textContent = scrollSpeed.toFixed(1);
+});
+document.getElementById('historySlider').addEventListener('input', (e) => {
+  rebuildHistory(parseInt(e.target.value));
+  document.getElementById('historyLabel').textContent = HISTORY;
 });
 
 const rotateToggle = document.getElementById('rotateToggle');
