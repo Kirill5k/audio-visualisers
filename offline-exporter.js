@@ -173,6 +173,15 @@ async function offlineExport(opts) {
   const maxSamplesPerFrame = Math.ceil(samplesPerFrame) + 1;
   const planarData = new Float32Array(maxSamplesPerFrame * numChannels);
 
+  // Pre-compute FFT for first frame
+  const firstOffset = Math.min(0, audioBuffer.length - fftSize);
+  if (firstOffset >= 0) {
+    fillFftWindow(firstOffset);
+    fft.getByteFrequencyData(fftWindow, 0, frequencyData, minDecibels, maxDecibels, smoothingTimeConstant, prevSpectrum);
+  } else {
+    frequencyData.fill(0);
+  }
+
   for (let frame = 0; frame < totalFrames; frame++) {
     if (isCancelled && isCancelled()) {
       videoEncoder.close();
@@ -181,30 +190,23 @@ async function offlineExport(opts) {
       return;
     }
 
-    // Compute FFT for this frame's audio position
-    const sampleOffset = Math.round(frame * samplesPerFrame);
-    const safeOffset = Math.min(sampleOffset, audioBuffer.length - fftSize);
-
-    if (safeOffset >= 0) {
-      fillFftWindow(safeOffset);
-      fft.getByteFrequencyData(fftWindow, 0, frequencyData, minDecibels, maxDecibels, smoothingTimeConstant, prevSpectrum);
-    } else {
-      frequencyData.fill(0);
-    }
-
-    // Render the frame
+    // Render using pre-computed FFT data (submits GL commands to GPU)
     renderFrame(frequencyData, delta);
 
-    // Encode video frame
-    const vf = new VideoFrame(canvas, {
-      timestamp: frame * delta * 1_000_000,
-      duration: delta * 1_000_000,
-    });
-    const keyFrame = frame % (fps * 2) === 0;
-    videoEncoder.encode(vf, { keyFrame });
-    vf.close();
+    // Pipeline: do CPU work while GPU executes the render
+    // 1. Compute FFT for the NEXT frame
+    if (frame + 1 < totalFrames) {
+      const nextSampleOffset = Math.round((frame + 1) * samplesPerFrame);
+      const nextSafeOffset = Math.min(nextSampleOffset, audioBuffer.length - fftSize);
+      if (nextSafeOffset >= 0) {
+        fillFftWindow(nextSafeOffset);
+        fft.getByteFrequencyData(fftWindow, 0, frequencyData, minDecibels, maxDecibels, smoothingTimeConstant, prevSpectrum);
+      } else {
+        frequencyData.fill(0);
+      }
+    }
 
-    // Encode audio for this frame
+    // 2. Encode audio for the current frame
     const audioStart = Math.round(frame * samplesPerFrame);
     const audioEnd = Math.min(Math.round((frame + 1) * samplesPerFrame), audioBuffer.length);
     const frameSamples = audioEnd - audioStart;
@@ -226,6 +228,15 @@ async function offlineExport(opts) {
       audioEncoder.encode(audioData);
       audioData.close();
     }
+
+    // Capture the rendered frame (GPU should be done or nearly done by now)
+    const vf = new VideoFrame(canvas, {
+      timestamp: frame * delta * 1_000_000,
+      duration: delta * 1_000_000,
+    });
+    const keyFrame = frame % (fps * 2) === 0;
+    videoEncoder.encode(vf, { keyFrame });
+    vf.close();
 
     if (onProgress && frame % 16 === 0) onProgress(frame / totalFrames);
 
