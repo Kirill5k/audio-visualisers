@@ -97,6 +97,9 @@ async function offlineExport(opts) {
   const frequencyData = new Uint8Array(freqBins);
   const prevSpectrum = new Float64Array(freqBins).fill(-100);
 
+  const channels = [];
+  for (let ch = 0; ch < numChannels; ch++) channels.push(audioBuffer.getChannelData(ch));
+
   // Sliding window buffer for FFT — avoids allocating a full mono copy
   const fftWindow = new Float32Array(fftSize);
   function fillFftWindow(offset) {
@@ -106,7 +109,7 @@ async function offlineExport(opts) {
     for (let i = 0; i < count; i++) {
       let sample = 0;
       for (let ch = 0; ch < numChannels; ch++) {
-        sample += audioBuffer.getChannelData(ch)[safeOffset + i];
+        sample += channels[ch][safeOffset + i];
       }
       fftWindow[i] = sample / numChannels;
     }
@@ -207,10 +210,9 @@ async function offlineExport(opts) {
     const frameSamples = audioEnd - audioStart;
     if (frameSamples > 0) {
       for (let ch = 0; ch < numChannels; ch++) {
-        const chData = audioBuffer.getChannelData(ch);
         const chOffset = ch * frameSamples;
         for (let i = 0; i < frameSamples; i++) {
-          planarData[chOffset + i] = chData[audioStart + i] || 0;
+          planarData[chOffset + i] = channels[ch][audioStart + i] || 0;
         }
       }
       const audioData = new AudioData({
@@ -225,7 +227,7 @@ async function offlineExport(opts) {
       audioData.close();
     }
 
-    if (onProgress && frame % 4 === 0) onProgress(frame / totalFrames);
+    if (onProgress && frame % 16 === 0) onProgress(frame / totalFrames);
 
     // Backpressure: wait for encoder to catch up if queue grows too large
     if (videoEncoder.encodeQueueSize > 3) {
