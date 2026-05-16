@@ -238,14 +238,14 @@ async function offlineExport(opts) {
     videoEncoder.encode(vf, { keyFrame });
     vf.close();
 
-    if (onProgress && frame % 16 === 0) onProgress(frame / totalFrames);
+    if (onProgress && frame % 32 === 0) onProgress(frame / totalFrames);
 
     // Backpressure: wait for encoder to catch up if queue grows too large
     if (videoEncoder.encodeQueueSize > 3) {
       await new Promise(r => { videoEncoder.ondequeue = () => { videoEncoder.ondequeue = null; r(); }; });
     }
     // Yield to browser periodically to keep UI responsive
-    if (frame % 8 === 0) {
+    if (frame % 60 === 0) {
       await new Promise(r => setTimeout(r, 0));
     }
   }
