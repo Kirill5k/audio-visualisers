@@ -930,6 +930,19 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   const savedUTime = spectrogramMaterial.uniforms.uTime.value;
   const savedHueOffset = hueShiftOffset;
   const savedLastHueUpdateOffset = lastHueUpdateOffset;
+  const savedAudioStarted = audioStarted;
+
+  // Reset scene for export: start from the configured camera preset
+  const baseCam = lowAngle ? CAM_LOW : CAM_HIGH;
+  targetCamPos.set(baseCam.x, baseCam.y, baseCam.z);
+  camera.position.copy(targetCamPos);
+  driftRadius = Math.sqrt(baseCam.x * baseCam.x + baseCam.z * baseCam.z);
+  driftAngle = 0;
+  mesh.rotation.y = 0;
+  historyHead = 0;
+  accumulator = 0;
+  spectrogramMaterial.uniforms.uTime.value = 0;
+  audioStarted = true;
 
   offlineExporting = true;
   await audioContext.suspend();
@@ -983,6 +996,7 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   spectrogramMaterial.uniforms.uTime.value = savedUTime;
   hueShiftOffset = savedHueOffset;
   lastHueUpdateOffset = savedLastHueUpdateOffset;
+  audioStarted = savedAudioStarted;
   spectrogramMaterial.uniforms.uHistoryHead.value = historyHead;
 
   renderer.setSize(savedWidth, savedHeight);
