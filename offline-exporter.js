@@ -133,7 +133,7 @@ async function offlineExport(opts) {
       sampleRate,
       numberOfChannels: numChannels,
     },
-    fastStart: 'fragmented',
+    fastStart: false,
   });
 
   // Set up VideoEncoder
