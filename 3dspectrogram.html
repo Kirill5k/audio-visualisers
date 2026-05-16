@@ -713,7 +713,7 @@ function tickFrame(delta) {
     }
   }
 
-  accumulator += delta * scrollSpeed * 60;
+  accumulator += delta * scrollSpeed * 60 * (HISTORY / 300);
   if (accumulator >= 1) {
     accumulator -= 1;
     pushNewRow();
