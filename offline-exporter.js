@@ -97,13 +97,20 @@ async function offlineExport(opts) {
   const frequencyData = new Uint8Array(freqBins);
   const prevSpectrum = new Float64Array(freqBins).fill(-100);
 
-  // Mix down to mono for FFT
-  const monoData = new Float32Array(audioBuffer.length);
-  for (let ch = 0; ch < numChannels; ch++) {
-    const chData = audioBuffer.getChannelData(ch);
-    for (let i = 0; i < audioBuffer.length; i++) {
-      monoData[i] += chData[i] / numChannels;
+  // Sliding window buffer for FFT — avoids allocating a full mono copy
+  const fftWindow = new Float32Array(fftSize);
+  function fillFftWindow(offset) {
+    const safeOffset = Math.max(0, offset);
+    const end = Math.min(safeOffset + fftSize, audioBuffer.length);
+    const count = end - safeOffset;
+    for (let i = 0; i < count; i++) {
+      let sample = 0;
+      for (let ch = 0; ch < numChannels; ch++) {
+        sample += audioBuffer.getChannelData(ch)[safeOffset + i];
+      }
+      fftWindow[i] = sample / numChannels;
     }
+    for (let i = count; i < fftSize; i++) fftWindow[i] = 0;
   }
 
   // Set up mp4-muxer first so encoders can feed it directly
@@ -123,7 +130,7 @@ async function offlineExport(opts) {
       sampleRate,
       numberOfChannels: numChannels,
     },
-    fastStart: 'in-memory',
+    fastStart: 'fragmented',
   });
 
   // Set up VideoEncoder
@@ -160,6 +167,8 @@ async function offlineExport(opts) {
 
   const delta = 1 / fps;
   const canvas = readCanvas();
+  const maxSamplesPerFrame = Math.ceil(samplesPerFrame) + 1;
+  const planarData = new Float32Array(maxSamplesPerFrame * numChannels);
 
   for (let frame = 0; frame < totalFrames; frame++) {
     if (isCancelled && isCancelled()) {
@@ -171,10 +180,11 @@ async function offlineExport(opts) {
 
     // Compute FFT for this frame's audio position
     const sampleOffset = Math.round(frame * samplesPerFrame);
-    const safeOffset = Math.min(sampleOffset, monoData.length - fftSize);
+    const safeOffset = Math.min(sampleOffset, audioBuffer.length - fftSize);
 
     if (safeOffset >= 0) {
-      fft.getByteFrequencyData(monoData, safeOffset, frequencyData, minDecibels, maxDecibels, smoothingTimeConstant, prevSpectrum);
+      fillFftWindow(safeOffset);
+      fft.getByteFrequencyData(fftWindow, 0, frequencyData, minDecibels, maxDecibels, smoothingTimeConstant, prevSpectrum);
     } else {
       frequencyData.fill(0);
     }
@@ -196,7 +206,6 @@ async function offlineExport(opts) {
     const audioEnd = Math.min(Math.round((frame + 1) * samplesPerFrame), audioBuffer.length);
     const frameSamples = audioEnd - audioStart;
     if (frameSamples > 0) {
-      const planarData = new Float32Array(frameSamples * numChannels);
       for (let ch = 0; ch < numChannels; ch++) {
         const chData = audioBuffer.getChannelData(ch);
         const chOffset = ch * frameSamples;
@@ -210,7 +219,7 @@ async function offlineExport(opts) {
         numberOfFrames: frameSamples,
         numberOfChannels: numChannels,
         timestamp: audioStart / sampleRate * 1_000_000,
-        data: planarData,
+        data: planarData.subarray(0, frameSamples * numChannels),
       });
       audioEncoder.encode(audioData);
       audioData.close();
@@ -219,7 +228,7 @@ async function offlineExport(opts) {
     if (onProgress && frame % 4 === 0) onProgress(frame / totalFrames);
 
     // Backpressure: wait for encoder to catch up if queue grows too large
-    if (videoEncoder.encodeQueueSize > 10) {
+    if (videoEncoder.encodeQueueSize > 3) {
       await new Promise(r => { videoEncoder.ondequeue = () => { videoEncoder.ondequeue = null; r(); }; });
     }
     // Yield to browser periodically to keep UI responsive
