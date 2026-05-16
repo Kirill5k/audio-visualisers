@@ -238,7 +238,7 @@ async function offlineExport(opts) {
     videoEncoder.encode(vf, { keyFrame });
     vf.close();
 
-    if (onProgress && frame % 32 === 0) onProgress(frame / totalFrames);
+    if (onProgress && frame % 60 === 0) onProgress(frame / totalFrames);
 
     // Backpressure: wait for encoder to catch up if queue grows too large
     if (videoEncoder.encodeQueueSize > 3) {
