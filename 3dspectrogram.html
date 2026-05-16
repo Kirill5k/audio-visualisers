@@ -726,9 +726,11 @@ function tickFrame(delta) {
 
 function animate() {
   requestAnimationFrame(animate);
+  if (offlineExporting) { clock.getDelta(); return; }
   const now = performance.now();
   if (recorder.isRecording && lockRecordingFps && now - lastCaptureMs < 16.5) return;
-  tickFrame(clock.getDelta());
+  const delta = recorder.isRecording ? (1 / 60) : clock.getDelta();
+  tickFrame(delta);
   if (recorder.isRecording && videoTrack) {
     videoTrack.requestFrame();
     lastCaptureMs = now;
