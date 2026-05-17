@@ -234,6 +234,11 @@
     <span>Low Angle</span>
   </div>
 
+  <div class="checkbox-row">
+    <input type="checkbox" id="topDownToggle" />
+    <span>Top-Down</span>
+  </div>
+
   <!-- Color Gradient Section -->
   <div class="section-label">Color Gradient</div>
 
@@ -335,7 +340,14 @@ const camera = new THREE.PerspectiveCamera(
 
 const CAM_HIGH = { x: 0, y: 32, z: -80 };
 const CAM_LOW  = { x: 0, y: 12, z: -70 };
+const CAM_TOP  = { x: 0, y: 110, z: 0 };
 let lowAngle = false;
+let topDown = false;
+
+function getBaseCam() {
+  if (topDown) return CAM_TOP;
+  return lowAngle ? CAM_LOW : CAM_HIGH;
+}
 
 // #6: Smooth Camera Transition
 const targetCamPos = new THREE.Vector3(CAM_HIGH.x, CAM_HIGH.y, CAM_HIGH.z);
@@ -724,7 +736,7 @@ function tickFrame(delta) {
   }
   if (driftEnabled && audioStarted) {
     driftAngle += delta * rotationSpeed * 0.5;
-    const baseCam = lowAngle ? CAM_LOW : CAM_HIGH;
+    const baseCam = getBaseCam();
     const targetRadius = Math.sqrt(baseCam.x * baseCam.x + baseCam.z * baseCam.z);
     driftRadius += (targetRadius - driftRadius) * 0.001;
     const baseAngle = Math.atan2(baseCam.x, baseCam.z);
@@ -733,7 +745,7 @@ function tickFrame(delta) {
     targetCamPos.z = Math.cos(orbitAngle) * driftRadius;
     targetCamPos.y = baseCam.y;
   } else if (!driftEnabled) {
-    const baseCam = lowAngle ? CAM_LOW : CAM_HIGH;
+    const baseCam = getBaseCam();
     targetCamPos.x = baseCam.x;
     targetCamPos.z = baseCam.z;
     driftRadius = Math.sqrt(baseCam.z * baseCam.z + baseCam.x * baseCam.x);
@@ -746,6 +758,11 @@ function tickFrame(delta) {
   camera.position.x += (targetCamPos.x - camera.position.x) * lerpXZ;
   camera.position.z += (targetCamPos.z - camera.position.z) * lerpXZ;
   camera.position.y += (targetCamPos.y - camera.position.y) * lerpY;
+  if (topDown) {
+    camera.up.set(1, 0, 0);
+  } else {
+    camera.up.set(0, 1, 0);
+  }
   camera.lookAt(0, 0, 0);
 
   renderer.render(scene, camera);
@@ -828,7 +845,14 @@ document.getElementById('rotSpeedSlider').addEventListener('input', (e) => {
 
 document.getElementById('lowAngleToggle').addEventListener('change', (e) => {
   lowAngle = e.target.checked;
-  const cam = lowAngle ? CAM_LOW : CAM_HIGH;
+  if (lowAngle) { topDown = false; document.getElementById('topDownToggle').checked = false; }
+  const cam = getBaseCam();
+  targetCamPos.set(cam.x, cam.y, cam.z);
+});
+document.getElementById('topDownToggle').addEventListener('change', (e) => {
+  topDown = e.target.checked;
+  if (topDown) { lowAngle = false; document.getElementById('lowAngleToggle').checked = false; }
+  const cam = getBaseCam();
   targetCamPos.set(cam.x, cam.y, cam.z);
 });
 
@@ -976,7 +1000,7 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   const savedAudioStarted = audioStarted;
 
   // Reset scene for export: start from the configured camera preset
-  const baseCam = lowAngle ? CAM_LOW : CAM_HIGH;
+  const baseCam = getBaseCam();
   targetCamPos.set(baseCam.x, baseCam.y, baseCam.z);
   camera.position.copy(targetCamPos);
   driftRadius = Math.sqrt(baseCam.x * baseCam.x + baseCam.z * baseCam.z);
