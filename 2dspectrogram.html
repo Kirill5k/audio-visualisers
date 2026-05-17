@@ -252,6 +252,7 @@
     <label class="btn" for="fileInput">&#128193; Import Audio</label>
     <input type="file" id="fileInput" accept="audio/*">
     <button class="btn" id="recordBtn" disabled>&#9899; Record Video</button>
+    <button class="btn" id="exportBtn" disabled>⬇ Export Video</button>
     <button class="btn" id="effectsBtn">&#9881; Settings</button>
 </div>
 
@@ -264,6 +265,10 @@
         <div class="toggle-switch" id="toggleAutoRecord"></div>
     </div>
     <div class="toggle-row">
+        <span>Auto-Export on Import</span>
+        <div class="toggle-switch" id="toggleAutoExport"></div>
+    </div>
+    <div class="toggle-row">
         <span>Lock 60fps Recording</span>
         <div class="toggle-switch" id="toggleLock60fps"></div>
     </div>
@@ -271,8 +276,8 @@
     <div class="settings-section">Visualiser</div>
     <div class="slider-row">
         <span>Scroll Speed</span>
-        <input type="range" id="scrollSpeedSlider" min="0.1" max="3.0" step="0.1" value="1.0">
-        <span class="slider-val" id="scrollSpeedLabel">1.0</span>
+        <input type="range" id="scrollSpeedSlider" min="0.1" max="3.0" step="0.1" value="0.5">
+        <span class="slider-val" id="scrollSpeedLabel">0.5</span>
     </div>
     <div class="toggle-row">
         <span>Displacement Smoothing</span>
@@ -286,7 +291,7 @@
     </div>
     <div class="toggle-row">
         <span>Dynamic Color Shift</span>
-        <div class="toggle-switch active" id="toggleColorShift"></div>
+        <div class="toggle-switch" id="toggleColorShift"></div>
     </div>
     <div class="toggle-row">
         <span>Wireframe Overlay</span>
@@ -302,6 +307,15 @@
     </div>
 </div>
 
+<div id="exportOverlay" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; flex-direction:column; color:#fff; font-family:Arial,sans-serif;">
+  <div style="font-size:18px; margin-bottom:16px;" id="exportStatus">Exporting...</div>
+  <div style="width:400px; height:8px; background:#333; border-radius:4px; overflow:hidden;">
+    <div id="exportProgressBar" style="width:0%; height:100%; background:#4af; transition:width 0.1s;"></div>
+  </div>
+  <div style="font-size:14px; margin-top:8px; color:#aaa;" id="exportPercent">0%</div>
+  <button id="exportCancelBtn" style="margin-top:20px; padding:8px 20px; cursor:pointer; background:#c33; border:none; color:#fff; border-radius:4px; font-size:14px;">Cancel</button>
+</div>
+
 <div id="Spectrogram"></div>
 <div id="status">Load an audio file to begin</div>
 <div id="audioName" style="display:none;"></div>
@@ -313,19 +327,22 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
 <script src="recorder.js"></script>
+<script src="offline-exporter.js"></script>
 <script>
 "use strict";
 
 // ============ EFFECT STATE ============
 let fx = {
     bloom: false,
-    colorShift: true,
+    colorShift: false,
     wireframe: false,
     smoothing: false,
     reflection: false,
     vignette: true,
     autoRecord: false,
+    autoExport: false,
     lock60fps: false
 };
 
@@ -334,8 +351,11 @@ let ACTX, ANALYSER, SOURCE, audioElement, mediaStreamDest;
 let frequency_samples = 1024;
 let DATA;
 let isPlaying = false;
-let scrollSpeed = 1.0;
+let scrollSpeed = 0.5;
 let scrollAccumulator = 0;
+let offlineExporting = false;
+let exportCancelled = false;
+let audioBuffer = null;
 
 // Three.js state
 let camera, scene, renderer, mesh, wireframeMesh, reflectionMesh, heights;
@@ -402,6 +422,7 @@ function setupToggle(id, key) {
     });
 }
 setupToggle('toggleAutoRecord', 'autoRecord');
+setupToggle('toggleAutoExport', 'autoExport');
 setupToggle('toggleLock60fps', 'lock60fps');
 setupToggle('toggleBloom', 'bloom');
 setupToggle('toggleColorShift', 'colorShift');
@@ -441,6 +462,10 @@ async function loadAudioFile(file, prepared) {
     if (SOURCE) { SOURCE.disconnect(); SOURCE = null; }
     if (audioElement) { audioElement.pause(); audioElement.src = ''; }
 
+    // Decode for offline export
+    const arrayBuf = await file.arrayBuffer();
+    audioBuffer = await ACTX.decodeAudioData(arrayBuf);
+
     audioElement = new Audio();
     audioElement.crossOrigin = "anonymous";
     audioElement.src = url;
@@ -456,6 +481,7 @@ async function loadAudioFile(file, prepared) {
     SOURCE.connect(mediaStreamDest);
 
     recordBtn.disabled = false;
+    document.getElementById('exportBtn').disabled = false;
     audioNameEl.textContent = '\u266B ' + file.name;
     audioNameEl.style.display = 'block';
 
@@ -476,7 +502,7 @@ async function loadAudioFile(file, prepared) {
 function initVisualizer() {
     let xsegments = time_samples;
     let ysegments = frequency_samples;
-    let xsize = 35;
+    let xsize = 38.5;
     let ysize = 20;
     let xhalfSize = xsize / 2;
     let yhalfSize = ysize / 2;
@@ -647,6 +673,7 @@ let lastRenderMs = 0;
 
 function animate() {
     animationId = requestAnimationFrame(animate);
+    if (offlineExporting) return;
     if (recorder.isRecording && fx.lock60fps) {
         const now = performance.now();
         if (now - lastRenderMs < 16.5) return;
@@ -678,26 +705,28 @@ function render() {
     composer.render();
 }
 
-function updateGeometry() {
-    if (!ANALYSER || !DATA) return;
-
-    ANALYSER.getByteFrequencyData(DATA);
+function updateGeometry(externalData) {
+    if (!externalData) {
+        if (!ANALYSER || !DATA) return;
+        ANALYSER.getByteFrequencyData(DATA);
+    }
 
     scrollAccumulator += scrollSpeed;
     if (scrollAccumulator < 1) return;
     let steps = Math.floor(scrollAccumulator);
     scrollAccumulator -= steps;
 
+    let rawSrc = externalData || DATA;
     let src;
     if (fx.smoothing) {
         let smoothFactor = 0.35;
-        for (let i = 0; i < DATA.length; i++) {
-            prevData[i] = prevData[i] + (DATA[i] - prevData[i]) * smoothFactor;
+        for (let i = 0; i < rawSrc.length; i++) {
+            prevData[i] = prevData[i] + (rawSrc[i] - prevData[i]) * smoothFactor;
             smoothedData[i] = Math.round(prevData[i]);
         }
         src = smoothedData;
     } else {
-        src = DATA;
+        src = rawSrc;
     }
 
     let buf = dispAttr.array;
@@ -721,9 +750,134 @@ fileInput.addEventListener('change', async (e) => {
         prepared = await recorder.prepareAutoRecord();
         if (!prepared) return;
     }
-    loadAudioFile(file, prepared);
+    let exportWritable;
+    if (fx.autoExport) {
+        try {
+            const handle = await window.showSaveFilePicker({
+                suggestedName: 'spectrogram_2d_export.mp4',
+                types: [{ description: 'MP4 Video', accept: { 'video/mp4': ['.mp4'] } }]
+            });
+            exportWritable = await handle.createWritable();
+        } catch (e) { return; }
+    }
+    await loadAudioFile(file, prepared);
+    if (exportWritable) {
+        document.getElementById('exportBtn').writable = exportWritable;
+        document.getElementById('exportBtn').click();
+    }
 });
 recordBtn.addEventListener('click', () => recorder.toggle(makeRecordingStream));
+
+// ============ EXPORT ============
+document.getElementById('exportBtn').addEventListener('click', async () => {
+    if (!audioBuffer) { alert('Load an audio file first.'); return; }
+    if (offlineExporting) return;
+
+    const btn = document.getElementById('exportBtn');
+    const writable = btn.writable || await (async () => {
+        try {
+            const handle = await window.showSaveFilePicker({
+                suggestedName: 'spectrogram_2d_export.mp4',
+                types: [{ description: 'MP4 Video', accept: { 'video/mp4': ['.mp4'] } }]
+            });
+            return await handle.createWritable();
+        } catch (e) { return null; }
+    })();
+    btn.writable = null;
+    if (!writable) return;
+
+    const overlay = document.getElementById('exportOverlay');
+    const progressBar = document.getElementById('exportProgressBar');
+    const percentText = document.getElementById('exportPercent');
+    const statusText = document.getElementById('exportStatus');
+    overlay.style.display = 'flex';
+    exportCancelled = false;
+
+    const savedWidth = renderer.domElement.width;
+    const savedHeight = renderer.domElement.height;
+    const savedAspect = camera.aspect;
+    renderer.setSize(1920, 1080);
+    camera.aspect = 1920 / 1080;
+    camera.updateProjectionMatrix();
+
+    const savedScrollAccumulator = scrollAccumulator;
+    const savedDispArray = new Uint8Array(dispAttr.array);
+    const savedPrevData = new Float32Array(prevData);
+    scrollAccumulator = 0;
+    dispAttr.array.fill(0);
+    prevData.fill(0);
+
+    offlineExporting = true;
+    if (ACTX) await ACTX.suspend();
+
+    const glCtx = renderer.getContext();
+
+    try {
+        await offlineExport({
+            audioBuffer,
+            fps: 60,
+            width: 1920,
+            height: 1080,
+            fftSize: ANALYSER.fftSize,
+            smoothingTimeConstant: ANALYSER.smoothingTimeConstant,
+            minDecibels: ANALYSER.minDecibels,
+            maxDecibels: ANALYSER.maxDecibels,
+            writable,
+            isCancelled: () => exportCancelled,
+            renderFrame: (fftData, delta) => {
+                updateGeometry(fftData);
+                let elapsed = clock.getElapsedTime();
+                let dynVal = fx.colorShift ? 1 : 0;
+                let hueVal = elapsed * 0.05;
+                mesh.material.uniforms.uDynamicColor.value = dynVal;
+                mesh.material.uniforms.uHueShift.value = hueVal;
+                if (fx.wireframe) {
+                    wireframeMesh.material.uniforms.uDynamicColor.value = dynVal;
+                    wireframeMesh.material.uniforms.uHueShift.value = hueVal;
+                }
+                if (fx.reflection) {
+                    reflectionMesh.material.uniforms.uDynamicColor.value = dynVal;
+                    reflectionMesh.material.uniforms.uHueShift.value = hueVal;
+                }
+                composer.render();
+            },
+            readCanvas: () => renderer.domElement,
+            gpuFinish: () => glCtx.finish(),
+            onProgress: (frac) => {
+                const pct = Math.round(frac * 100);
+                progressBar.style.width = pct + '%';
+                percentText.textContent = pct + '%';
+                statusText.textContent = 'Exporting... frame ' + Math.round(frac * Math.ceil(audioBuffer.duration * 60)) + '/' + Math.ceil(audioBuffer.duration * 60);
+            },
+            onDone: () => {
+                statusText.textContent = 'Export complete!';
+                setTimeout(() => { overlay.style.display = 'none'; }, 1500);
+            },
+        });
+    } catch (e) {
+        console.error('Export error:', e);
+        statusText.textContent = 'Export failed: ' + e.message;
+        setTimeout(() => { overlay.style.display = 'none'; }, 3000);
+    }
+
+    offlineExporting = false;
+    if (ACTX) await ACTX.resume();
+
+    scrollAccumulator = savedScrollAccumulator;
+    dispAttr.array.set(savedDispArray);
+    prevData.set(savedPrevData);
+    dispAttr.needsUpdate = true;
+
+    renderer.setSize(savedWidth, savedHeight);
+    camera.aspect = savedAspect;
+    camera.updateProjectionMatrix();
+    composer.setSize(savedWidth, savedHeight);
+});
+
+document.getElementById('exportCancelBtn').addEventListener('click', () => {
+    exportCancelled = true;
+    document.getElementById('exportStatus').textContent = 'Cancelling...';
+});
 
 </script>
 </body>
