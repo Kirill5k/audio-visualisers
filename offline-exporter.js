@@ -146,10 +146,10 @@ async function offlineExport(opts) {
   });
 
   videoEncoder.configure({
-    codec: 'avc1.64002A',
+    codec: 'avc1.640033',
     width,
     height,
-    bitrate: 20_000_000,
+    bitrate: 40_000_000,
     framerate: fps,
     avc: { format: 'avc' },
   });
