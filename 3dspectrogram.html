@@ -229,15 +229,15 @@
   <!-- Camera -->
   <div class="section-label">Camera</div>
 
-  <div class="checkbox-row">
-    <input type="checkbox" id="lowAngleToggle" />
-    <span>Low Angle</span>
-  </div>
+  <label>
+    Camera Distance: <span id="camDistLabel">86</span>
+  </label>
+  <input type="range" id="camDistSlider" min="40" max="150" step="1" value="86" />
 
-  <div class="checkbox-row">
-    <input type="checkbox" id="topDownToggle" />
-    <span>Top-Down</span>
-  </div>
+  <label>
+    Viewing Angle: <span id="camAngleLabel">22</span>°
+  </label>
+  <input type="range" id="camAngleSlider" min="5" max="90" step="1" value="22" />
 
   <!-- Color Gradient Section -->
   <div class="section-label">Color Gradient</div>
@@ -338,19 +338,24 @@ const camera = new THREE.PerspectiveCamera(
   1000
 );
 
-const CAM_HIGH = { x: 0, y: 32, z: -80 };
-const CAM_LOW  = { x: 0, y: 12, z: -70 };
-const CAM_TOP  = { x: 0, y: 120, z: 0 };
-let lowAngle = false;
-let topDown = false;
+let camDistance = 86;
+let camAngleDeg = 22;
 
 function getBaseCam() {
-  if (topDown) return CAM_TOP;
-  return lowAngle ? CAM_LOW : CAM_HIGH;
+  const rad = camAngleDeg * Math.PI / 180;
+  return {
+    x: 0,
+    y: Math.sin(rad) * camDistance,
+    z: -Math.cos(rad) * camDistance
+  };
 }
 
 // #6: Smooth Camera Transition
-const targetCamPos = new THREE.Vector3(CAM_HIGH.x, CAM_HIGH.y, CAM_HIGH.z);
+const targetCamPos = new THREE.Vector3();
+{
+  const initCam = getBaseCam();
+  targetCamPos.set(initCam.x, initCam.y, initCam.z);
+}
 camera.position.copy(targetCamPos);
 camera.lookAt(0, 0, 0);
 
@@ -390,7 +395,7 @@ let rotationSpeed = 0.02;
 let driftEnabled = false;
 let driftAngle = 0;
 let driftMaxAngle = 45;
-let driftRadius = Math.sqrt(CAM_HIGH.z * CAM_HIGH.z + CAM_HIGH.x * CAM_HIGH.x);
+let driftRadius = Math.cos(camAngleDeg * Math.PI / 180) * camDistance;
 let audioStarted = false;
 let audioBuffer = null;
 let audioSource = null;
@@ -758,7 +763,7 @@ function tickFrame(delta) {
   camera.position.x += (targetCamPos.x - camera.position.x) * lerpXZ;
   camera.position.z += (targetCamPos.z - camera.position.z) * lerpXZ;
   camera.position.y += (targetCamPos.y - camera.position.y) * lerpY;
-  if (topDown) {
+  if (camAngleDeg >= 85) {
     camera.up.set(1, 0, 0);
   } else {
     camera.up.set(0, 1, 0);
@@ -843,15 +848,17 @@ document.getElementById('rotSpeedSlider').addEventListener('input', (e) => {
   document.getElementById('rotSpeedLabel').textContent = rotationSpeed.toFixed(2);
 });
 
-document.getElementById('lowAngleToggle').addEventListener('change', (e) => {
-  lowAngle = e.target.checked;
-  if (lowAngle) { topDown = false; document.getElementById('topDownToggle').checked = false; }
+document.getElementById('camDistSlider').addEventListener('input', (e) => {
+  camDistance = parseFloat(e.target.value);
+  document.getElementById('camDistLabel').textContent = Math.round(camDistance);
+  driftRadius = Math.cos(camAngleDeg * Math.PI / 180) * camDistance;
   const cam = getBaseCam();
   targetCamPos.set(cam.x, cam.y, cam.z);
 });
-document.getElementById('topDownToggle').addEventListener('change', (e) => {
-  topDown = e.target.checked;
-  if (topDown) { lowAngle = false; document.getElementById('lowAngleToggle').checked = false; }
+document.getElementById('camAngleSlider').addEventListener('input', (e) => {
+  camAngleDeg = parseFloat(e.target.value);
+  document.getElementById('camAngleLabel').textContent = Math.round(camAngleDeg);
+  driftRadius = Math.cos(camAngleDeg * Math.PI / 180) * camDistance;
   const cam = getBaseCam();
   targetCamPos.set(cam.x, cam.y, cam.z);
 });
