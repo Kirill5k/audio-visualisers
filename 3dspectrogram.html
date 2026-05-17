@@ -239,6 +239,16 @@
   </label>
   <input type="range" id="camAngleSlider" min="5" max="90" step="1" value="22" />
 
+  <label>
+    Horizontal Offset: <span id="camHorizLabel">0</span>
+  </label>
+  <input type="range" id="camHorizSlider" min="-80" max="80" step="1" value="0" />
+
+  <label>
+    Vertical Offset: <span id="camVertLabel">0</span>
+  </label>
+  <input type="range" id="camVertSlider" min="-40" max="40" step="1" value="0" />
+
   <!-- Color Gradient Section -->
   <div class="section-label">Color Gradient</div>
 
@@ -340,12 +350,14 @@ const camera = new THREE.PerspectiveCamera(
 
 let camDistance = 86;
 let camAngleDeg = 22;
+let camHorizOffset = 0;
+let camVertOffset = 0;
 
 function getBaseCam() {
   const rad = camAngleDeg * Math.PI / 180;
   return {
-    x: 0,
-    y: Math.sin(rad) * camDistance,
+    x: camHorizOffset,
+    y: Math.sin(rad) * camDistance + camVertOffset,
     z: -Math.cos(rad) * camDistance
   };
 }
@@ -859,6 +871,18 @@ document.getElementById('camAngleSlider').addEventListener('input', (e) => {
   camAngleDeg = parseFloat(e.target.value);
   document.getElementById('camAngleLabel').textContent = Math.round(camAngleDeg);
   driftRadius = Math.cos(camAngleDeg * Math.PI / 180) * camDistance;
+  const cam = getBaseCam();
+  targetCamPos.set(cam.x, cam.y, cam.z);
+});
+document.getElementById('camHorizSlider').addEventListener('input', (e) => {
+  camHorizOffset = parseFloat(e.target.value);
+  document.getElementById('camHorizLabel').textContent = Math.round(camHorizOffset);
+  const cam = getBaseCam();
+  targetCamPos.set(cam.x, cam.y, cam.z);
+});
+document.getElementById('camVertSlider').addEventListener('input', (e) => {
+  camVertOffset = parseFloat(e.target.value);
+  document.getElementById('camVertLabel').textContent = Math.round(camVertOffset);
   const cam = getBaseCam();
   targetCamPos.set(cam.x, cam.y, cam.z);
 });
