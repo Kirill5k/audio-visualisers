@@ -192,12 +192,21 @@ body {
 </style>
 </head>
 <body>
+<div id="exportOverlay" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; flex-direction:column; color:#fff; font-family:Arial,sans-serif;">
+  <div style="font-size:18px; margin-bottom:16px;" id="exportStatus">Exporting...</div>
+  <div style="width:400px; height:8px; background:#333; border-radius:4px; overflow:hidden;">
+    <div id="exportProgressBar" style="width:0%; height:100%; background:#4af; transition:width 0.1s;"></div>
+  </div>
+  <div style="font-size:14px; margin-top:8px; color:#aaa;" id="exportPercent">0%</div>
+  <button id="exportCancelBtn" style="margin-top:20px; padding:8px 20px; cursor:pointer; background:#c33; border:none; color:#fff; border-radius:4px; font-size:14px;">Cancel</button>
+</div>
 <div class="container">
   <div class="header">
     <div class="header-left">
       <input type="file" id="file-input" accept="audio/*" style="display:none">
       <button class="upload-btn" id="upload-btn">LOAD AUDIO FILE</button>
       <button class="upload-btn" id="record-btn" disabled>⏺ RECORD</button>
+      <button class="upload-btn" id="export-btn" disabled>⬇ EXPORT</button>
       <button class="upload-btn" id="config-btn">CONFIG</button>
       <span class="track-name" id="track-name">NO FILE LOADED</span>
     </div>
@@ -206,30 +215,30 @@ body {
 
   <div class="config-panel" id="config-panel">
     <div class="config-row">
-      <span class="config-label">KICK</span>
-      <input class="config-input" id="cfg-kick-lo" type="number" value="50">
+      <span class="config-label">BASS</span>
+      <input class="config-input" id="cfg-kick-lo" type="number" value="20">
       <span class="config-unit">–</span>
-      <input class="config-input" id="cfg-kick-hi" type="number" value="350">
+      <input class="config-input" id="cfg-kick-hi" type="number" value="250">
       <span class="config-unit">Hz</span>
       <span class="config-unit" style="margin-left:12px">GAIN</span>
       <input class="config-slider" id="cfg-kick-gain" type="range" min="0.5" max="10" step="0.5" value="5.0">
       <span class="config-unit" id="cfg-kick-gain-val">5.0</span>
     </div>
     <div class="config-row">
-      <span class="config-label">SNARE</span>
-      <input class="config-input" id="cfg-snare-lo" type="number" value="2500">
+      <span class="config-label">MIDS</span>
+      <input class="config-input" id="cfg-snare-lo" type="number" value="250">
       <span class="config-unit">–</span>
-      <input class="config-input" id="cfg-snare-hi" type="number" value="4500">
+      <input class="config-input" id="cfg-snare-hi" type="number" value="4000">
       <span class="config-unit">Hz</span>
       <span class="config-unit" style="margin-left:12px">GAIN</span>
       <input class="config-slider" id="cfg-snare-gain" type="range" min="0.5" max="10" step="0.5" value="1.0">
       <span class="config-unit" id="cfg-snare-gain-val">1.0</span>
     </div>
     <div class="config-row">
-      <span class="config-label">HIHAT</span>
-      <input class="config-input" id="cfg-hihat-lo" type="number" value="8000">
+      <span class="config-label">HIGHS</span>
+      <input class="config-input" id="cfg-hihat-lo" type="number" value="4000">
       <span class="config-unit">–</span>
-      <input class="config-input" id="cfg-hihat-hi" type="number" value="15000">
+      <input class="config-input" id="cfg-hihat-hi" type="number" value="20000">
       <span class="config-unit">Hz</span>
       <span class="config-unit" style="margin-left:12px">GAIN</span>
       <input class="config-slider" id="cfg-hihat-gain" type="range" min="0.5" max="10" step="0.5" value="0.5">
@@ -250,6 +259,10 @@ body {
       <span class="config-label">RECORD ON PLAY</span>
     </div>
     <div class="config-row">
+      <input type="checkbox" id="cfg-auto-export" style="margin-right:8px">
+      <span class="config-label">EXPORT ON PLAY</span>
+    </div>
+    <div class="config-row">
       <input type="checkbox" id="cfg-lock-60fps" style="margin-right:8px">
       <span class="config-label">LOCK 60FPS RECORDING</span>
     </div>
@@ -263,15 +276,15 @@ body {
     </div>
     <div class="osc-stack">
       <div class="panel">
-        <span class="panel-label">HIHAT</span>
+        <span class="panel-label">HIGHS</span>
         <canvas id="osc-high"></canvas>
       </div>
       <div class="panel">
-        <span class="panel-label">SNARE</span>
+        <span class="panel-label">MIDS</span>
         <canvas id="osc-mid"></canvas>
       </div>
       <div class="panel">
-        <span class="panel-label">KICK</span>
+        <span class="panel-label">BASS</span>
         <canvas id="osc-low"></canvas>
       </div>
     </div>
@@ -297,6 +310,8 @@ body {
 <canvas id="record-canvas" style="display:none"></canvas>
 
 <script src="recorder.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
+<script src="offline-exporter.js"></script>
 <script>
 (function() {
   const $ = id => document.getElementById(id);
@@ -306,6 +321,7 @@ body {
   const fileInput = $('file-input');
   const uploadBtn = $('upload-btn');
   const recordBtn = $('record-btn');
+  const exportBtn = $('export-btn');
   const trackNameEl = $('track-name');
   const headerInfo = $('header-info');
   const audioEl = $('audio-el');
@@ -315,9 +331,9 @@ body {
 
   // Config state
   var config = {
-    kick: { lo: 50, hi: 350, gain: 5.0 },
-    snare: { lo: 2500, hi: 4500, gain: 1.0 },
-    hihat: { lo: 8000, hi: 15000, gain: 0.5 },
+    kick: { lo: 20, hi: 250, gain: 5.0 },
+    snare: { lo: 250, hi: 4000, gain: 1.0 },
+    hihat: { lo: 4000, hi: 20000, gain: 0.5 },
     numBars: 200,
     labelSize: 9,
   };
@@ -404,7 +420,7 @@ body {
   });
 
   function compositeFrame() {
-    if (!recorder.isRecording) return;
+    if (!recorder.isRecording && !offlineExporting) return;
     const container = document.querySelector('.container');
     const rect = container.getBoundingClientRect();
     if (recordCanvas.width !== rect.width || recordCanvas.height !== rect.height) {
@@ -452,21 +468,37 @@ body {
   let peakHoldL = 0, peakHoldR = 0, peakHoldDecayCounter = 0;
   let animating = false;
   let fileInfo = {};
+  let offlineExporting = false;
+  let decodedAudioBuffer = null;
 
   // Upload
   uploadBtn.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    const autoExport = $('cfg-auto-export').checked;
+    let writable;
+    if (autoExport) {
+      if (offlineExporting) return;
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: 'waveforms_export.mp4',
+          types: [{ description: 'MP4 Video', accept: { 'video/mp4': ['.mp4'] } }]
+        });
+        writable = await handle.createWritable();
+      } catch (err) { return; }
+    }
+
     let prepared;
-    if ($('cfg-auto-record').checked) {
+    if ($('cfg-auto-record').checked && !autoExport) {
       prepared = await recorder.prepareAutoRecord();
       if (!prepared) return;
     }
-    loadFile(file, prepared);
+    loadFile(file, prepared, writable);
   });
 
-  function loadFile(file, prepared) {
+  function loadFile(file, prepared, writable) {
     fileInfo.name = file.name;
     trackNameEl.textContent = file.name;
 
@@ -477,12 +509,37 @@ body {
       // Init audio context on first load
       if (!actx) initAudioContext();
 
+      let waveformReady = false;
+      let audioReady = false;
+
+      function tryPlay() {
+        if (!waveformReady || !audioReady) return;
+        connectSource();
+        recordBtn.disabled = false;
+        exportBtn.disabled = false;
+
+        if (writable) {
+          exportBtn.writable = writable;
+          exportBtn.click();
+          return;
+        }
+
+        audioEl.play();
+        if (!animating) { animating = true; animate(); }
+        if (prepared && !recorder.isRecording) {
+          recorder.startAutoRecord(prepared, makeRecordingStream);
+        }
+      }
+
       // Decode for waveform overview
       actx.decodeAudioData(arrayBuf.slice(0), buf => {
         fileInfo.sampleRate = buf.sampleRate;
         fileInfo.channels = buf.numberOfChannels;
         fileInfo.duration = buf.duration;
+        decodedAudioBuffer = buf;
         renderWaveformOverview(buf);
+        waveformReady = true;
+        tryPlay();
       });
 
       // Play via element
@@ -491,13 +548,8 @@ body {
       audioEl.src = url;
       audioEl.onended = () => { if (recorder.isRecording) recorder.stop(); };
       audioEl.onloadeddata = () => {
-        connectSource();
-        audioEl.play();
-        recordBtn.disabled = false;
-        if (!animating) { animating = true; animate(); }
-        if (prepared && !recorder.isRecording) {
-          recorder.startAutoRecord(prepared, makeRecordingStream);
-        }
+        audioReady = true;
+        tryPlay();
       };
     };
     reader.readAsArrayBuffer(file);
@@ -624,7 +676,7 @@ body {
 
   // Drawing functions
   function drawSpectrum() {
-    mainAnalyser.getByteFrequencyData(freqData);
+    if (!offlineExporting) mainAnalyser.getByteFrequencyData(freqData);
     const ctx = contexts['spectrum-canvas'];
     const w = spectrumC.width, h = spectrumC.height;
     ctx.clearRect(0, 0, w, h);
@@ -684,7 +736,7 @@ body {
   }
 
   function drawSpectrogram() {
-    mainAnalyser.getByteFrequencyData(freqData);
+    if (!offlineExporting) mainAnalyser.getByteFrequencyData(freqData);
     const ctx = contexts['spectrogram-canvas'];
     const w = spectrogramC.width, h = spectrogramC.height;
 
@@ -719,8 +771,10 @@ body {
   }
 
   function drawMeters() {
-    analyserL.getByteFrequencyData(freqDataL);
-    analyserR.getByteFrequencyData(freqDataR);
+    if (!offlineExporting) {
+      analyserL.getByteFrequencyData(freqDataL);
+      analyserR.getByteFrequencyData(freqDataR);
+    }
     const ctx = contexts['meters-canvas'];
     const w = metersC.width, h = metersC.height;
     ctx.clearRect(0, 0, w, h);
@@ -803,7 +857,7 @@ body {
   const ecgGainMap = { 'osc-low': 'kick', 'osc-mid': 'snare', 'osc-high': 'hihat' };
 
   function drawOscilloscope(canvas, analyser, dataArr) {
-    analyser.getByteFrequencyData(dataArr);
+    if (!offlineExporting) analyser.getByteFrequencyData(dataArr);
     const ctx = contexts[canvas.id];
     const w = canvas.width, h = canvas.height;
     const state = ecgState[canvas.id];
@@ -928,6 +982,7 @@ body {
   let lastRenderMs = 0;
   function animate() {
     if (!mainAnalyser) { requestAnimationFrame(animate); return; }
+    if (offlineExporting) { requestAnimationFrame(animate); return; }
     if (recorder.isRecording && $('cfg-lock-60fps').checked) {
       const now = performance.now();
       if (now - lastRenderMs < 16.5) { requestAnimationFrame(animate); return; }
@@ -943,6 +998,181 @@ body {
     compositeFrame();
     requestAnimationFrame(animate);
   }
+  // Export
+  let exportCancelled = false;
+
+  exportBtn.addEventListener('click', async () => {
+    if (!decodedAudioBuffer) { alert('Load an audio file first.'); return; }
+    if (offlineExporting) return;
+
+    const writable = exportBtn.writable || await (async () => {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: 'waveforms_export.mp4',
+          types: [{ description: 'MP4 Video', accept: { 'video/mp4': ['.mp4'] } }]
+        });
+        return await handle.createWritable();
+      } catch (e) { return null; }
+    })();
+    exportBtn.writable = null;
+    if (!writable) return;
+
+    const overlay = $('exportOverlay');
+    const progressBar = $('exportProgressBar');
+    const percentText = $('exportPercent');
+    const statusText = $('exportStatus');
+    overlay.style.display = 'flex';
+    exportCancelled = false;
+
+    // Size the record canvas to 1920x1080
+    recordCanvas.width = 1920;
+    recordCanvas.height = 1080;
+
+    // Reset spectrogram and ECG state for clean export
+    spectrogramImg = null;
+    for (const key of Object.keys(ecgState)) {
+      ecgState[key].buffer.fill(0);
+      ecgState[key].pos = 0;
+      ecgState[key].avg = 0;
+      ecgState[key].peak = 0;
+    }
+    peakHoldL = 0; peakHoldR = 0; peakHoldDecayCounter = 0;
+
+    offlineExporting = true;
+
+    // Helper: split full-spectrum FFT data into band-filtered oscilloscope data
+    // Apply temporal smoothing between frames to match live analyser behavior
+    const prevBandLow = new Float32Array(timeLow.length);
+    const prevBandMid = new Float32Array(timeMid.length);
+    const prevBandHigh = new Float32Array(timeHigh.length);
+    const bandSmoothing = 0.7;
+
+    function fillBandData(fullFreqData, bandArr, prevBand, loHz, hiHz, sampleRate, binCount) {
+      const nyquist = sampleRate / 2;
+      const loBin = Math.floor(loHz / nyquist * binCount);
+      const hiBin = Math.min(Math.floor(hiHz / nyquist * binCount), binCount);
+      bandArr.fill(0);
+      const len = Math.min(hiBin - loBin, bandArr.length);
+      for (let i = 0; i < len; i++) {
+        const raw = fullFreqData[loBin + i] || 0;
+        const smoothed = prevBand[i] * bandSmoothing + raw * (1 - bandSmoothing);
+        prevBand[i] = smoothed;
+        bandArr[i] = smoothed;
+      }
+      bandArr._activeBins = len;
+    }
+
+    // Helper: compute per-channel RMS energy from raw samples for L/R meters
+    function computeChannelLevels(frameIndex) {
+      const samplesPerFrame = decodedAudioBuffer.sampleRate / 60;
+      const start = Math.round(frameIndex * samplesPerFrame);
+      const end = Math.min(start + Math.ceil(samplesPerFrame), decodedAudioBuffer.length);
+      const numCh = decodedAudioBuffer.numberOfChannels;
+      const chData = [];
+      for (let ch = 0; ch < numCh; ch++) chData.push(decodedAudioBuffer.getChannelData(ch));
+
+      let sumL = 0, sumR = 0;
+      const count = end - start;
+      for (let i = start; i < end; i++) {
+        const sL = chData[0][i] || 0;
+        sumL += sL * sL;
+        const sR = numCh > 1 ? (chData[1][i] || 0) : sL;
+        sumR += sR * sR;
+      }
+      const rmsL = count > 0 ? Math.sqrt(sumL / count) : 0;
+      const rmsR = count > 0 ? Math.sqrt(sumR / count) : 0;
+
+      // Convert RMS to byte frequency-like levels (0-255 range spread across bins)
+      const lvlL = Math.min(1, rmsL * 2.5);
+      const lvlR = Math.min(1, rmsR * 2.5);
+      const valL = Math.round(lvlL * 255);
+      const valR = Math.round(lvlR * 255);
+      for (let i = 0; i < freqDataL.length; i++) freqDataL[i] = valL;
+      for (let i = 0; i < freqDataR.length; i++) freqDataR[i] = valR;
+    }
+
+    let exportFrame = 0;
+    const totalExportFrames = Math.ceil(decodedAudioBuffer.duration * 60);
+
+    try {
+      await offlineExport({
+        audioBuffer: decodedAudioBuffer,
+        fps: 60,
+        width: 1920,
+        height: 1080,
+        fftSize: mainAnalyser.fftSize,
+        smoothingTimeConstant: mainAnalyser.smoothingTimeConstant,
+        minDecibels: mainAnalyser.minDecibels,
+        maxDecibels: mainAnalyser.maxDecibels,
+        writable,
+        isCancelled: () => exportCancelled,
+        renderFrame: (fftData, delta) => {
+          // Populate freqData from offline FFT
+          const copyLen = Math.min(fftData.length, freqData.length);
+          for (let i = 0; i < copyLen; i++) freqData[i] = fftData[i];
+
+          // Populate L/R meter data from per-channel raw samples
+          computeChannelLevels(exportFrame);
+
+          // Populate band oscilloscope data (spread across full array so energy calc works)
+          const sr = decodedAudioBuffer.sampleRate;
+          const bins = fftData.length;
+          fillBandData(fftData, timeLow, prevBandLow, config.kick.lo, config.kick.hi, sr, bins);
+          fillBandData(fftData, timeMid, prevBandMid, config.snare.lo, config.snare.hi, sr, bins);
+          fillBandData(fftData, timeHigh, prevBandHigh, config.hihat.lo, config.hihat.hi, sr, bins);
+
+          drawSpectrum();
+          drawSpectrogram();
+          drawMeters();
+          drawOscilloscope(oscLowC, analyserLow, timeLow);
+          drawOscilloscope(oscMidC, analyserMid, timeMid);
+          drawOscilloscope(oscHighC, analyserHigh, timeHigh);
+
+          // Waveform with progressing playhead
+          if (waveformData) {
+            const playX = (exportFrame / totalExportFrames) * waveformC.width;
+            drawWaveformStatic(playX);
+            // Draw playhead line
+            const wCtx = contexts['waveform-canvas'];
+            wCtx.strokeStyle = '#fff';
+            wCtx.lineWidth = 1 * dpr;
+            wCtx.beginPath();
+            wCtx.moveTo(playX, 0);
+            wCtx.lineTo(playX, waveformC.height);
+            wCtx.stroke();
+          }
+
+          compositeFrame();
+          exportFrame++;
+        },
+        readCanvas: () => recordCanvas,
+        gpuFinish: () => {},
+        onProgress: (frac) => {
+          const pct = Math.round(frac * 100);
+          progressBar.style.width = pct + '%';
+          percentText.textContent = pct + '%';
+          const totalFrames = Math.ceil(decodedAudioBuffer.duration * 60);
+          statusText.textContent = 'Exporting... frame ' + Math.round(frac * totalFrames) + '/' + totalFrames;
+        },
+        onDone: () => {
+          statusText.textContent = 'Export complete!';
+          setTimeout(() => { overlay.style.display = 'none'; }, 1500);
+        },
+      });
+    } catch (e) {
+      console.error('Export error:', e);
+      statusText.textContent = 'Export failed: ' + e.message;
+      setTimeout(() => { overlay.style.display = 'none'; }, 3000);
+    }
+
+    offlineExporting = false;
+  });
+
+  $('exportCancelBtn').addEventListener('click', () => {
+    exportCancelled = true;
+    $('exportStatus').textContent = 'Cancelling...';
+  });
+
 })();
 </script>
 </body>
