@@ -1040,26 +1040,16 @@ body {
 
     offlineExporting = true;
 
-    // Helper: split full-spectrum FFT data into band-filtered oscilloscope data
-    // Apply temporal smoothing between frames to match live analyser behavior
-    const prevBandLow = new Float32Array(timeLow.length);
-    const prevBandMid = new Float32Array(timeMid.length);
-    const prevBandHigh = new Float32Array(timeHigh.length);
-    const bandSmoothing = 0.7;
-
-    function fillBandData(fullFreqData, bandArr, prevBand, loHz, hiHz, sampleRate, binCount) {
+    // Helper: fill band array from full FFT data
+    function fillBandData(fullFreqData, bandArr, loHz, hiHz, sampleRate, binCount) {
       const nyquist = sampleRate / 2;
       const loBin = Math.floor(loHz / nyquist * binCount);
       const hiBin = Math.min(Math.floor(hiHz / nyquist * binCount), binCount);
       bandArr.fill(0);
       const len = Math.min(hiBin - loBin, bandArr.length);
       for (let i = 0; i < len; i++) {
-        const raw = fullFreqData[loBin + i] || 0;
-        const smoothed = prevBand[i] * bandSmoothing + raw * (1 - bandSmoothing);
-        prevBand[i] = smoothed;
-        bandArr[i] = smoothed;
+        bandArr[i] = fullFreqData[loBin + i] || 0;
       }
-      bandArr._activeBins = len;
     }
 
     // Helper: compute per-channel RMS energy from raw samples for L/R meters
@@ -1101,7 +1091,7 @@ body {
         width: 1920,
         height: 1080,
         fftSize: mainAnalyser.fftSize,
-        smoothingTimeConstant: mainAnalyser.smoothingTimeConstant,
+        smoothingTimeConstant: 0.5,
         minDecibels: mainAnalyser.minDecibels,
         maxDecibels: mainAnalyser.maxDecibels,
         writable,
@@ -1114,12 +1104,12 @@ body {
           // Populate L/R meter data from per-channel raw samples
           computeChannelLevels(exportFrame);
 
-          // Populate band oscilloscope data (spread across full array so energy calc works)
+          // Compute band energies matching live analyser scale
           const sr = decodedAudioBuffer.sampleRate;
           const bins = fftData.length;
-          fillBandData(fftData, timeLow, prevBandLow, config.kick.lo, config.kick.hi, sr, bins);
-          fillBandData(fftData, timeMid, prevBandMid, config.snare.lo, config.snare.hi, sr, bins);
-          fillBandData(fftData, timeHigh, prevBandHigh, config.hihat.lo, config.hihat.hi, sr, bins);
+          fillBandData(fftData, timeLow, config.kick.lo, config.kick.hi, sr, bins);
+          fillBandData(fftData, timeMid, config.snare.lo, config.snare.hi, sr, bins);
+          fillBandData(fftData, timeHigh, config.hihat.lo, config.hihat.hi, sr, bins);
 
           drawSpectrum();
           drawSpectrogram();
