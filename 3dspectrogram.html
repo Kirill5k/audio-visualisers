@@ -205,6 +205,16 @@
     <span>Rotate</span>
   </div>
 
+  <div class="checkbox-row">
+    <input type="checkbox" id="driftToggle" />
+    <span>Drift</span>
+  </div>
+
+  <label>
+    Drift Angle: <span id="driftAngleLabel">45</span>°
+  </label>
+  <input type="range" id="driftAngleSlider" min="0" max="135" value="45" step="1" />
+
   <label>
     Camera Speed: <span id="rotSpeedLabel">0.02</span>
   </label>
@@ -373,6 +383,12 @@ const LOW_BIN_SKIP = 10;
 let scrollSpeed = 0.8;
 let rotationEnabled = true;
 let rotationSpeed = 0.02;
+let driftEnabled = false;
+let driftAngle = 0;
+let driftMaxAngle = 45;
+let driftBaseAngle = 0;
+let driftBaseRadius = 0;
+let driftBaseY = 0;
 let audioStarted = false;
 let audioBuffer = null;
 let audioSource = null;
@@ -716,6 +732,13 @@ function tickFrame(delta) {
   if (rotationEnabled && audioStarted) {
     mesh.rotation.y += delta * rotationSpeed;
   }
+  if (driftEnabled && audioStarted) {
+    driftAngle += delta * rotationSpeed * 0.5;
+    const orbitAngle = driftBaseAngle + Math.sin(driftAngle) * (Math.PI * driftMaxAngle / 180);
+    camera.position.x = Math.sin(orbitAngle) * driftBaseRadius;
+    camera.position.z = Math.cos(orbitAngle) * driftBaseRadius;
+    camera.position.y = driftBaseY;
+  }
 
   controls.update();
 
@@ -778,8 +801,25 @@ document.getElementById('historySlider').addEventListener('input', (e) => {
 });
 
 const rotateToggle = document.getElementById('rotateToggle');
+const driftToggle = document.getElementById('driftToggle');
 rotateToggle.addEventListener('change', (e) => {
   rotationEnabled = e.target.checked;
+  if (rotationEnabled) { driftEnabled = false; driftToggle.checked = false; }
+});
+driftToggle.addEventListener('change', (e) => {
+  driftEnabled = e.target.checked;
+  if (driftEnabled) {
+    rotationEnabled = false;
+    rotateToggle.checked = false;
+    driftAngle = 0;
+    driftBaseAngle = Math.atan2(camera.position.x, camera.position.z);
+    driftBaseRadius = Math.sqrt(camera.position.x ** 2 + camera.position.z ** 2);
+    driftBaseY = camera.position.y;
+  }
+});
+document.getElementById('driftAngleSlider').addEventListener('input', (e) => {
+  driftMaxAngle = parseFloat(e.target.value);
+  document.getElementById('driftAngleLabel').textContent = Math.round(driftMaxAngle);
 });
 
 document.getElementById('rotSpeedSlider').addEventListener('input', (e) => {
@@ -921,6 +961,7 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   const savedRotationY = mesh.rotation.y;
   const savedCamPos = camera.position.clone();
   const savedControlsTarget = controls.target.clone();
+  const savedDriftAngle = driftAngle;
   const savedHistoryHead = historyHead;
   const savedAccumulator = accumulator;
   const savedUTime = spectrogramMaterial.uniforms.uTime.value;
@@ -930,6 +971,7 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
 
   // Reset scene for export: use current camera position
   mesh.rotation.y = 0;
+  driftAngle = 0;
   historyHead = 0;
   accumulator = 0;
   spectrogramMaterial.uniforms.uTime.value = 0;
@@ -980,6 +1022,7 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   mesh.rotation.y = savedRotationY;
   camera.position.copy(savedCamPos);
   controls.target.copy(savedControlsTarget);
+  driftAngle = savedDriftAngle;
   historyHead = savedHistoryHead;
   accumulator = savedAccumulator;
   spectrogramMaterial.uniforms.uTime.value = savedUTime;
