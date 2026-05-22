@@ -162,6 +162,7 @@
 
 <div class="top-right-buttons">
   <div id="fpsCounter">-- fps</div>
+  <button id="replayBtn" class="top-btn">⏮ Replay</button>
   <button id="recordBtn" class="top-btn">⏺ Record</button>
   <button id="exportBtn" class="top-btn">⬇ Export</button>
   <button id="fullscreenBtn" class="top-btn">⛶ Fullscreen</button>
@@ -242,7 +243,7 @@
   <label>
     Horizontal Offset: <span id="camHorizLabel">0</span>
   </label>
-  <input type="range" id="camHorizSlider" min="-80" max="80" step="1" value="0" />
+  <input type="range" id="camHorizSlider" min="-180" max="180" step="1" value="0" />
 
   <label>
     Vertical Offset: <span id="camVertLabel">0</span>
@@ -1100,6 +1101,23 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   renderer.setSize(savedWidth, savedHeight);
   camera.aspect = savedAspect;
   camera.updateProjectionMatrix();
+});
+
+document.getElementById('replayBtn').addEventListener('click', () => {
+  if (!audioBuffer) { alert('Load an audio file first.'); return; }
+  if (offlineExporting || recorder.isRecording) return;
+
+  if (audioSource) {
+    try { audioSource.stop(); } catch(e) {}
+    try { audioSource.disconnect(); } catch(e) {}
+  }
+
+  audioSource = audioContext.createBufferSource();
+  audioSource.buffer = audioBuffer;
+  audioSource.connect(analyser);
+  analyser.connect(audioContext.destination);
+  audioSource.start();
+  audioStarted = true;
 });
 
 document.getElementById('exportCancelBtn').addEventListener('click', () => {
