@@ -163,6 +163,7 @@
 <div class="top-right-buttons">
   <div id="fpsCounter">-- fps</div>
   <button id="replayBtn" class="top-btn">⏮ Replay</button>
+  <button id="unloadBtn" class="top-btn">⏏ Unload</button>
   <button id="recordBtn" class="top-btn">⏺ Record</button>
   <button id="exportBtn" class="top-btn">⬇ Export</button>
   <button id="fullscreenBtn" class="top-btn">⛶ Fullscreen</button>
@@ -1051,6 +1052,21 @@ document.getElementById('replayBtn').addEventListener('click', () => {
   analyser.connect(audioContext.destination);
   audioSource.start();
   audioStarted = true;
+});
+
+document.getElementById('unloadBtn').addEventListener('click', () => {
+  if (!audioBuffer) return;
+  if (offlineExporting || recorder.isRecording) return;
+
+  if (audioSource) {
+    try { audioSource.stop(); } catch(e) {}
+    try { audioSource.disconnect(); } catch(e) {}
+    audioSource = null;
+  }
+
+  audioBuffer = null;
+  audioStarted = false;
+  document.getElementById('fileInput').value = '';
 });
 
 document.getElementById('exportCancelBtn').addEventListener('click', () => {
