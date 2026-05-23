@@ -259,6 +259,11 @@
   <div class="section-label">Rendering</div>
 
   <label>
+    Gain: <span id="gainLabel">1.4</span>
+  </label>
+  <input type="range" id="gainSlider" min="0.5" max="4" step="0.1" value="1.4" />
+
+  <label>
     Wireframe Width: <span id="wireWidthLabel">0.5</span>
   </label>
   <input
@@ -497,7 +502,8 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
     uFogFar: { value: 160.0 },
     uTime: { value: 0.0 },
     uFilmGrain: { value: 0.0 },
-    uLowBinSkip: { value: LOW_BIN_SKIP / FFT_BINS }
+    uLowBinSkip: { value: LOW_BIN_SKIP / FFT_BINS },
+    uGain: { value: 1.4 }
   },
   vertexShader: `
     uniform sampler2D uDataTexture;
@@ -507,6 +513,7 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
     uniform float uHeightScale;
     uniform float uEmissiveGlow;
     uniform float uLowBinSkip;
+    uniform float uGain;
     uniform vec3 uFogColor;
     uniform float uFogNear;
     uniform float uFogFar;
@@ -526,6 +533,7 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
       float texV = (texRow + 0.5) / uHistorySize;
       
       float amplitude = texture2D(uDataTexture, vec2(logX, texV)).r;
+      amplitude = clamp(amplitude * amplitude * uGain, 0.0, 1.0);
       float height = pow(amplitude, 1.7) * uHeightScale;
 
       vec3 displaced = position;
@@ -856,6 +864,12 @@ document.getElementById('hueShiftToggle').addEventListener('change', (e) => {
 document.getElementById('wireWidthSlider').addEventListener('input', (e) => {
   wireframeWidth = parseFloat(e.target.value);
   document.getElementById('wireWidthLabel').textContent = wireframeWidth.toFixed(1);
+});
+
+document.getElementById('gainSlider').addEventListener('input', (e) => {
+  const gain = parseFloat(e.target.value);
+  document.getElementById('gainLabel').textContent = gain.toFixed(1);
+  spectrogramMaterial.uniforms.uGain.value = gain;
 });
 
 document.getElementById('filmGrainToggle').addEventListener('change', (e) => {
