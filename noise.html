@@ -336,6 +336,7 @@ let colorMode  = 0;    // 0 = LUT, 1 = cosine
 let gain       = 1.4;
 
 let smBass = 0, smMid = 0, smTreble = 0, smOverall = 0;
+let tBass = 0, tMid = 0, tTreble = 0;
 
 let colorLow  = new THREE.Color(0x000020);
 let colorMid  = new THREE.Color(0x39a7c0);
@@ -412,6 +413,9 @@ const noiseMaterial = new THREE.ShaderMaterial({
   uniforms: {
     uResolution:   { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
     uTime:         { value: 0.0 },
+    uTimeBass:     { value: 0.0 },
+    uTimeMid:      { value: 0.0 },
+    uTimeTreble:   { value: 0.0 },
     uColorLUT:     { value: colorLUTTexture },
     uWarpAmount:   { value: warpAmount },
     uFlowSpeed:    { value: flowSpeed },
@@ -439,6 +443,7 @@ const noiseMaterial = new THREE.ShaderMaterial({
     varying vec2 vUv;
     uniform vec2  uResolution;
     uniform float uTime;
+    uniform float uTimeBass, uTimeMid, uTimeTreble;
     uniform float uWarpAmount, uFlowSpeed, uNoiseScale, uOctaves;
     uniform float uAudioMode, uColorMode;
     uniform float uBass, uMid, uTreble, uOverall;
@@ -491,22 +496,25 @@ const noiseMaterial = new THREE.ShaderMaterial({
       float detailAudio = mix(uTreble, uOverall, uAudioMode);
       float brightAudio = detailAudio;
 
-      float scale = uNoiseScale * (1.0 + 0.25 * warpAudio);
+      // Extremely subtle coordinate pulsing instead of violent zoom-shaking
+      float scale = uNoiseScale * (1.0 + 0.02 * warpAudio);
       vec2  p     = uv * scale;
-      float t     = uTime * (uFlowSpeed + 0.6 * flowAudio);
-      float warp  = uWarpAmount * (0.5 + warpAudio);
+      
+      // Extremely subtle warp response instead of jittery warping
+      float warp  = uWarpAmount * (0.8 + 0.2 * warpAudio);
 
+      // Smoothly morphing layers driven by our accumulated time uniforms
       vec2 q = vec2(
-        fbm(p + t),
-        fbm(p + vec2(5.2, 1.3) + t)
+        fbm(p + uTimeBass),
+        fbm(p + vec2(5.2, 1.3) + uTimeBass)
       );
       vec2 r = vec2(
-        fbm(p + warp * q + vec2(1.7, 9.2) + 0.15 * t),
-        fbm(p + warp * q + vec2(8.3, 2.8) + 0.126 * t)
+        fbm(p + warp * q + vec2(1.7, 9.2) + uTimeMid),
+        fbm(p + warp * q + vec2(8.3, 2.8) + uTimeMid * 0.85)
       );
 
-      float f = fbm(p + warp * r);
-      f = mix(f, fbm(p * 3.0 + warp * r + t), 0.35 * detailAudio);
+      float f = fbm(p + warp * r + uTimeBass * 0.25);
+      f = mix(f, fbm(p * 3.0 + warp * r + uTimeTreble), 0.35 * detailAudio);
       f = clamp(f * uGain, 0.0, 1.0);
 
       vec3 lutColor    = texture2D(uColorLUT, vec2(f, 0.5)).rgb;
@@ -648,6 +656,23 @@ function tickFrame(delta) {
   }
 
   computeAudioBands(frequencyData);
+
+  const flowAudio = (audioMode === 1.0) ? smOverall : smMid;
+  const warpAudio = (audioMode === 1.0) ? smOverall : smBass;
+  const detailAudio = (audioMode === 1.0) ? smOverall : smTreble;
+
+  const speedBass = flowSpeed + warpAudio * 1.5;
+  const speedMid = flowSpeed * 0.2 + flowAudio * 0.6;
+  const speedTreble = flowSpeed * 1.5 + detailAudio * 2.5;
+
+  tBass += delta * speedBass;
+  tMid += delta * speedMid;
+  tTreble += delta * speedTreble;
+
+  noiseMaterial.uniforms.uTimeBass.value = tBass;
+  noiseMaterial.uniforms.uTimeMid.value = tMid;
+  noiseMaterial.uniforms.uTimeTreble.value = tTreble;
+
   noiseMaterial.uniforms.uBass.value    = smBass;
   noiseMaterial.uniforms.uMid.value     = smMid;
   noiseMaterial.uniforms.uTreble.value  = smTreble;
@@ -872,6 +897,12 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
 
   // Save scene state
   const savedUTime               = noiseMaterial.uniforms.uTime.value;
+  const savedUTimeBass           = noiseMaterial.uniforms.uTimeBass.value;
+  const savedUTimeMid            = noiseMaterial.uniforms.uTimeMid.value;
+  const savedUTimeTreble         = noiseMaterial.uniforms.uTimeTreble.value;
+  const savedTBass               = tBass;
+  const savedTMid                = tMid;
+  const savedTTreble             = tTreble;
   const savedHueOffset           = hueShiftOffset;
   const savedLastHueUpdateOffset = lastHueUpdateOffset;
   const savedAudioStarted        = audioStarted;
@@ -882,6 +913,10 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
 
   // Reset for export
   noiseMaterial.uniforms.uTime.value = 0;
+  noiseMaterial.uniforms.uTimeBass.value = 0;
+  noiseMaterial.uniforms.uTimeMid.value = 0;
+  noiseMaterial.uniforms.uTimeTreble.value = 0;
+  tBass = tMid = tTreble = 0;
   hueShiftOffset = 0;
   lastHueUpdateOffset = -1;
   smBass = smMid = smTreble = smOverall = 0;
@@ -930,6 +965,12 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
 
   // Restore scene state
   noiseMaterial.uniforms.uTime.value = savedUTime;
+  noiseMaterial.uniforms.uTimeBass.value = savedUTimeBass;
+  noiseMaterial.uniforms.uTimeMid.value = savedUTimeMid;
+  noiseMaterial.uniforms.uTimeTreble.value = savedUTimeTreble;
+  tBass   = savedTBass;
+  tMid    = savedTMid;
+  tTreble = savedTTreble;
   hueShiftOffset = savedHueOffset;
   lastHueUpdateOffset = savedLastHueUpdateOffset;
   audioStarted = savedAudioStarted;
