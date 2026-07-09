@@ -264,15 +264,15 @@
   <input type="range" id="gainSlider" min="0.5" max="4" step="0.1" value="1.4" />
 
   <label>
-    Wireframe Width: <span id="wireWidthLabel">0.5</span>
+    Wireframe Width: <span id="wireWidthLabel">2.0</span>
   </label>
   <input
     type="range"
     id="wireWidthSlider"
     min="0.5"
-    max="5"
+    max="10"
     step="0.5"
-    value="0.5"
+    value="2"
   />
 
   <!-- Effects -->
@@ -408,7 +408,7 @@ let hueShiftEnabled = true;
 let hueShiftOffset = 0;
 let lastHueUpdateOffset = -1;
 
-let wireframeWidth = 0.5;
+let wireframeWidth = 2;
 let filmGrainEnabled = false;
 let emissiveGlowEnabled = true;
 
@@ -488,7 +488,7 @@ let historyHead = 0;
 // =====================================================
 
 const spectrogramMaterial = new THREE.ShaderMaterial({
-  wireframe: true,
+  wireframe: false,
   transparent: true,
   uniforms: {
     uDataTexture: { value: dataTexture },
@@ -503,9 +503,12 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
     uTime: { value: 0.0 },
     uFilmGrain: { value: 0.0 },
     uLowBinSkip: { value: LOW_BIN_SKIP / FFT_BINS },
-    uGain: { value: 1.4 }
+    uGain: { value: 1.4 },
+    uWireWidth: { value: 2 }
   },
   vertexShader: `
+    attribute vec3 barycentric;
+
     uniform sampler2D uDataTexture;
     uniform sampler2D uColorLUT;
     uniform float uHistoryHead;
@@ -520,9 +523,11 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
 
     varying vec3 vColor;
     varying vec2 vUv;
+    varying vec3 vBary;
 
     void main() {
       vUv = uv;
+      vBary = barycentric;
       vec2 gridUV = uv;
 
       float usableRange = 1.0 - uLowBinSkip;
@@ -557,21 +562,30 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
     precision highp float;
     uniform float uTime;
     uniform float uFilmGrain;
+    uniform float uWireWidth;
 
     varying vec3 vColor;
     varying vec2 vUv;
+    varying vec3 vBary;
 
     float noise(vec2 p) {
       return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
     }
 
     void main() {
+      float edge = 1.0 - min(
+        min(smoothstep(0.0, fwidth(vBary.x) * uWireWidth, vBary.x),
+            smoothstep(0.0, fwidth(vBary.y) * uWireWidth, vBary.y)),
+        smoothstep(0.0, fwidth(vBary.z) * uWireWidth, vBary.z)
+      );
+      if (edge < 0.01) discard;
+
       vec3 color = vColor;
       if (uFilmGrain > 0.0) {
         float grain = noise(vUv * 10.0 + uTime) - 0.5;
         color += grain * 0.08 * uFilmGrain;
       }
-      gl_FragColor = vec4(color, 0.95);
+      gl_FragColor = vec4(color, 0.95 * edge);
     }
   `
 });
@@ -580,11 +594,31 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
 // Geometry (Restored 1:1)
 // =====================================================
 
-let geometry = new THREE.PlaneGeometry(110, 160, FFT_BINS - 1, HISTORY - 1);
-geometry.rotateX(-Math.PI / 2);
+function addBarycentricAttribute(geo) {
+  const nonIndexed = geo.index ? geo.toNonIndexed() : geo;
+  if (nonIndexed !== geo) geo.dispose();
 
-geometry.computeBoundingBox();
-geometry.boundingBox.expandByScalar(50);
+  const count = nonIndexed.attributes.position.count;
+  const bary = new Float32Array(count * 3);
+  for (let i = 0; i < count; i += 3) {
+    bary[i * 3]     = 1; bary[i * 3 + 1] = 0; bary[i * 3 + 2] = 0;
+    bary[i * 3 + 3] = 0; bary[i * 3 + 4] = 1; bary[i * 3 + 5] = 0;
+    bary[i * 3 + 6] = 0; bary[i * 3 + 7] = 0; bary[i * 3 + 8] = 1;
+  }
+  nonIndexed.setAttribute('barycentric', new THREE.BufferAttribute(bary, 3));
+  return nonIndexed;
+}
+
+function createSpectrogramGeometry() {
+  let geo = new THREE.PlaneGeometry(110, 160, FFT_BINS - 1, HISTORY - 1);
+  geo.rotateX(-Math.PI / 2);
+  geo = addBarycentricAttribute(geo);
+  geo.computeBoundingBox();
+  geo.boundingBox.expandByScalar(50);
+  return geo;
+}
+
+let geometry = createSpectrogramGeometry();
 
 let mesh = new THREE.Mesh(geometry, spectrogramMaterial);
 mesh.frustumCulled = true;
@@ -610,10 +644,7 @@ function rebuildHistory(newSize) {
 
   scene.remove(mesh);
   geometry.dispose();
-  geometry = new THREE.PlaneGeometry(110, 160, FFT_BINS - 1, HISTORY - 1);
-  geometry.rotateX(-Math.PI / 2);
-  geometry.computeBoundingBox();
-  geometry.boundingBox.expandByScalar(50);
+  geometry = createSpectrogramGeometry();
   mesh = new THREE.Mesh(geometry, spectrogramMaterial);
   mesh.frustumCulled = true;
   scene.add(mesh);
@@ -864,6 +895,7 @@ document.getElementById('hueShiftToggle').addEventListener('change', (e) => {
 document.getElementById('wireWidthSlider').addEventListener('input', (e) => {
   wireframeWidth = parseFloat(e.target.value);
   document.getElementById('wireWidthLabel').textContent = wireframeWidth.toFixed(1);
+  spectrogramMaterial.uniforms.uWireWidth.value = wireframeWidth;
 });
 
 document.getElementById('gainSlider').addEventListener('input', (e) => {
