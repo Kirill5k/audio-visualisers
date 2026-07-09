@@ -782,6 +782,16 @@ function tickFrame(delta) {
 
   controls.update();
 
+  // Scale fog with camera distance so zooming out doesn't darken the scene
+  const camDist = camera.position.distanceTo(controls.target);
+  const fogScale = Math.max(camDist / 86, 0.35);
+  const fogNear = 30 * fogScale;
+  const fogFar = 160 * fogScale;
+  scene.fog.near = fogNear;
+  scene.fog.far = fogFar;
+  spectrogramMaterial.uniforms.uFogNear.value = fogNear;
+  spectrogramMaterial.uniforms.uFogFar.value = fogFar;
+
   renderer.render(scene, camera);
   if (recorder.isRecording) glCtx.finish();
 
