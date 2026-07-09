@@ -782,9 +782,9 @@ function tickFrame(delta) {
 
   controls.update();
 
-  // Scale fog with camera distance so zooming out doesn't darken the scene
+  // Expand fog only when zooming out; keep original range when close
   const camDist = camera.position.distanceTo(controls.target);
-  const fogScale = Math.max(camDist / 86, 0.35);
+  const fogScale = Math.max(camDist / 86, 1.0);
   const fogNear = 30 * fogScale;
   const fogFar = 160 * fogScale;
   scene.fog.near = fogNear;
