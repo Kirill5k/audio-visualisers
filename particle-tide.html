@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Particle Tide — Audio Visualiser</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f2f4ee;
+      --muted: #8d9696;
+      --panel: rgba(7, 10, 13, 0.82);
+      --edge: rgba(218, 229, 225, 0.15);
+      --accent: #d7e7df;
+      --danger: #ff665f;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #010204;
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    button, input { font: inherit; }
+    canvas { display: block; width: 100%; height: 100%; }
+
+    #stage {
+      position: fixed;
+      inset: 0;
+    }
+
+    #stage::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 50% 48%, transparent 20%, rgba(0, 0, 0, 0.12) 55%, rgba(0, 0, 0, 0.55) 100%),
+        linear-gradient(to bottom, rgba(0, 0, 0, 0.18), transparent 25%, transparent 75%, rgba(0, 0, 0, 0.2));
+      z-index: 2;
+    }
+
+    .glass {
+      background: var(--panel);
+      border: 1px solid var(--edge);
+      box-shadow: 0 16px 50px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(18px) saturate(120%);
+      -webkit-backdrop-filter: blur(18px) saturate(120%);
+    }
+
+    #panel {
+      position: fixed;
+      z-index: 10;
+      top: 18px;
+      left: 18px;
+      width: 286px;
+      max-height: calc(100vh - 36px);
+      overflow: auto;
+      padding: 17px;
+      border-radius: 14px;
+      transition: transform 240ms ease, opacity 200ms ease;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,.2) transparent;
+    }
+
+    #panel.hidden {
+      transform: translateX(calc(-100% - 28px));
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .brand {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 15px;
+    }
+
+    .eyebrow {
+      color: #93a19c;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 4px 0 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 25px;
+      font-weight: 400;
+      letter-spacing: -.025em;
+    }
+
+    .file-picker {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 10px 12px;
+      border: 1px dashed rgba(218, 229, 225, 0.27);
+      border-radius: 9px;
+      color: #dce4e0;
+      background: rgba(255,255,255,.035);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 650;
+      letter-spacing: .02em;
+      transition: background 160ms ease, border-color 160ms ease;
+    }
+
+    .file-picker:hover {
+      background: rgba(255,255,255,.075);
+      border-color: rgba(218, 229, 225, 0.48);
+    }
+
+    #fileInput { display: none; }
+
+    .section {
+      margin-top: 17px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(255,255,255,.075);
+    }
+
+    .section-title {
+      margin-bottom: 11px;
+      color: #77817e;
+      font-size: 9px;
+      font-weight: 750;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+
+    .control { margin-top: 11px; }
+
+    .control-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 7px;
+      color: #bcc4c1;
+      font-size: 11px;
+    }
+
+    .value {
+      min-width: 38px;
+      color: #edf1ef;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 3px;
+      margin: 0;
+      border-radius: 2px;
+      appearance: none;
+      background: rgba(255,255,255,.14);
+      cursor: pointer;
+      accent-color: var(--accent);
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      width: 13px;
+      height: 13px;
+      border: 1px solid rgba(0,0,0,.55);
+      border-radius: 50%;
+      appearance: none;
+      background: #e6ece9;
+      box-shadow: 0 0 0 2px rgba(255,255,255,.08);
+    }
+
+    .toggle-row, .color-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      min-height: 28px;
+      color: #bbc3c0;
+      font-size: 11px;
+    }
+
+    .toggle-row + .toggle-row, .color-row + .color-row { margin-top: 5px; }
+
+    input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      margin: 0;
+      accent-color: #dbe7e2;
+    }
+
+    input[type="color"] {
+      width: 34px;
+      height: 23px;
+      padding: 2px;
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 6px;
+      background: rgba(255,255,255,.05);
+      cursor: pointer;
+    }
+
+    #panelToggle {
+      position: fixed;
+      z-index: 12;
+      top: 18px;
+      left: 322px;
+      width: 38px;
+      height: 38px;
+      padding: 0;
+      border-radius: 10px;
+      color: var(--ink);
+      cursor: pointer;
+      transition: left 240ms ease, background 160ms ease;
+    }
+
+    #panelToggle.closed { left: 18px; }
+
+    #actions {
+      position: fixed;
+      z-index: 10;
+      top: 18px;
+      right: 18px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .action {
+      min-height: 38px;
+      padding: 0 12px;
+      border-radius: 10px;
+      color: #dce2df;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: .01em;
+      transition: background 150ms ease, border-color 150ms ease, opacity 150ms ease;
+    }
+
+    .action:hover:not(:disabled), #panelToggle:hover {
+      background: rgba(33, 39, 39, 0.93);
+      border-color: rgba(230, 240, 236, 0.28);
+    }
+
+    .action:disabled {
+      opacity: .34;
+      cursor: not-allowed;
+    }
+
+    .action.recording {
+      color: #fff;
+      border-color: rgba(255, 102, 95, .55);
+      background: rgba(126, 20, 20, .72);
+    }
+
+    .record-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 6px;
+      border-radius: 50%;
+      background: #ff7069;
+      box-shadow: 0 0 9px rgba(255, 75, 67, .6);
+    }
+
+    #readout {
+      position: fixed;
+      z-index: 8;
+      right: 18px;
+      bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      max-width: min(460px, calc(100vw - 36px));
+      padding: 9px 12px;
+      border-radius: 10px;
+      color: #98a19e;
+      font-size: 10px;
+      letter-spacing: .035em;
+      pointer-events: none;
+    }
+
+    #statusLight {
+      width: 6px;
+      height: 6px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: #65706c;
+      box-shadow: 0 0 0 3px rgba(101,112,108,.1);
+    }
+
+    #statusLight.live {
+      background: #dceae4;
+      box-shadow: 0 0 9px rgba(220,234,228,.65);
+    }
+
+    #statusText {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #fps {
+      color: #6f7875;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    #exportOverlay, #fatal {
+      position: fixed;
+      z-index: 100;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(1, 2, 4, .88);
+      backdrop-filter: blur(14px);
+    }
+
+    .export-card {
+      width: min(420px, calc(100vw - 40px));
+      padding: 25px;
+      border-radius: 15px;
+      text-align: center;
+    }
+
+    #exportStatus {
+      margin-bottom: 15px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 22px;
+    }
+
+    .progress {
+      height: 4px;
+      overflow: hidden;
+      border-radius: 2px;
+      background: rgba(255,255,255,.1);
+    }
+
+    #exportProgressBar {
+      width: 0;
+      height: 100%;
+      background: #d9e8e1;
+      box-shadow: 0 0 13px rgba(217,232,225,.5);
+      transition: width 100ms linear;
+    }
+
+    #exportPercent {
+      margin-top: 8px;
+      color: #8d9893;
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #exportCancelBtn {
+      margin-top: 18px;
+      border-color: rgba(255, 102, 95, .32);
+      color: #ffaaa6;
+    }
+
+    #fatal {
+      z-index: 200;
+      padding: 30px;
+      color: #d8dedd;
+      text-align: center;
+    }
+
+    @media (max-width: 760px) {
+      #panel { width: min(286px, calc(100vw - 36px)); }
+      #panelToggle { left: min(322px, calc(100vw - 1px)); }
+      #actions { top: auto; right: 12px; bottom: 12px; left: 12px; justify-content: center; }
+      #readout { right: 12px; bottom: 62px; left: 12px; max-width: none; }
+      .action { padding: 0 9px; }
+      .action-label { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="stage"></div>
+
+  <button id="panelToggle" class="glass" aria-label="Hide settings" title="Hide settings">×</button>
+
+  <aside id="panel" class="glass">
+    <div class="brand">
+      <div>
+        <div class="eyebrow">Audio reactive study</div>
+        <h1>Particle Tide</h1>
+      </div>
+    </div>
+
+    <label class="file-picker" for="fileInput">Choose an audio file</label>
+    <input id="fileInput" type="file" accept="audio/*">
+
+    <section class="section">
+      <div class="section-title">Motion</div>
+
+      <div class="control">
+        <div class="control-head"><span>Flow speed</span><span class="value" id="speedValue">0.85</span></div>
+        <input id="speed" type="range" min="0.15" max="2.5" step="0.05" value="0.85">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Trail fade</span><span class="value" id="fadeValue">0.15</span></div>
+        <input id="fade" type="range" min="0.15" max="1" step="0.01" value="0.15">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Camera drift</span><span class="value" id="orbitSpeedValue">0.04</span></div>
+        <input id="orbitSpeed" type="range" min="0" max="0.18" step="0.01" value="0.04">
+      </div>
+
+      <label class="toggle-row">
+        <span>Auto drift</span>
+        <input id="autoOrbit" type="checkbox">
+      </label>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Audio response</div>
+
+      <div class="control">
+        <div class="control-head"><span>Gain</span><span class="value" id="gainValue">1.10</span></div>
+        <input id="gain" type="range" min="0.4" max="4" step="0.05" value="1.1">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Wave height</span><span class="value" id="heightValue">15</span></div>
+        <input id="height" type="range" min="6" max="48" step="1" value="15">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Particle spray</span><span class="value" id="scatterValue">1</span></div>
+        <input id="scatter" type="range" min="0" max="30" step="1" value="1">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>FFT smoothing</span><span class="value" id="smoothingValue">0.75</span></div>
+        <input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.75">
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Particles</div>
+
+      <div class="control">
+        <div class="control-head"><span>Point size</span><span class="value" id="pointSizeValue">2.7</span></div>
+        <input id="pointSize" type="range" min="0.6" max="5" step="0.1" value="2.7">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Density</span><span class="value" id="densityValue">1.00</span></div>
+        <input id="density" type="range" min="0.15" max="1" step="0.01" value="1">
+      </div>
+
+      <div class="color-row"><span>Shadow colour</span><input id="colorLow" type="color" value="#172f35"></div>
+      <div class="color-row"><span>Ridge colour</span><input id="colorHigh" type="color" value="#eef0df"></div>
+
+      <label class="toggle-row">
+        <span>Bloom</span>
+        <input id="bloom" type="checkbox" checked>
+      </label>
+      <label class="toggle-row">
+        <span>Film grain</span>
+        <input id="grain" type="checkbox" checked>
+      </label>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Capture</div>
+      <label class="toggle-row">
+        <span>Record on load</span>
+        <input id="autoRecord" type="checkbox">
+      </label>
+      <label class="toggle-row">
+        <span>Export on load</span>
+        <input id="autoExport" type="checkbox">
+      </label>
+      <label class="toggle-row">
+        <span>Lock recording to 60 fps</span>
+        <input id="lock60" type="checkbox">
+      </label>
+    </section>
+  </aside>
+
+  <nav id="actions">
+    <button id="replayBtn" class="action glass" disabled title="Replay">↺ <span class="action-label">Replay</span></button>
+    <button id="unloadBtn" class="action glass" disabled title="Unload">⊘ <span class="action-label">Unload</span></button>
+    <button id="recordBtn" class="action glass" disabled><span class="record-dot"></span><span class="action-label">Record</span></button>
+    <button id="exportBtn" class="action glass" disabled>↓ <span class="action-label">Export</span></button>
+    <button id="fullscreenBtn" class="action glass" title="Fullscreen">⛶</button>
+  </nav>
+
+  <div id="readout" class="glass">
+    <span id="statusLight"></span>
+    <span id="statusText">Choose an audio file to begin</span>
+    <span id="fps">— fps</span>
+  </div>
+
+  <div id="exportOverlay">
+    <div class="export-card glass">
+      <div id="exportStatus">Rendering the tide…</div>
+      <div class="progress"><div id="exportProgressBar"></div></div>
+      <div id="exportPercent">0%</div>
+      <button id="exportCancelBtn" class="action glass">Cancel export</button>
+    </div>
+  </div>
+
+  <div id="fatal">WebGL is unavailable in this browser.</div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script src="recorder.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
+  <script src="offline-exporter.js"></script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+    import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+    import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+    import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+
+    const FFT_SIZE = 1024;
+    const FFT_BINS = FFT_SIZE / 2;
+    const COLUMNS = 280;
+    const HISTORY = 180;
+    const FIELD_WIDTH = 108;
+    const FIELD_DEPTH = 116;
+    const EXPORT_WIDTH = 1920;
+    const EXPORT_HEIGHT = 1080;
+    const EXPORT_FPS = 60;
+
+    const settings = {
+      speed: 0.85,
+      fade: 0.15,
+      orbitSpeed: 0.04,
+      autoOrbit: false,
+      gain: 1.1,
+      height: 15,
+      scatter: 1,
+      smoothing: 0.75,
+      pointSize: 2.7,
+      density: 1,
+      bloom: true,
+      grain: true,
+      lock60: false,
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const statusText = $("statusText");
+    const statusLight = $("statusLight");
+    const recordBtn = $("recordBtn");
+    const exportBtn = $("exportBtn");
+    const replayBtn = $("replayBtn");
+    const unloadBtn = $("unloadBtn");
+    const exportOverlay = $("exportOverlay");
+
+    let scene;
+    let camera;
+    let renderer;
+    let controls;
+    let composer;
+    let bloomPass;
+    let finishPass;
+    let field;
+    let fieldMaterial;
+    let ridge;
+    let ridgeGlow;
+    let ridgeGeometry;
+    let ridgePositions;
+
+    let audioContext;
+    let analyser;
+    let mediaStreamDestination;
+    let audioBuffer = null;
+    let audioSource = null;
+    let audioFileName = "";
+    let isPlaying = false;
+    let offlineExporting = false;
+    let exportCancelled = false;
+
+    const frequencyData = new Uint8Array(FFT_BINS);
+    let historyData = new Uint8Array(FFT_BINS * HISTORY);
+    let historyTexture;
+    let historyHead = 0;
+    let flowAccumulator = 0;
+    let elapsedTime = 0;
+    let orbitAngle = 0;
+    let controlsInteracting = false;
+
+    let recordingTrack = null;
+    let preCaptureState = null;
+    let lastCaptureTime = 0;
+
+    function setStatus(message, live = false) {
+      statusText.textContent = message;
+      statusLight.classList.toggle("live", live);
+    }
+
+    function initScene() {
+      try {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x010204);
+
+        camera = new THREE.PerspectiveCamera(47, innerWidth / innerHeight, 0.1, 400);
+        camera.position.set(0, 28, 107);
+
+        renderer = new THREE.WebGLRenderer({
+          antialias: true,
+          alpha: false,
+          preserveDrawingBuffer: true,
+          powerPreference: "high-performance",
+        });
+      } catch (error) {
+        console.error(error);
+        $("fatal").style.display = "flex";
+        return false;
+      }
+
+      const pixelRatio = Math.min(devicePixelRatio, innerWidth < 760 ? 1 : 1.5);
+      renderer.setPixelRatio(pixelRatio);
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      $("stage").appendChild(renderer.domElement);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.target.set(0, 11, 0);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.055;
+      controls.minDistance = 48;
+      controls.maxDistance = 185;
+      controls.maxPolarAngle = Math.PI * 0.72;
+      controls.addEventListener("start", () => { controlsInteracting = true; });
+      controls.addEventListener("end", () => { controlsInteracting = false; });
+      controls.update();
+
+      createHistoryTexture();
+      seedDemoHistory();
+      createParticleField();
+      createRidge();
+      createPostProcessing();
+      return true;
+    }
+
+    function createHistoryTexture() {
+      historyTexture = new THREE.DataTexture(
+        historyData,
+        FFT_BINS,
+        HISTORY,
+        THREE.RedFormat,
+        THREE.UnsignedByteType,
+      );
+      historyTexture.minFilter = THREE.LinearFilter;
+      historyTexture.magFilter = THREE.LinearFilter;
+      historyTexture.wrapS = THREE.ClampToEdgeWrapping;
+      historyTexture.wrapT = THREE.ClampToEdgeWrapping;
+      historyTexture.needsUpdate = true;
+    }
+
+    function seedDemoHistory() {
+      for (let row = 0; row < HISTORY; row++) {
+        const phase = row * 0.075;
+        for (let bin = 0; bin < FFT_BINS; bin++) {
+          const x = bin / FFT_BINS;
+          const ridgeA = Math.exp(-Math.pow((x - .055 - Math.sin(phase) * .012) * 18, 2));
+          const ridgeB = Math.exp(-Math.pow((x - .16 - Math.cos(phase * .7) * .025) * 11, 2));
+          const ripple = Math.max(0, Math.sin(x * 75 - phase * 2.1)) * Math.exp(-x * 5.2);
+          const noise = Math.sin(bin * 12.9898 + row * 78.233) * 43758.5453;
+          const grain = (noise - Math.floor(noise)) * 16;
+          historyData[row * FFT_BINS + bin] = Math.min(150, 16 + ridgeA * 90 + ridgeB * 54 + ripple * 24 + grain);
+        }
+      }
+      historyHead = 0;
+      historyTexture.needsUpdate = true;
+    }
+
+    function createParticleField() {
+      const count = COLUMNS * HISTORY;
+      const positions = new Float32Array(count * 3);
+      const grids = new Float32Array(count * 2);
+      let index = 0;
+
+      for (let row = 0; row < HISTORY; row++) {
+        for (let column = 0; column < COLUMNS; column++) {
+          const u = column / (COLUMNS - 1);
+          const v = row / (HISTORY - 1);
+          positions[index * 3] = (u - .5) * FIELD_WIDTH;
+          positions[index * 3 + 1] = 0;
+          positions[index * 3 + 2] = (.5 - v) * FIELD_DEPTH;
+          grids[index * 2] = u;
+          grids[index * 2 + 1] = v;
+          index++;
+        }
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute("aGrid", new THREE.BufferAttribute(grids, 2));
+      geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 16, 0), 95);
+
+      fieldMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uHistory: { value: historyTexture },
+          uHistoryHead: { value: historyHead },
+          uHistorySize: { value: HISTORY },
+          uGain: { value: settings.gain },
+          uHeight: { value: settings.height },
+          uScatter: { value: settings.scatter },
+          uPointSize: { value: settings.pointSize },
+          uDensity: { value: settings.density },
+          uTrailFade: { value: settings.fade },
+          uTime: { value: 0 },
+          uLowColor: { value: new THREE.Color($("colorLow").value) },
+          uHighColor: { value: new THREE.Color($("colorHigh").value) },
+        },
+        vertexShader: `
+          attribute vec2 aGrid;
+
+          uniform sampler2D uHistory;
+          uniform float uHistoryHead;
+          uniform float uHistorySize;
+          uniform float uGain;
+          uniform float uHeight;
+          uniform float uScatter;
+          uniform float uPointSize;
+          uniform float uDensity;
+          uniform float uTrailFade;
+          uniform float uTime;
+          uniform vec3 uLowColor;
+          uniform vec3 uHighColor;
+
+          varying vec3 vColor;
+          varying float vAlpha;
+
+          float hash21(vec2 p) {
+            p = fract(p * vec2(123.34, 456.21));
+            p += dot(p, p + 45.32);
+            return fract(p.x * p.y);
+          }
+
+          void main() {
+            float frequencyX = .012 + pow(aGrid.x, 2.32) * .78;
+            float ageRow = aGrid.y * (uHistorySize - 1.0);
+            float textureRow = mod(uHistoryHead - 1.0 - ageRow + uHistorySize, uHistorySize);
+            float textureV = (textureRow + .5) / uHistorySize;
+            float raw = texture2D(uHistory, vec2(frequencyX, textureV)).r;
+            float amplitude = clamp(pow(raw, 1.18) * uGain, 0.0, 1.0);
+            float shaped = pow(amplitude, 1.55);
+
+            float seed = hash21(aGrid * vec2(811.7, 437.2));
+            float seedB = hash21(aGrid.yx * vec2(309.4, 971.1) + 1.7);
+            float flicker = .82 + .18 * sin(uTime * 2.4 + seed * 25.0);
+            float trail = mix(1.0, pow(1.0 - aGrid.y, 1.45), uTrailFade);
+
+            vec3 transformed = position;
+            transformed.x += (seed - .5) * (.14 + shaped * .75);
+            transformed.y = shaped * uHeight;
+            transformed.y += (seedB - .28) * shaped * uScatter;
+            transformed.z += (seed - .5) * (1.0 + shaped * 4.2);
+
+            vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
+            float perspective = clamp(260.0 / -mvPosition.z, .55, 4.0);
+            gl_PointSize = uPointSize * perspective * (.55 + shaped * 1.15);
+            gl_Position = projectionMatrix * mvPosition;
+
+            float visible = 1.0 - step(uDensity, seed);
+            float quiet = smoothstep(.015, .14, amplitude);
+            vAlpha = visible * trail * flicker * mix(.025, .52, quiet);
+            vec3 tone = mix(uLowColor, uHighColor, smoothstep(.08, .82, amplitude));
+            vColor = tone * mix(.28, .94, shaped);
+          }
+        `,
+        fragmentShader: `
+          precision highp float;
+          varying vec3 vColor;
+          varying float vAlpha;
+
+          void main() {
+            vec2 point = gl_PointCoord - .5;
+            float radius = length(point);
+            if (radius > .5 || vAlpha < .005) discard;
+            float core = 1.0 - smoothstep(.06, .5, radius);
+            gl_FragColor = vec4(vColor, vAlpha * core);
+          }
+        `,
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+        blending: THREE.AdditiveBlending,
+      });
+
+      field = new THREE.Points(geometry, fieldMaterial);
+      field.frustumCulled = false;
+      scene.add(field);
+    }
+
+    function createRidge() {
+      ridgePositions = new Float32Array(COLUMNS * 3);
+      ridgeGeometry = new THREE.BufferGeometry();
+      ridgeGeometry.setAttribute("position", new THREE.BufferAttribute(ridgePositions, 3));
+
+      const ridgeMaterial = new THREE.LineBasicMaterial({
+        color: $("colorHigh").value,
+        transparent: true,
+        opacity: .96,
+        blending: THREE.AdditiveBlending,
+      });
+      const glowMaterial = new THREE.LineBasicMaterial({
+        color: $("colorHigh").value,
+        transparent: true,
+        opacity: .24,
+        blending: THREE.AdditiveBlending,
+      });
+
+      ridge = new THREE.Line(ridgeGeometry, ridgeMaterial);
+      ridgeGlow = new THREE.Line(ridgeGeometry, glowMaterial);
+      ridgeGlow.scale.y = 1.018;
+      ridgeGlow.position.y = -.08;
+      ridge.frustumCulled = false;
+      ridgeGlow.frustumCulled = false;
+      scene.add(ridgeGlow, ridge);
+
+      const newestRow = (historyHead - 1 + HISTORY) % HISTORY;
+      frequencyData.set(historyData.subarray(newestRow * FFT_BINS, (newestRow + 1) * FFT_BINS));
+      updateRidge();
+    }
+
+    function createPostProcessing() {
+      composer = new EffectComposer(renderer);
+      composer.setPixelRatio(renderer.getPixelRatio());
+      composer.addPass(new RenderPass(scene, camera));
+
+      bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(innerWidth, innerHeight),
+        .46,
+        .32,
+        .38,
+      );
+      bloomPass.enabled = settings.bloom;
+      composer.addPass(bloomPass);
+
+      const FinishShader = {
+        uniforms: {
+          tDiffuse: { value: null },
+          uTime: { value: 0 },
+          uGrain: { value: 1 },
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D tDiffuse;
+          uniform float uTime;
+          uniform float uGrain;
+          varying vec2 vUv;
+
+          float hash21(vec2 p) {
+            return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+          }
+
+          void main() {
+            vec3 color = texture2D(tDiffuse, vUv).rgb;
+            float distanceFromCenter = length((vUv - .5) * vec2(1.0, .72));
+            float vignette = 1.0 - smoothstep(.26, .82, distanceFromCenter) * .58;
+            float grain = (hash21(vUv * 1900.0 + fract(uTime)) - .5) * .055 * uGrain;
+            color = color * vignette + grain;
+            color = pow(max(color, 0.0), vec3(.96));
+            gl_FragColor = vec4(color, 1.0);
+          }
+        `,
+      };
+      finishPass = new ShaderPass(FinishShader);
+      composer.addPass(finishPass);
+    }
+
+    function initAudio() {
+      if (audioContext) return;
+      audioContext = new AudioContext();
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = FFT_SIZE;
+      analyser.smoothingTimeConstant = settings.smoothing;
+      analyser.minDecibels = -100;
+      analyser.maxDecibels = -26;
+
+      mediaStreamDestination = audioContext.createMediaStreamDestination();
+      analyser.connect(audioContext.destination);
+      analyser.connect(mediaStreamDestination);
+    }
+
+    function stopSource() {
+      if (!audioSource) return;
+      audioSource.onended = null;
+      try { audioSource.stop(); } catch (error) {}
+      try { audioSource.disconnect(); } catch (error) {}
+      audioSource = null;
+      isPlaying = false;
+    }
+
+    function resetLiveField() {
+      historyData.fill(0);
+      frequencyData.fill(0);
+      historyHead = 0;
+      flowAccumulator = 0;
+      historyTexture.needsUpdate = true;
+      fieldMaterial.uniforms.uHistoryHead.value = historyHead;
+      updateRidge();
+    }
+
+    function startPlayback(preparedRecording = null) {
+      if (!audioBuffer || offlineExporting) return;
+      stopSource();
+
+      audioSource = audioContext.createBufferSource();
+      audioSource.buffer = audioBuffer;
+      audioSource.connect(analyser);
+      audioSource.onended = () => {
+        isPlaying = false;
+        audioSource = null;
+        setStatus("Playback finished · " + audioFileName);
+        if (recorder.isRecording) recorder.stop();
+      };
+
+      if (preparedRecording && !recorder.isRecording) {
+        recorder.startAutoRecord(preparedRecording, makeRecordingStream);
+      }
+
+      audioSource.start();
+      isPlaying = true;
+      setStatus("Playing · " + audioFileName, true);
+    }
+
+    function pushHistoryRow(data) {
+      historyData.set(data, historyHead * FFT_BINS);
+      historyHead = (historyHead + 1) % HISTORY;
+      historyTexture.needsUpdate = true;
+      fieldMaterial.uniforms.uHistoryHead.value = historyHead;
+    }
+
+    function sampleAmplitude(column) {
+      const u = column / (COLUMNS - 1);
+      const frequencyX = .012 + Math.pow(u, 2.32) * .78;
+      const bin = Math.min(FFT_BINS - 1, Math.floor(frequencyX * FFT_BINS));
+      const raw = frequencyData[bin] / 255;
+      const amplitude = Math.min(1, Math.pow(raw, 1.18) * settings.gain);
+      return Math.pow(amplitude, 1.55);
+    }
+
+    function updateRidge() {
+      for (let column = 0; column < COLUMNS; column++) {
+        const i = column * 3;
+        const u = column / (COLUMNS - 1);
+        ridgePositions[i] = (u - .5) * FIELD_WIDTH;
+        ridgePositions[i + 1] = sampleAmplitude(column) * settings.height;
+        ridgePositions[i + 2] = FIELD_DEPTH * .5 + .55;
+      }
+      ridgeGeometry.attributes.position.needsUpdate = true;
+      ridgeGeometry.computeBoundingSphere();
+    }
+
+    function renderFrame(delta, externalFrequencyData = null) {
+      elapsedTime += delta;
+      fieldMaterial.uniforms.uTime.value = elapsedTime;
+      finishPass.uniforms.uTime.value = elapsedTime;
+
+      if (externalFrequencyData) {
+        frequencyData.set(externalFrequencyData.subarray(0, FFT_BINS));
+      } else if (isPlaying && analyser) {
+        analyser.getByteFrequencyData(frequencyData);
+      }
+
+      if (isPlaying || externalFrequencyData) {
+        flowAccumulator += delta * settings.speed * 60;
+        while (flowAccumulator >= 1) {
+          pushHistoryRow(frequencyData);
+          flowAccumulator -= 1;
+        }
+        updateRidge();
+      }
+
+      if (settings.autoOrbit && !controlsInteracting) {
+        orbitAngle += delta * settings.orbitSpeed;
+        const radius = Math.hypot(camera.position.x, camera.position.z);
+        const desiredX = Math.sin(orbitAngle) * radius * .22;
+        camera.position.x += (desiredX - camera.position.x) * Math.min(1, delta * .6);
+        camera.lookAt(controls.target);
+      }
+
+      controls.update();
+      composer.render();
+    }
+
+    const recorder = createRecorder({
+      defaultFilename: "particle_tide",
+      videoBitsPerSecond: 32_000_000,
+      onStatus: (message) => setStatus(message),
+      onStart: () => {
+        recordBtn.classList.add("recording");
+        recordBtn.innerHTML = "■ <span class=\"action-label\">Stop</span>";
+        setStatus("Recording · " + (audioFileName || "canvas"), true);
+      },
+      onStop: () => {
+        recordBtn.classList.remove("recording");
+        recordBtn.innerHTML = "<span class=\"record-dot\"></span><span class=\"action-label\">Record</span>";
+        recordingTrack = null;
+        restoreCaptureSize();
+        setStatus(audioFileName ? "Recording saved · " + audioFileName : "Recording saved");
+      },
+    });
+
+    function saveCaptureState() {
+      return {
+        width: innerWidth,
+        height: innerHeight,
+        pixelRatio: renderer.getPixelRatio(),
+        aspect: camera.aspect,
+      };
+    }
+
+    function setCaptureSize(width, height) {
+      renderer.setPixelRatio(1);
+      composer.setPixelRatio(1);
+      renderer.setSize(width, height, false);
+      composer.setSize(width, height);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    }
+
+    function restoreCaptureSize() {
+      if (!preCaptureState) return;
+      renderer.setPixelRatio(preCaptureState.pixelRatio);
+      composer.setPixelRatio(preCaptureState.pixelRatio);
+      renderer.setSize(preCaptureState.width, preCaptureState.height, false);
+      composer.setSize(preCaptureState.width, preCaptureState.height);
+      camera.aspect = preCaptureState.aspect;
+      camera.updateProjectionMatrix();
+      preCaptureState = null;
+    }
+
+    function makeRecordingStream() {
+      if (!renderer || !mediaStreamDestination) return null;
+      preCaptureState = saveCaptureState();
+      setCaptureSize(EXPORT_WIDTH, EXPORT_HEIGHT);
+
+      const stream = renderer.domElement.captureStream(0);
+      recordingTrack = stream.getVideoTracks()[0];
+      const audioTrack = mediaStreamDestination.stream.getAudioTracks()[0];
+      if (audioTrack) stream.addTrack(audioTrack);
+      lastCaptureTime = 0;
+      return stream;
+    }
+
+    async function loadAudio(file, preparedRecording, exportWritable) {
+      initAudio();
+      await audioContext.resume();
+      setStatus("Decoding · " + file.name);
+
+      stopSource();
+      audioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
+      audioFileName = file.name;
+      resetLiveField();
+      setButtonsEnabled(true);
+
+      if (exportWritable) {
+        exportBtn.pendingWritable = exportWritable;
+        exportBtn.click();
+        return;
+      }
+
+      startPlayback(preparedRecording);
+    }
+
+    function setButtonsEnabled(enabled) {
+      replayBtn.disabled = !enabled;
+      unloadBtn.disabled = !enabled;
+      recordBtn.disabled = !enabled;
+      const exportSupported = Boolean(window.showSaveFilePicker && window.VideoEncoder && window.AudioEncoder);
+      exportBtn.disabled = !enabled || !exportSupported;
+      if (enabled && !exportSupported) exportBtn.title = "Offline export requires Chromium with WebCodecs";
+    }
+
+    async function exportVideo() {
+      if (!audioBuffer || offlineExporting || recorder.isRecording) return;
+
+      const writable = exportBtn.pendingWritable || await (async () => {
+        if (!window.showSaveFilePicker) return null;
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: "particle_tide.mp4",
+            types: [{ description: "MP4 Video", accept: { "video/mp4": [".mp4"] } }],
+          });
+          return await handle.createWritable();
+        } catch (error) {
+          if (error.name !== "AbortError") setStatus("Export error · " + error.message);
+          return null;
+        }
+      })();
+      exportBtn.pendingWritable = null;
+      if (!writable) return;
+
+      const saved = {
+        capture: saveCaptureState(),
+        historyData: new Uint8Array(historyData),
+        frequencyData: new Uint8Array(frequencyData),
+        historyHead,
+        flowAccumulator,
+        elapsedTime,
+        orbitAngle,
+        cameraPosition: camera.position.clone(),
+        controlsTarget: controls.target.clone(),
+        wasPlaying: isPlaying,
+      };
+
+      offlineExporting = true;
+      exportCancelled = false;
+      exportOverlay.style.display = "flex";
+      $("exportProgressBar").style.width = "0%";
+      $("exportPercent").textContent = "0%";
+      $("exportStatus").textContent = "Rendering the tide…";
+
+      if (audioContext?.state === "running") await audioContext.suspend();
+
+      historyData.fill(0);
+      frequencyData.fill(0);
+      historyHead = 0;
+      flowAccumulator = 0;
+      elapsedTime = 0;
+      orbitAngle = 0;
+      fieldMaterial.uniforms.uHistoryHead.value = 0;
+      historyTexture.needsUpdate = true;
+      setCaptureSize(EXPORT_WIDTH, EXPORT_HEIGHT);
+
+      const gl = renderer.getContext();
+
+      try {
+        await offlineExport({
+          audioBuffer,
+          fps: EXPORT_FPS,
+          width: EXPORT_WIDTH,
+          height: EXPORT_HEIGHT,
+          fftSize: analyser.fftSize,
+          smoothingTimeConstant: analyser.smoothingTimeConstant,
+          minDecibels: analyser.minDecibels,
+          maxDecibels: analyser.maxDecibels,
+          writable,
+          isCancelled: () => exportCancelled,
+          renderFrame: (fftData, delta) => renderFrame(delta, fftData),
+          readCanvas: () => renderer.domElement,
+          gpuFinish: () => gl.finish(),
+          onProgress: (fraction) => {
+            const percent = Math.round(fraction * 100);
+            $("exportProgressBar").style.width = percent + "%";
+            $("exportPercent").textContent = percent + "%";
+            $("exportStatus").textContent = "Rendering frame " +
+              Math.round(fraction * Math.ceil(audioBuffer.duration * EXPORT_FPS)) +
+              " of " + Math.ceil(audioBuffer.duration * EXPORT_FPS);
+          },
+          onDone: () => {
+            $("exportStatus").textContent = "Export complete";
+            setTimeout(() => { exportOverlay.style.display = "none"; }, 900);
+          },
+        });
+        if (exportCancelled) {
+          exportOverlay.style.display = "none";
+          setStatus("Export cancelled");
+        } else {
+          setStatus("Export saved · particle_tide.mp4");
+        }
+      } catch (error) {
+        console.error(error);
+        try { await writable.abort(); } catch (abortError) {}
+        $("exportStatus").textContent = "Export failed · " + error.message;
+        setTimeout(() => { exportOverlay.style.display = "none"; }, 2600);
+        setStatus("Export failed · " + error.message);
+      } finally {
+        historyData.set(saved.historyData);
+        frequencyData.set(saved.frequencyData);
+        historyHead = saved.historyHead;
+        flowAccumulator = saved.flowAccumulator;
+        elapsedTime = saved.elapsedTime;
+        orbitAngle = saved.orbitAngle;
+        camera.position.copy(saved.cameraPosition);
+        controls.target.copy(saved.controlsTarget);
+        fieldMaterial.uniforms.uHistoryHead.value = historyHead;
+        historyTexture.needsUpdate = true;
+        updateRidge();
+
+        renderer.setPixelRatio(saved.capture.pixelRatio);
+        composer.setPixelRatio(saved.capture.pixelRatio);
+        renderer.setSize(saved.capture.width, saved.capture.height, false);
+        composer.setSize(saved.capture.width, saved.capture.height);
+        camera.aspect = saved.capture.aspect;
+        camera.updateProjectionMatrix();
+
+        offlineExporting = false;
+        if (audioContext?.state === "suspended") await audioContext.resume();
+      }
+    }
+
+    function unloadAudio() {
+      if (offlineExporting || recorder.isRecording) return;
+      stopSource();
+      audioBuffer = null;
+      audioFileName = "";
+      $("fileInput").value = "";
+      seedDemoHistory();
+      const newestRow = (historyHead - 1 + HISTORY) % HISTORY;
+      frequencyData.set(historyData.subarray(newestRow * FFT_BINS, (newestRow + 1) * FFT_BINS));
+      updateRidge();
+      setButtonsEnabled(false);
+      setStatus("Choose an audio file to begin");
+    }
+
+    function bindRange(id, key, decimals, onInput) {
+      const input = $(id);
+      const output = $(id + "Value");
+      input.addEventListener("input", () => {
+        settings[key] = Number(input.value);
+        output.textContent = settings[key].toFixed(decimals);
+        if (onInput) onInput(settings[key]);
+      });
+    }
+
+    bindRange("speed", "speed", 2);
+    bindRange("fade", "fade", 2, (value) => { fieldMaterial.uniforms.uTrailFade.value = value; });
+    bindRange("orbitSpeed", "orbitSpeed", 2);
+    bindRange("gain", "gain", 2, (value) => {
+      fieldMaterial.uniforms.uGain.value = value;
+      updateRidge();
+    });
+    bindRange("height", "height", 0, (value) => {
+      fieldMaterial.uniforms.uHeight.value = value;
+      updateRidge();
+    });
+    bindRange("scatter", "scatter", 0, (value) => { fieldMaterial.uniforms.uScatter.value = value; });
+    bindRange("smoothing", "smoothing", 2, (value) => {
+      if (analyser) analyser.smoothingTimeConstant = value;
+    });
+    bindRange("pointSize", "pointSize", 1, (value) => { fieldMaterial.uniforms.uPointSize.value = value; });
+    bindRange("density", "density", 2, (value) => { fieldMaterial.uniforms.uDensity.value = value; });
+
+    $("autoOrbit").addEventListener("change", (event) => { settings.autoOrbit = event.target.checked; });
+    $("bloom").addEventListener("change", (event) => {
+      settings.bloom = event.target.checked;
+      bloomPass.enabled = settings.bloom;
+    });
+    $("grain").addEventListener("change", (event) => {
+      settings.grain = event.target.checked;
+      finishPass.uniforms.uGrain.value = settings.grain ? 1 : 0;
+    });
+    $("lock60").addEventListener("change", (event) => { settings.lock60 = event.target.checked; });
+
+    $("colorLow").addEventListener("input", (event) => {
+      fieldMaterial.uniforms.uLowColor.value.set(event.target.value);
+    });
+    $("colorHigh").addEventListener("input", (event) => {
+      fieldMaterial.uniforms.uHighColor.value.set(event.target.value);
+      ridge.material.color.set(event.target.value);
+      ridgeGlow.material.color.set(event.target.value);
+    });
+
+    $("autoRecord").addEventListener("change", (event) => {
+      if (event.target.checked) $("autoExport").checked = false;
+    });
+    $("autoExport").addEventListener("change", (event) => {
+      if (event.target.checked) $("autoRecord").checked = false;
+    });
+
+    $("panelToggle").addEventListener("click", () => {
+      const hidden = $("panel").classList.toggle("hidden");
+      $("panelToggle").classList.toggle("closed", hidden);
+      $("panelToggle").textContent = hidden ? "☰" : "×";
+      $("panelToggle").title = hidden ? "Show settings" : "Hide settings";
+      $("panelToggle").setAttribute("aria-label", hidden ? "Show settings" : "Hide settings");
+    });
+
+    $("fileInput").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      let preparedRecording = null;
+      let exportWritable = null;
+
+      if ($("autoRecord").checked) {
+        preparedRecording = await recorder.prepareAutoRecord();
+        if (!preparedRecording) {
+          event.target.value = "";
+          return;
+        }
+      }
+
+      if ($("autoExport").checked) {
+        if (!window.showSaveFilePicker) {
+          setStatus("Automatic export requires Chromium");
+          event.target.value = "";
+          return;
+        }
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: "particle_tide.mp4",
+            types: [{ description: "MP4 Video", accept: { "video/mp4": [".mp4"] } }],
+          });
+          exportWritable = await handle.createWritable();
+        } catch (error) {
+          event.target.value = "";
+          return;
+        }
+      }
+
+      try {
+        await loadAudio(file, preparedRecording, exportWritable);
+      } catch (error) {
+        console.error(error);
+        setStatus("Could not load audio · " + error.message);
+        event.target.value = "";
+      }
+    });
+
+    recordBtn.addEventListener("click", () => {
+      if (!audioBuffer || offlineExporting) return;
+      recorder.toggle(makeRecordingStream);
+    });
+
+    exportBtn.addEventListener("click", exportVideo);
+
+    replayBtn.addEventListener("click", async () => {
+      if (!audioBuffer || offlineExporting || recorder.isRecording) return;
+      await audioContext.resume();
+      resetLiveField();
+      startPlayback();
+    });
+
+    unloadBtn.addEventListener("click", unloadAudio);
+
+    $("fullscreenBtn").addEventListener("click", () => {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    });
+
+    $("exportCancelBtn").addEventListener("click", () => {
+      exportCancelled = true;
+      $("exportStatus").textContent = "Cancelling…";
+    });
+
+    let resizeTimer;
+    addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (offlineExporting || recorder.isRecording) return;
+        const pixelRatio = Math.min(devicePixelRatio, innerWidth < 760 ? 1 : 1.5);
+        renderer.setPixelRatio(pixelRatio);
+        composer.setPixelRatio(pixelRatio);
+        renderer.setSize(innerWidth, innerHeight);
+        composer.setSize(innerWidth, innerHeight);
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+      }, 80);
+    });
+
+    let previousTime = performance.now();
+    let fpsFrames = 0;
+    let fpsElapsed = 0;
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      if (offlineExporting) {
+        previousTime = now;
+        return;
+      }
+
+      if (recorder.isRecording && settings.lock60 && now - lastCaptureTime < 16.5) return;
+
+      const measuredDelta = Math.min((now - previousTime) / 1000, .05);
+      previousTime = now;
+      const delta = recorder.isRecording && settings.lock60 ? 1 / 60 : measuredDelta;
+      renderFrame(delta);
+
+      if (recorder.isRecording && recordingTrack) {
+        recordingTrack.requestFrame();
+        lastCaptureTime = now;
+      }
+
+      fpsFrames++;
+      fpsElapsed += measuredDelta;
+      if (fpsElapsed >= .6) {
+        $("fps").textContent = Math.round(fpsFrames / fpsElapsed) + " fps";
+        fpsFrames = 0;
+        fpsElapsed = 0;
+      }
+    }
+
+    if (initScene()) {
+      setButtonsEnabled(false);
+      requestAnimationFrame(animate);
+    }
+  </script>
+</body>
+</html>
