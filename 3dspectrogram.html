@@ -331,7 +331,6 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x020305);
-scene.fog = new THREE.Fog(0x020305, 30, 160);
 
 const camera = new THREE.PerspectiveCamera(
   60,
@@ -360,11 +359,6 @@ controls.minDistance = 20;
 controls.maxDistance = 300;
 controls.maxPolarAngle = Math.PI * 0.95;
 controls.update();
-
-scene.add(new THREE.AmbientLight(0xffffff, 0.3));
-const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-dirLight.position.set(10, 20, 10);
-scene.add(dirLight);
 
 // =====================================================
 // Audio
@@ -408,9 +402,6 @@ let hueShiftEnabled = true;
 let hueShiftOffset = 0;
 let lastHueUpdateOffset = -1;
 
-let wireframeWidth = 2;
-let filmGrainEnabled = false;
-let emissiveGlowEnabled = true;
 
 // =====================================================
 // Memory & LUT
@@ -621,7 +612,6 @@ function createSpectrogramGeometry() {
 let geometry = createSpectrogramGeometry();
 
 let mesh = new THREE.Mesh(geometry, spectrogramMaterial);
-mesh.frustumCulled = true;
 scene.add(mesh);
 
 function rebuildHistory(newSize) {
@@ -646,7 +636,6 @@ function rebuildHistory(newSize) {
   geometry.dispose();
   geometry = createSpectrogramGeometry();
   mesh = new THREE.Mesh(geometry, spectrogramMaterial);
-  mesh.frustumCulled = true;
   scene.add(mesh);
 }
 
@@ -787,8 +776,6 @@ function tickFrame(delta) {
   const fogScale = Math.max(camDist / 86, 1.0);
   const fogNear = 30 * fogScale;
   const fogFar = 160 * fogScale;
-  scene.fog.near = fogNear;
-  scene.fog.far = fogFar;
   spectrogramMaterial.uniforms.uFogNear.value = fogNear;
   spectrogramMaterial.uniforms.uFogFar.value = fogFar;
 
@@ -903,9 +890,9 @@ document.getElementById('hueShiftToggle').addEventListener('change', (e) => {
 });
 
 document.getElementById('wireWidthSlider').addEventListener('input', (e) => {
-  wireframeWidth = parseFloat(e.target.value);
-  document.getElementById('wireWidthLabel').textContent = wireframeWidth.toFixed(1);
-  spectrogramMaterial.uniforms.uWireWidth.value = wireframeWidth;
+  const w = parseFloat(e.target.value);
+  document.getElementById('wireWidthLabel').textContent = w.toFixed(1);
+  spectrogramMaterial.uniforms.uWireWidth.value = w;
 });
 
 document.getElementById('gainSlider').addEventListener('input', (e) => {
@@ -915,13 +902,11 @@ document.getElementById('gainSlider').addEventListener('input', (e) => {
 });
 
 document.getElementById('filmGrainToggle').addEventListener('change', (e) => {
-  filmGrainEnabled = e.target.checked;
-  spectrogramMaterial.uniforms.uFilmGrain.value = filmGrainEnabled ? 1.0 : 0.0;
+  spectrogramMaterial.uniforms.uFilmGrain.value = e.target.checked ? 1.0 : 0.0;
 });
 
 document.getElementById('emissiveGlowToggle').addEventListener('change', (e) => {
-  emissiveGlowEnabled = e.target.checked;
-  spectrogramMaterial.uniforms.uEmissiveGlow.value = emissiveGlowEnabled ? 1.0 : 0.0;
+  spectrogramMaterial.uniforms.uEmissiveGlow.value = e.target.checked ? 1.0 : 0.0;
 });
 
 document.getElementById('lock60fpsToggle').addEventListener('change', (e) => {
