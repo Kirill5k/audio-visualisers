@@ -413,6 +413,11 @@
       </div>
 
       <div class="control">
+        <div class="control-head"><span>History bins</span><span class="value" id="historyBinsValue">180</span></div>
+        <input id="historyBins" type="range" min="80" max="500" step="20" value="180">
+      </div>
+
+      <div class="control">
         <div class="control-head"><span>Camera drift</span><span class="value" id="orbitSpeedValue">0.04</span></div>
         <input id="orbitSpeed" type="range" min="0" max="0.18" step="0.01" value="0.04">
       </div>
@@ -458,6 +463,21 @@
       <div class="control">
         <div class="control-head"><span>Density</span><span class="value" id="densityValue">1.00</span></div>
         <input id="density" type="range" min="0.15" max="1" step="0.01" value="1">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Brightness</span><span class="value" id="brightnessValue">1.00</span></div>
+        <input id="brightness" type="range" min="0.1" max="3" step="0.05" value="1">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Wave thickness</span><span class="value" id="waveThicknessValue">1.5</span></div>
+        <input id="waveThickness" type="range" min="0.5" max="8" step="0.1" value="1.5">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Wave smoothness</span><span class="value" id="waveSmoothnessValue">0.65</span></div>
+        <input id="waveSmoothness" type="range" min="0" max="1" step="0.01" value="0.65">
       </div>
 
       <div class="color-row"><span>Shadow colour</span><input id="colorLow" type="color" value="#172f35"></div>
@@ -534,11 +554,14 @@
     import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
     import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
     import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+    import { Line2 } from "three/addons/lines/Line2.js";
+    import { LineGeometry } from "three/addons/lines/LineGeometry.js";
+    import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 
     const FFT_SIZE = 1024;
     const FFT_BINS = FFT_SIZE / 2;
     const COLUMNS = 280;
-    const HISTORY = 180;
+    let HISTORY = 180;
     const FIELD_WIDTH = 108;
     const FIELD_DEPTH = 116;
     const EXPORT_WIDTH = 1920;
@@ -556,6 +579,10 @@
       smoothing: 0.75,
       pointSize: 2.7,
       density: 1,
+      brightness: 1,
+      historyBins: 180,
+      waveThickness: 1.5,
+      waveSmoothness: 0.65,
       bloom: true,
       grain: true,
       lock60: false,
@@ -583,6 +610,7 @@
     let ridgeGlow;
     let ridgeGeometry;
     let ridgePositions;
+    let ridgeRawHeights;
 
     let audioContext;
     let analyser;
@@ -723,6 +751,7 @@
           uScatter: { value: settings.scatter },
           uPointSize: { value: settings.pointSize },
           uDensity: { value: settings.density },
+          uBrightness: { value: settings.brightness },
           uTrailFade: { value: settings.fade },
           uTime: { value: 0 },
           uLowColor: { value: new THREE.Color($("colorLow").value) },
@@ -739,6 +768,7 @@
           uniform float uScatter;
           uniform float uPointSize;
           uniform float uDensity;
+          uniform float uBrightness;
           uniform float uTrailFade;
           uniform float uTime;
           uniform vec3 uLowColor;
@@ -782,7 +812,7 @@
             float quiet = smoothstep(.015, .14, amplitude);
             vAlpha = visible * trail * flicker * mix(.025, .52, quiet);
             vec3 tone = mix(uLowColor, uHighColor, smoothstep(.08, .82, amplitude));
-            vColor = tone * mix(.28, .94, shaped);
+            vColor = tone * mix(.28, .94, shaped) * uBrightness;
           }
         `,
         fragmentShader: `
@@ -811,33 +841,78 @@
 
     function createRidge() {
       ridgePositions = new Float32Array(COLUMNS * 3);
-      ridgeGeometry = new THREE.BufferGeometry();
-      ridgeGeometry.setAttribute("position", new THREE.BufferAttribute(ridgePositions, 3));
+      ridgeRawHeights = new Float32Array(COLUMNS);
+      ridgeGeometry = new LineGeometry();
+      ridgeGeometry.setPositions(ridgePositions);
 
-      const ridgeMaterial = new THREE.LineBasicMaterial({
+      const ridgeMaterial = new LineMaterial({
         color: $("colorHigh").value,
+        linewidth: settings.waveThickness,
         transparent: true,
         opacity: .96,
         blending: THREE.AdditiveBlending,
+        depthWrite: false,
       });
-      const glowMaterial = new THREE.LineBasicMaterial({
+      const glowMaterial = new LineMaterial({
         color: $("colorHigh").value,
+        linewidth: settings.waveThickness * 3.4,
         transparent: true,
-        opacity: .24,
+        opacity: .16,
         blending: THREE.AdditiveBlending,
+        depthWrite: false,
       });
 
-      ridge = new THREE.Line(ridgeGeometry, ridgeMaterial);
-      ridgeGlow = new THREE.Line(ridgeGeometry, glowMaterial);
-      ridgeGlow.scale.y = 1.018;
-      ridgeGlow.position.y = -.08;
+      ridge = new Line2(ridgeGeometry, ridgeMaterial);
+      ridgeGlow = new Line2(ridgeGeometry, glowMaterial);
       ridge.frustumCulled = false;
       ridgeGlow.frustumCulled = false;
       scene.add(ridgeGlow, ridge);
+      updateLineResolution(innerWidth, innerHeight);
 
       const newestRow = (historyHead - 1 + HISTORY) % HISTORY;
       frequencyData.set(historyData.subarray(newestRow * FFT_BINS, (newestRow + 1) * FFT_BINS));
       updateRidge();
+    }
+
+    function updateLineResolution(width, height) {
+      if (!ridge || !ridgeGlow) return;
+      ridge.material.resolution.set(width, height);
+      ridgeGlow.material.resolution.set(width, height);
+    }
+
+    function rebuildHistory(newSize) {
+      const oldData = historyData;
+      const oldSize = HISTORY;
+      const oldHead = historyHead;
+
+      HISTORY = newSize;
+      historyData = new Uint8Array(FFT_BINS * HISTORY);
+      historyHead = 0;
+      flowAccumulator = 0;
+
+      if (audioBuffer) {
+        const rowsToCopy = Math.min(oldSize, HISTORY);
+        for (let destinationRow = 0; destinationRow < rowsToCopy; destinationRow++) {
+          const age = rowsToCopy - 1 - destinationRow;
+          const sourceRow = (oldHead - 1 - age + oldSize) % oldSize;
+          const sourceOffset = sourceRow * FFT_BINS;
+          historyData.set(
+            oldData.subarray(sourceOffset, sourceOffset + FFT_BINS),
+            destinationRow * FFT_BINS,
+          );
+        }
+        historyHead = rowsToCopy % HISTORY;
+      }
+
+      scene.remove(field);
+      field.geometry.dispose();
+      fieldMaterial.dispose();
+      historyTexture.dispose();
+
+      createHistoryTexture();
+      if (!audioBuffer) seedDemoHistory();
+      createParticleField();
+      fieldMaterial.uniforms.uTime.value = elapsedTime;
     }
 
     function createPostProcessing() {
@@ -965,15 +1040,34 @@
     }
 
     function updateRidge() {
+      const smoothingRadius = Math.round(settings.waveSmoothness * 18);
+
+      for (let column = 0; column < COLUMNS; column++) {
+        ridgeRawHeights[column] = sampleAmplitude(column) * settings.height;
+      }
+
       for (let column = 0; column < COLUMNS; column++) {
         const i = column * 3;
         const u = column / (COLUMNS - 1);
+        let height = ridgeRawHeights[column];
+
+        if (smoothingRadius > 0) {
+          let weightedHeight = 0;
+          let totalWeight = 0;
+          for (let offset = -smoothingRadius; offset <= smoothingRadius; offset++) {
+            const sampleIndex = Math.max(0, Math.min(COLUMNS - 1, column + offset));
+            const weight = smoothingRadius + 1 - Math.abs(offset);
+            weightedHeight += ridgeRawHeights[sampleIndex] * weight;
+            totalWeight += weight;
+          }
+          height = weightedHeight / totalWeight;
+        }
+
         ridgePositions[i] = (u - .5) * FIELD_WIDTH;
-        ridgePositions[i + 1] = sampleAmplitude(column) * settings.height;
+        ridgePositions[i + 1] = height;
         ridgePositions[i + 2] = FIELD_DEPTH * .5 + .55;
       }
-      ridgeGeometry.attributes.position.needsUpdate = true;
-      ridgeGeometry.computeBoundingSphere();
+      ridgeGeometry.setPositions(ridgePositions);
     }
 
     function renderFrame(delta, externalFrequencyData = null) {
@@ -1040,6 +1134,7 @@
       composer.setPixelRatio(1);
       renderer.setSize(width, height, false);
       composer.setSize(width, height);
+      updateLineResolution(width, height);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
     }
@@ -1050,6 +1145,7 @@
       composer.setPixelRatio(preCaptureState.pixelRatio);
       renderer.setSize(preCaptureState.width, preCaptureState.height, false);
       composer.setSize(preCaptureState.width, preCaptureState.height);
+      updateLineResolution(preCaptureState.width, preCaptureState.height);
       camera.aspect = preCaptureState.aspect;
       camera.updateProjectionMatrix();
       preCaptureState = null;
@@ -1207,6 +1303,7 @@
         composer.setPixelRatio(saved.capture.pixelRatio);
         renderer.setSize(saved.capture.width, saved.capture.height, false);
         composer.setSize(saved.capture.width, saved.capture.height);
+        updateLineResolution(saved.capture.width, saved.capture.height);
         camera.aspect = saved.capture.aspect;
         camera.updateProjectionMatrix();
 
@@ -1241,6 +1338,7 @@
 
     bindRange("speed", "speed", 2);
     bindRange("fade", "fade", 2, (value) => { fieldMaterial.uniforms.uTrailFade.value = value; });
+    bindRange("historyBins", "historyBins", 0, rebuildHistory);
     bindRange("orbitSpeed", "orbitSpeed", 2);
     bindRange("gain", "gain", 2, (value) => {
       fieldMaterial.uniforms.uGain.value = value;
@@ -1256,6 +1354,14 @@
     });
     bindRange("pointSize", "pointSize", 1, (value) => { fieldMaterial.uniforms.uPointSize.value = value; });
     bindRange("density", "density", 2, (value) => { fieldMaterial.uniforms.uDensity.value = value; });
+    bindRange("brightness", "brightness", 2, (value) => {
+      fieldMaterial.uniforms.uBrightness.value = value;
+    });
+    bindRange("waveThickness", "waveThickness", 1, (value) => {
+      ridge.material.linewidth = value;
+      ridgeGlow.material.linewidth = value * 3.4;
+    });
+    bindRange("waveSmoothness", "waveSmoothness", 2, updateRidge);
 
     $("autoOrbit").addEventListener("change", (event) => { settings.autoOrbit = event.target.checked; });
     $("bloom").addEventListener("change", (event) => {
@@ -1370,6 +1476,7 @@
         composer.setPixelRatio(pixelRatio);
         renderer.setSize(innerWidth, innerHeight);
         composer.setSize(innerWidth, innerHeight);
+        updateLineResolution(innerWidth, innerHeight);
         camera.aspect = innerWidth / innerHeight;
         camera.updateProjectionMatrix();
       }, 80);
