@@ -511,6 +511,7 @@
   </aside>
 
   <nav id="actions">
+    <button id="playPauseBtn" class="action glass" disabled title="Play">▶ <span class="action-label">Play</span></button>
     <button id="replayBtn" class="action glass" disabled title="Replay">↺ <span class="action-label">Replay</span></button>
     <button id="unloadBtn" class="action glass" disabled title="Unload">⊘ <span class="action-label">Unload</span></button>
     <button id="recordBtn" class="action glass" disabled><span class="record-dot"></span><span class="action-label">Record</span></button>
@@ -595,6 +596,7 @@
     const exportBtn = $("exportBtn");
     const replayBtn = $("replayBtn");
     const unloadBtn = $("unloadBtn");
+    const playPauseBtn = $("playPauseBtn");
     const exportOverlay = $("exportOverlay");
 
     let scene;
@@ -619,6 +621,7 @@
     let audioSource = null;
     let audioFileName = "";
     let isPlaying = false;
+    let isPaused = false;
     let offlineExporting = false;
     let exportCancelled = false;
 
@@ -1000,6 +1003,45 @@
       updateRidge();
     }
 
+    function updatePlayPauseUI() {
+      if (!audioBuffer) {
+        playPauseBtn.disabled = true;
+        playPauseBtn.innerHTML = '▶ <span class="action-label">Play</span>';
+        playPauseBtn.title = "Play";
+        return;
+      }
+      playPauseBtn.disabled = false;
+      if (isPlaying) {
+        playPauseBtn.innerHTML = '⏸ <span class="action-label">Pause</span>';
+        playPauseBtn.title = "Pause";
+      } else {
+        playPauseBtn.innerHTML = '▶ <span class="action-label">Play</span>';
+        playPauseBtn.title = "Play";
+      }
+    }
+
+    async function pausePlayback() {
+      if (!isPlaying) return;
+      if (audioContext && audioContext.state === "running") {
+        await audioContext.suspend();
+      }
+      isPlaying = false;
+      isPaused = true;
+      updatePlayPauseUI();
+      setStatus("Paused · " + audioFileName);
+    }
+
+    async function resumePlayback() {
+      if (isPlaying) return;
+      if (audioContext && audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
+      isPlaying = true;
+      isPaused = false;
+      updatePlayPauseUI();
+      setStatus("Playing · " + audioFileName, true);
+    }
+
     function startPlayback(preparedRecording = null) {
       if (!audioBuffer || offlineExporting) return;
       stopSource();
@@ -1009,7 +1051,9 @@
       audioSource.connect(analyser);
       audioSource.onended = () => {
         isPlaying = false;
+        isPaused = false;
         audioSource = null;
+        updatePlayPauseUI();
         setStatus("Playback finished · " + audioFileName);
         if (recorder.isRecording) recorder.stop();
       };
@@ -1020,6 +1064,8 @@
 
       audioSource.start();
       isPlaying = true;
+      isPaused = false;
+      updatePlayPauseUI();
       setStatus("Playing · " + audioFileName, true);
     }
 
@@ -1191,6 +1237,7 @@
       const exportSupported = Boolean(window.showSaveFilePicker && window.VideoEncoder && window.AudioEncoder);
       exportBtn.disabled = !enabled || !exportSupported;
       if (enabled && !exportSupported) exportBtn.title = "Offline export requires Chromium with WebCodecs";
+      updatePlayPauseUI();
     }
 
     async function exportVideo() {
@@ -1223,6 +1270,7 @@
         cameraPosition: camera.position.clone(),
         controlsTarget: controls.target.clone(),
         wasPlaying: isPlaying,
+        wasPaused: isPaused,
       };
 
       offlineExporting = true;
@@ -1297,6 +1345,9 @@
         controls.target.copy(saved.controlsTarget);
         fieldMaterial.uniforms.uHistoryHead.value = historyHead;
         historyTexture.needsUpdate = true;
+        isPlaying = saved.wasPlaying;
+        isPaused = saved.wasPaused;
+        updatePlayPauseUI();
         updateRidge();
 
         renderer.setPixelRatio(saved.capture.pixelRatio);
@@ -1315,6 +1366,10 @@
     function unloadAudio() {
       if (offlineExporting || recorder.isRecording) return;
       stopSource();
+      if (audioContext && audioContext.state === "suspended") {
+        audioContext.resume();
+      }
+      isPaused = false;
       audioBuffer = null;
       audioFileName = "";
       $("fileInput").value = "";
@@ -1442,10 +1497,25 @@
 
     recordBtn.addEventListener("click", () => {
       if (!audioBuffer || offlineExporting) return;
+      if (isPaused) {
+        resumePlayback();
+      }
       recorder.toggle(makeRecordingStream);
     });
 
     exportBtn.addEventListener("click", exportVideo);
+
+    playPauseBtn.addEventListener("click", async () => {
+      if (offlineExporting) return;
+      if (isPlaying) {
+        await pausePlayback();
+      } else if (isPaused) {
+        await resumePlayback();
+      } else {
+        await audioContext.resume();
+        startPlayback();
+      }
+    });
 
     replayBtn.addEventListener("click", async () => {
       if (!audioBuffer || offlineExporting || recorder.isRecording) return;
