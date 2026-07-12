@@ -373,11 +373,52 @@
       text-align: center;
     }
 
+    #levelIndicator {
+      position: fixed;
+      z-index: 8;
+      right: 18px;
+      bottom: 64px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 12px 6px 8px;
+      border-radius: 10px;
+      pointer-events: none;
+    }
+
+    .level-visual {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .level-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .level-title {
+      color: #77817e;
+      font-size: 8px;
+      font-weight: 750;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    #levelValue {
+      color: #edf1ef;
+      font-size: 11px;
+      font-weight: 650;
+      margin-top: 1px;
+      font-variant-numeric: tabular-nums;
+    }
+
     @media (max-width: 760px) {
       #panel { width: min(286px, calc(100vw - 36px)); }
       #panelToggle { left: min(322px, calc(100vw - 1px)); }
       #actions { top: auto; right: 12px; bottom: 12px; left: 12px; justify-content: center; }
       #readout { right: 12px; bottom: 62px; left: 12px; max-width: none; }
+      #levelIndicator { right: 12px; bottom: 106px; }
       .action { padding: 0 9px; }
       .action-label { display: none; }
     }
@@ -456,8 +497,8 @@
       <div class="section-title">Particles</div>
 
       <div class="control">
-        <div class="control-head"><span>Point size</span><span class="value" id="pointSizeValue">1.6</span></div>
-        <input id="pointSize" type="range" min="0.6" max="5" step="0.1" value="1.6">
+        <div class="control-head"><span>Point size</span><span class="value" id="pointSizeValue">1.0</span></div>
+        <input id="pointSize" type="range" min="0.6" max="5" step="0.1" value="1.0">
       </div>
 
       <div class="control">
@@ -466,8 +507,8 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Brightness</span><span class="value" id="brightnessValue">3.00</span></div>
-        <input id="brightness" type="range" min="0.1" max="3" step="0.05" value="3.0">
+        <div class="control-head"><span>Brightness</span><span class="value" id="brightnessValue">2.50</span></div>
+        <input id="brightness" type="range" min="0.1" max="3" step="0.05" value="2.5">
       </div>
 
       <div class="control">
@@ -518,6 +559,22 @@
     <button id="exportBtn" class="action glass" disabled>↓ <span class="action-label">Export</span></button>
     <button id="fullscreenBtn" class="action glass" title="Fullscreen">⛶</button>
   </nav>
+
+  <div id="levelIndicator" class="glass">
+    <div class="level-visual">
+      <svg width="32" height="32" viewBox="-16 -16 32 32" style="overflow: visible;">
+        <circle cx="0" cy="0" r="13" stroke="rgba(218, 229, 225, 0.15)" stroke-width="1" fill="none" />
+        <line x1="-15" y1="0" x2="15" y2="0" stroke="rgba(218, 229, 225, 0.08)" stroke-width="1" />
+        <line x1="0" y1="-15" x2="0" y2="15" stroke="rgba(218, 229, 225, 0.08)" stroke-width="1" />
+        <line id="levelNeedle" x1="-13" y1="0" x2="13" y2="0" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="0" cy="0" r="1.5" fill="var(--ink)" />
+      </svg>
+    </div>
+    <div class="level-info">
+      <div class="level-title">Alignment</div>
+      <div id="levelValue">100% Parallel</div>
+    </div>
+  </div>
 
   <div id="readout" class="glass">
     <span id="statusLight"></span>
@@ -578,9 +635,9 @@
       height: 15,
       scatter: 1,
       smoothing: 0.75,
-      pointSize: 1.6,
+      pointSize: 1.0,
       density: 1,
-      brightness: 3.0,
+      brightness: 2.5,
       historyBins: 260,
       waveThickness: 1.0,
       waveSmoothness: 0.2,
@@ -633,6 +690,10 @@
     let elapsedTime = 0;
     let orbitAngle = 0;
     let controlsInteracting = false;
+
+    const levelWaveVector = new THREE.Vector3(1, 0, 0);
+    const cameraRight = new THREE.Vector3();
+    const cameraUp = new THREE.Vector3();
 
     let recordingTrack = null;
     let preCaptureState = null;
@@ -744,6 +805,10 @@
       geometry.setAttribute("aGrid", new THREE.BufferAttribute(grids, 2));
       geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 16, 0), 95);
 
+      const size = new THREE.Vector2();
+      renderer.getSize(size);
+      const physicalHeight = size.y * renderer.getPixelRatio();
+
       fieldMaterial = new THREE.ShaderMaterial({
         uniforms: {
           uHistory: { value: historyTexture },
@@ -759,6 +824,7 @@
           uTime: { value: 0 },
           uLowColor: { value: new THREE.Color($("colorLow").value) },
           uHighColor: { value: new THREE.Color($("colorHigh").value) },
+          uViewportHeight: { value: physicalHeight },
         },
         vertexShader: `
           attribute vec2 aGrid;
@@ -776,6 +842,7 @@
           uniform float uTime;
           uniform vec3 uLowColor;
           uniform vec3 uHighColor;
+          uniform float uViewportHeight;
 
           varying vec3 vColor;
           varying float vAlpha;
@@ -808,7 +875,7 @@
 
             vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
             float perspective = clamp(260.0 / -mvPosition.z, .55, 4.0);
-            gl_PointSize = uPointSize * perspective * (.55 + shaped * 1.15);
+            gl_PointSize = uPointSize * perspective * (.55 + shaped * 1.15) * (uViewportHeight / 900.0);
             gl_Position = projectionMatrix * mvPosition;
 
             float visible = 1.0 - step(uDensity, seed);
@@ -1144,6 +1211,21 @@
         camera.lookAt(controls.target);
       }
 
+      if (camera) {
+        cameraRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+        cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+        const dx = levelWaveVector.dot(cameraRight);
+        const dy = levelWaveVector.dot(cameraUp);
+        const parallelism = Math.sqrt(dx * dx + dy * dy);
+
+        $("levelNeedle").setAttribute("x1", -dx * 13);
+        $("levelNeedle").setAttribute("y1", dy * 13);
+        $("levelNeedle").setAttribute("x2", dx * 13);
+        $("levelNeedle").setAttribute("y2", -dy * 13);
+
+        $("levelValue").textContent = Math.round(parallelism * 100) + "% Parallel";
+      }
+
       controls.update();
       composer.render();
     }
@@ -1183,6 +1265,9 @@
       updateLineResolution(width, height);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      if (fieldMaterial) {
+        fieldMaterial.uniforms.uViewportHeight.value = height;
+      }
     }
 
     function restoreCaptureSize() {
@@ -1194,6 +1279,9 @@
       updateLineResolution(preCaptureState.width, preCaptureState.height);
       camera.aspect = preCaptureState.aspect;
       camera.updateProjectionMatrix();
+      if (fieldMaterial) {
+        fieldMaterial.uniforms.uViewportHeight.value = preCaptureState.height * preCaptureState.pixelRatio;
+      }
       preCaptureState = null;
     }
 
@@ -1549,6 +1637,9 @@
         updateLineResolution(innerWidth, innerHeight);
         camera.aspect = innerWidth / innerHeight;
         camera.updateProjectionMatrix();
+        if (fieldMaterial) {
+          fieldMaterial.uniforms.uViewportHeight.value = innerHeight * pixelRatio;
+        }
       }, 80);
     });
 
