@@ -534,6 +534,11 @@
         <input id="waveSmoothness" type="range" min="0" max="1" step="0.01" value="0.2">
       </div>
 
+      <label class="toggle-row">
+        <span>Rise upward</span>
+        <input id="riseUp" type="checkbox">
+      </label>
+
       <div class="color-row"><span>Shadow colour</span><input id="colorLow" type="color" value="#172f35"></div>
       <div class="color-row"><span>Ridge colour</span><input id="colorHigh" type="color" value="#eef0df"></div>
 
@@ -660,6 +665,7 @@
       waveSmoothness: 0.2,
       bloom: true,
       grain: false,
+      riseUp: false,
       lock60: false,
     };
 
@@ -839,6 +845,8 @@
           uDensity: { value: settings.density },
           uBrightness: { value: settings.brightness },
           uTrailFade: { value: settings.fade },
+          uRiseUp: { value: settings.riseUp ? 1 : 0 },
+          uFieldDepth: { value: FIELD_DEPTH },
           uTime: { value: 0 },
           uLowColor: { value: new THREE.Color($("colorLow").value) },
           uHighColor: { value: new THREE.Color($("colorHigh").value) },
@@ -857,6 +865,8 @@
           uniform float uDensity;
           uniform float uBrightness;
           uniform float uTrailFade;
+          uniform float uRiseUp;
+          uniform float uFieldDepth;
           uniform float uTime;
           uniform vec3 uLowColor;
           uniform vec3 uHighColor;
@@ -887,9 +897,16 @@
 
             vec3 transformed = position;
             transformed.x += (seed - .5) * (.14 + shaped * .75);
-            transformed.y = shaped * uHeight;
-            transformed.y += (seedB - .28) * shaped * uScatter;
-            transformed.z += (seed - .5) * (1.0 + shaped * 4.2);
+            float spray = (seedB - .28) * shaped * uScatter;
+            float jitter = (seed - .5) * (1.0 + shaped * 4.2);
+
+            if (uRiseUp > .5) {
+              transformed.y = shaped * uHeight + aGrid.y * uFieldDepth + spray;
+              transformed.z = uFieldDepth * .5 + jitter;
+            } else {
+              transformed.y = shaped * uHeight + spray;
+              transformed.z += jitter;
+            }
 
             vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
             float perspective = clamp(260.0 / -mvPosition.z, .55, 4.0);
@@ -1528,6 +1545,10 @@
     bindRange("waveSmoothness", "waveSmoothness", 2, updateRidge);
 
     $("autoOrbit").addEventListener("change", (event) => { settings.autoOrbit = event.target.checked; });
+    $("riseUp").addEventListener("change", (event) => {
+      settings.riseUp = event.target.checked;
+      fieldMaterial.uniforms.uRiseUp.value = settings.riseUp ? 1 : 0;
+    });
     $("bloom").addEventListener("change", (event) => {
       settings.bloom = event.target.checked;
       bloomPass.enabled = settings.bloom;
