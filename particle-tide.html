@@ -406,11 +406,24 @@
     }
 
     #levelValue {
-      color: #edf1ef;
-      font-size: 11px;
-      font-weight: 650;
+      display: flex;
+      gap: 8px;
       margin-top: 1px;
       font-variant-numeric: tabular-nums;
+      font-size: 11px;
+      font-weight: 650;
+      color: #edf1ef;
+    }
+
+    #levelValue span {
+      display: inline-flex;
+      gap: 3px;
+    }
+
+    #levelValue .axis {
+      color: #77817e;
+      font-weight: 750;
+      letter-spacing: .04em;
     }
 
     @media (max-width: 760px) {
@@ -572,7 +585,11 @@
     </div>
     <div class="level-info">
       <div class="level-title">Alignment</div>
-      <div id="levelValue">100% Parallel</div>
+      <div id="levelValue">
+        <span><span class="axis">X</span><span id="levelX">100%</span></span>
+        <span><span class="axis">Y</span><span id="levelY">0%</span></span>
+        <span><span class="axis">Z</span><span id="levelZ">0%</span></span>
+      </div>
     </div>
   </div>
 
@@ -694,6 +711,7 @@
     const levelWaveVector = new THREE.Vector3(1, 0, 0);
     const cameraRight = new THREE.Vector3();
     const cameraUp = new THREE.Vector3();
+    const cameraForward = new THREE.Vector3();
 
     let recordingTrack = null;
     let preCaptureState = null;
@@ -1214,16 +1232,19 @@
       if (camera) {
         cameraRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
         cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+        cameraForward.set(0, 0, -1).applyQuaternion(camera.quaternion);
         const dx = levelWaveVector.dot(cameraRight);
         const dy = levelWaveVector.dot(cameraUp);
-        const parallelism = Math.sqrt(dx * dx + dy * dy);
+        const dz = levelWaveVector.dot(cameraForward);
 
         $("levelNeedle").setAttribute("x1", -dx * 13);
         $("levelNeedle").setAttribute("y1", dy * 13);
         $("levelNeedle").setAttribute("x2", dx * 13);
         $("levelNeedle").setAttribute("y2", -dy * 13);
 
-        $("levelValue").textContent = Math.round(parallelism * 100) + "% Parallel";
+        $("levelX").textContent = Math.round(Math.abs(dx) * 100) + "%";
+        $("levelY").textContent = Math.round(Math.abs(dy) * 100) + "%";
+        $("levelZ").textContent = Math.round(Math.abs(dz) * 100) + "%";
       }
 
       controls.update();
