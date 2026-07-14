@@ -891,18 +891,21 @@
 
             float seed = hash21(aGrid * vec2(811.7, 437.2));
             float seedB = hash21(aGrid.yx * vec2(309.4, 971.1) + 1.7);
+            float columnSeed = hash21(vec2(aGrid.x * 811.7, 0.371));
             float flicker = .82 + .18 * sin(uTime * 2.4 + seed * 25.0);
             float trail = mix(1.0, pow(1.0 - aGrid.y, 1.45), uTrailFade);
 
             vec3 transformed = position;
-            transformed.x += (seed - .5) * (.14 + shaped * .75);
             float spray = (seedB - .28) * shaped * uScatter;
             float jitter = (seed - .5) * (1.0 + shaped * 4.2);
 
             if (uRiseUp > .5) {
+              // Keep every history sample for a frequency in one vertical lane.
+              transformed.x += (columnSeed - .5) * .14;
               transformed.y = shaped * uHeight + aGrid.y * uFieldDepth + spray;
-              transformed.z = uFieldDepth * .5 + jitter;
+              transformed.z = uFieldDepth * .5 + (columnSeed - .5);
             } else {
+              transformed.x += (seed - .5) * (.14 + shaped * .75);
               transformed.y = shaped * uHeight + spray;
               transformed.z += jitter;
             }
