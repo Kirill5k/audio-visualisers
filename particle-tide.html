@@ -538,6 +538,10 @@
         <span>Rise upward</span>
         <input id="riseUp" type="checkbox">
       </label>
+      <label class="toggle-row">
+        <span>Reverse flow</span>
+        <input id="reverseFlow" type="checkbox">
+      </label>
 
       <div class="color-row"><span>Shadow colour</span><input id="colorLow" type="color" value="#172f35"></div>
       <div class="color-row"><span>Ridge colour</span><input id="colorHigh" type="color" value="#eef0df"></div>
@@ -666,6 +670,7 @@
       bloom: true,
       grain: false,
       riseUp: false,
+      reverseFlow: false,
       lock60: false,
     };
 
@@ -845,6 +850,7 @@
           uBrightness: { value: settings.brightness },
           uTrailFade: { value: settings.fade },
           uRiseUp: { value: settings.riseUp ? 1 : 0 },
+          uReverseFlow: { value: settings.reverseFlow ? 1 : 0 },
           uFieldDepth: { value: FIELD_DEPTH },
           uTime: { value: 0 },
           uLowColor: { value: new THREE.Color($("colorLow").value) },
@@ -865,6 +871,7 @@
           uniform float uBrightness;
           uniform float uTrailFade;
           uniform float uRiseUp;
+          uniform float uReverseFlow;
           uniform float uFieldDepth;
           uniform float uTime;
           uniform vec3 uLowColor;
@@ -882,7 +889,8 @@
 
           void main() {
             float frequencyX = .012 + pow(aGrid.x, 2.32) * .78;
-            float ageRow = aGrid.y * (uHistorySize - 1.0);
+            float ageNorm = uReverseFlow > .5 ? (1.0 - aGrid.y) : aGrid.y;
+            float ageRow = ageNorm * (uHistorySize - 1.0);
             float textureRow = mod(uHistoryHead - 1.0 - ageRow + uHistorySize, uHistorySize);
             float textureV = (textureRow + .5) / uHistorySize;
             float raw = texture2D(uHistory, vec2(frequencyX, textureV)).r;
@@ -893,7 +901,7 @@
             float seedB = hash21(aGrid.yx * vec2(309.4, 971.1) + 1.7);
             float columnSeed = hash21(vec2(aGrid.x * 811.7, 0.371));
             float flicker = .82 + .18 * sin(uTime * 2.4 + seed * 25.0);
-            float trail = mix(1.0, pow(1.0 - aGrid.y, 1.45), uTrailFade);
+            float trail = mix(1.0, pow(1.0 - ageNorm, 1.45), uTrailFade);
 
             vec3 transformed = position;
             float spray = (seedB - .28) * shaped * uScatter;
@@ -1214,8 +1222,16 @@
         }
 
         ridgePositions[i] = (u - .5) * FIELD_WIDTH;
-        ridgePositions[i + 1] = height;
-        ridgePositions[i + 2] = FIELD_DEPTH * .5 + .55;
+        if (settings.riseUp && settings.reverseFlow) {
+          ridgePositions[i + 1] = FIELD_DEPTH + height;
+          ridgePositions[i + 2] = FIELD_DEPTH * .5 + .55;
+        } else if (settings.reverseFlow) {
+          ridgePositions[i + 1] = height;
+          ridgePositions[i + 2] = -FIELD_DEPTH * .5 - .55;
+        } else {
+          ridgePositions[i + 1] = height;
+          ridgePositions[i + 2] = FIELD_DEPTH * .5 + .55;
+        }
       }
       ridgeGeometry.setPositions(ridgePositions);
     }
@@ -1550,6 +1566,12 @@
     $("riseUp").addEventListener("change", (event) => {
       settings.riseUp = event.target.checked;
       fieldMaterial.uniforms.uRiseUp.value = settings.riseUp ? 1 : 0;
+      updateRidge();
+    });
+    $("reverseFlow").addEventListener("change", (event) => {
+      settings.reverseFlow = event.target.checked;
+      fieldMaterial.uniforms.uReverseFlow.value = settings.reverseFlow ? 1 : 0;
+      updateRidge();
     });
     $("bloom").addEventListener("change", (event) => {
       settings.bloom = event.target.checked;
