@@ -154,6 +154,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createAudioPlayback } from './audio-playback.js';
 
 // =====================================================
 // Scene
@@ -194,19 +195,17 @@ controls.update();
 // Audio
 // =====================================================
 
-const audioContext = new AudioContext();
-const analyser = audioContext.createAnalyser();
-analyser.fftSize = 2048;
-analyser.smoothingTimeConstant = 0.85;
-
-const frequencyData = new Uint8Array(analyser.frequencyBinCount);
-let audioDestNode = null;
+const audio = createAudioPlayback({
+  fftSize: 2048,
+  smoothing: 0.85,
+});
+const frequencyData = audio.frequencyData;
 
 // =====================================================
 // Settings (Restored 1:1 fidelity)
 // =====================================================
 
-const FFT_BINS = analyser.frequencyBinCount; // 1024
+const FFT_BINS = audio.binCount; // 1024
 let HISTORY = 300;
 const LOW_BIN_SKIP = 10;
 
@@ -219,9 +218,6 @@ let driftMaxAngle = 45;
 let driftBaseAngle = 0;
 let driftBaseRadius = 0;
 let driftBaseY = 0;
-let audioStarted = false;
-let audioBuffer = null;
-let audioSource = null;
 let lockRecordingFps = false;
 
 let colorLow  = new THREE.Color(0x000020);
@@ -522,16 +518,13 @@ const recorder = createRecorder({
     const btn = document.getElementById('recordBtn');
     btn.classList.remove('recording');
     btn.innerHTML = '<span class="record-dot"></span><span class="action-label">Record</span>';
-
-    try { analyser.disconnect(audioDestNode); } catch(e) {}
-    audioDestNode = null;
     videoTrack = null;
 
     renderer.setPixelRatio(preRecordPixelRatio);
     renderer.setSize(preRecordWidth, preRecordHeight);
     camera.aspect = preRecordWidth / preRecordHeight;
     camera.updateProjectionMatrix();
-    setStatus(audioBuffer ? 'Recording saved' : 'Choose an audio file to begin');
+    setStatus(audio.hasAudio ? 'Recording saved' : 'Choose an audio file to begin');
   },
 });
 
@@ -550,11 +543,7 @@ function makeRecordingStream() {
   videoTrack = videoStream.getVideoTracks()[0];
   lastCaptureMs = 0;
 
-  const audioStreamDest = audioContext.createMediaStreamDestination();
-  audioDestNode = audioStreamDest;
-  analyser.connect(audioStreamDest);
-
-  const audioTrack = audioStreamDest.stream.getAudioTracks()[0];
+  const audioTrack = audio.getRecordingAudioTrack();
   if (audioTrack) videoStream.addTrack(audioTrack);
 
   return videoStream;
@@ -580,7 +569,7 @@ let offlineExporting = false;
 
 function tickFrame(delta) {
   spectrogramMaterial.uniforms.uTime.value += delta;
-  if (!offlineExporting) analyser.getByteFrequencyData(frequencyData);
+  if (!offlineExporting) audio.pullFrequencyData();
 
   if (hueShiftEnabled) {
     hueShiftOffset += delta * 0.03;
@@ -598,10 +587,11 @@ function tickFrame(delta) {
     pushNewRow();
   }
   spectrogramMaterial.uniforms.uHistoryHead.value = historyHead;
-  if (rotationEnabled && audioStarted) {
+  const audioActive = audio.isPlaying || offlineExporting;
+  if (rotationEnabled && audioActive) {
     mesh.rotation.y += delta * rotationSpeed;
   }
-  if (driftEnabled && audioStarted) {
+  if (driftEnabled && audioActive) {
     driftAngle += delta * rotationSpeed * 0.5;
     const orbitAngle = driftBaseAngle + Math.sin(driftAngle) * (Math.PI * driftMaxAngle / 180);
     camera.position.x = Math.sin(orbitAngle) * driftBaseRadius;
@@ -774,8 +764,7 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
   }
 
   setStatus('Loading · ' + file.name);
-  await audioContext.resume();
-  audioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
+  await audio.load(file);
 
   if (autoExport) {
     document.getElementById('exportBtn').writable = writable;
@@ -783,17 +772,12 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
     return;
   }
 
-  audioSource = audioContext.createBufferSource();
-  audioSource.buffer = audioBuffer;
-  audioSource.connect(analyser);
-  analyser.connect(audioContext.destination);
-  audioSource.start();
-  audioStarted = true;
-  setStatus('Playing · ' + file.name, true);
-
   if (prepared && !recorder.isRecording) {
     recorder.startAutoRecord(prepared, makeRecordingStream);
   }
+
+  audio.play();
+  setStatus('Playing · ' + file.name, true);
 });
 
 window.addEventListener('resize', () => {
@@ -805,8 +789,11 @@ window.addEventListener('resize', () => {
 // Offline Export
 let exportCancelled = false;
 document.getElementById('exportBtn').addEventListener('click', async () => {
-  if (!audioBuffer) { alert('Load an audio file first.'); return; }
+  if (!audio.hasAudio) { alert('Load an audio file first.'); return; }
   if (offlineExporting) return;
+
+  const exportAudio = audio.getExportAudio();
+  if (!exportAudio) return;
 
   const btn = document.getElementById('exportBtn');
   const writable = btn.writable || await (async () => {
@@ -846,7 +833,6 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   const savedUTime = spectrogramMaterial.uniforms.uTime.value;
   const savedHueOffset = hueShiftOffset;
   const savedLastHueUpdateOffset = lastHueUpdateOffset;
-  const savedAudioStarted = audioStarted;
 
   // Reset scene for export: use current camera position
   mesh.rotation.y = 0;
@@ -854,21 +840,16 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   historyHead = 0;
   accumulator = 0;
   spectrogramMaterial.uniforms.uTime.value = 0;
-  audioStarted = true;
 
   offlineExporting = true;
-  await audioContext.suspend();
+  await audio.suspendContext();
 
   try {
     await offlineExport({
-      audioBuffer,
+      ...exportAudio,
       fps: 60,
       width: 1920,
       height: 1080,
-      fftSize: analyser.fftSize,
-      smoothingTimeConstant: analyser.smoothingTimeConstant,
-      minDecibels: analyser.minDecibels,
-      maxDecibels: analyser.maxDecibels,
       writable,
       isCancelled: () => exportCancelled,
       renderFrame: (fftData, delta) => {
@@ -881,7 +862,7 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
         const pct = Math.round(frac * 100);
         progressBar.style.width = pct + '%';
         percentText.textContent = pct + '%';
-        statusText.textContent = 'Exporting... frame ' + Math.round(frac * Math.ceil(audioBuffer.duration * 60)) + '/' + Math.ceil(audioBuffer.duration * 60);
+        statusText.textContent = 'Exporting... frame ' + Math.round(frac * Math.ceil(audio.duration * 60)) + '/' + Math.ceil(audio.duration * 60);
       },
       onDone: () => {
         statusText.textContent = 'Export complete!';
@@ -895,7 +876,7 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   }
 
   offlineExporting = false;
-  await audioContext.resume();
+  await audio.resumeContext();
 
   // Restore scene state
   mesh.rotation.y = savedRotationY;
@@ -907,7 +888,6 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   spectrogramMaterial.uniforms.uTime.value = savedUTime;
   hueShiftOffset = savedHueOffset;
   lastHueUpdateOffset = savedLastHueUpdateOffset;
-  audioStarted = savedAudioStarted;
   spectrogramMaterial.uniforms.uHistoryHead.value = historyHead;
 
   renderer.setSize(savedWidth, savedHeight);
@@ -915,36 +895,20 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   camera.updateProjectionMatrix();
 });
 
-document.getElementById('replayBtn').addEventListener('click', () => {
-  if (!audioBuffer) { alert('Load an audio file first.'); return; }
+document.getElementById('replayBtn').addEventListener('click', async () => {
+  if (!audio.hasAudio) { alert('Load an audio file first.'); return; }
   if (offlineExporting || recorder.isRecording) return;
 
-  if (audioSource) {
-    try { audioSource.stop(); } catch(e) {}
-    try { audioSource.disconnect(); } catch(e) {}
-  }
-
-  audioSource = audioContext.createBufferSource();
-  audioSource.buffer = audioBuffer;
-  audioSource.connect(analyser);
-  analyser.connect(audioContext.destination);
-  audioSource.start();
-  audioStarted = true;
+  await audio.resumeContext();
+  audio.play();
   setStatus('Playing', true);
 });
 
 document.getElementById('unloadBtn').addEventListener('click', () => {
-  if (!audioBuffer) return;
+  if (!audio.hasAudio) return;
   if (offlineExporting || recorder.isRecording) return;
 
-  if (audioSource) {
-    try { audioSource.stop(); } catch(e) {}
-    try { audioSource.disconnect(); } catch(e) {}
-    audioSource = null;
-  }
-
-  audioBuffer = null;
-  audioStarted = false;
+  audio.unload();
   document.getElementById('fileInput').value = '';
   setStatus('Choose an audio file to begin');
 });

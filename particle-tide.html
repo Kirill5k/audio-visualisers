@@ -210,9 +210,9 @@
     import { Line2 } from "three/addons/lines/Line2.js";
     import { LineGeometry } from "three/addons/lines/LineGeometry.js";
     import { LineMaterial } from "three/addons/lines/LineMaterial.js";
+    import { createAudioPlayback } from "./audio-playback.js";
 
     const FFT_SIZE = 1024;
-    const FFT_BINS = FFT_SIZE / 2;
     const COLUMNS = 280;
     let HISTORY = 260;
     const FIELD_WIDTH = 108;
@@ -243,6 +243,15 @@
       lock60: false,
     };
 
+    const audio = createAudioPlayback({
+      fftSize: FFT_SIZE,
+      smoothing: settings.smoothing,
+      minDecibels: -100,
+      maxDecibels: -26,
+    });
+    const FFT_BINS = audio.binCount;
+    const frequencyData = audio.frequencyData;
+
     const $ = (id) => document.getElementById(id);
     const statusText = $("statusText");
     const statusLight = $("statusLight");
@@ -268,18 +277,9 @@
     let ridgePositions;
     let ridgeRawHeights;
 
-    let audioContext;
-    let analyser;
-    let mediaStreamDestination;
-    let audioBuffer = null;
-    let audioSource = null;
-    let audioFileName = "";
-    let isPlaying = false;
-    let isPaused = false;
     let offlineExporting = false;
     let exportCancelled = false;
 
-    const frequencyData = new Uint8Array(FFT_BINS);
     let historyData = new Uint8Array(FFT_BINS * HISTORY);
     let historyTexture;
     let historyHead = 0;
@@ -574,7 +574,7 @@
       historyHead = 0;
       flowAccumulator = 0;
 
-      if (audioBuffer) {
+      if (audio.hasAudio) {
         const rowsToCopy = Math.min(oldSize, HISTORY);
         for (let destinationRow = 0; destinationRow < rowsToCopy; destinationRow++) {
           const age = rowsToCopy - 1 - destinationRow;
@@ -594,7 +594,7 @@
       historyTexture.dispose();
 
       createHistoryTexture();
-      if (!audioBuffer) seedDemoHistory();
+      if (!audio.hasAudio) seedDemoHistory();
       createParticleField();
       fieldMaterial.uniforms.uTime.value = elapsedTime;
     }
@@ -651,29 +651,6 @@
       composer.addPass(finishPass);
     }
 
-    function initAudio() {
-      if (audioContext) return;
-      audioContext = new AudioContext();
-      analyser = audioContext.createAnalyser();
-      analyser.fftSize = FFT_SIZE;
-      analyser.smoothingTimeConstant = settings.smoothing;
-      analyser.minDecibels = -100;
-      analyser.maxDecibels = -26;
-
-      mediaStreamDestination = audioContext.createMediaStreamDestination();
-      analyser.connect(audioContext.destination);
-      analyser.connect(mediaStreamDestination);
-    }
-
-    function stopSource() {
-      if (!audioSource) return;
-      audioSource.onended = null;
-      try { audioSource.stop(); } catch (error) {}
-      try { audioSource.disconnect(); } catch (error) {}
-      audioSource = null;
-      isPlaying = false;
-    }
-
     function resetLiveField() {
       historyData.fill(0);
       frequencyData.fill(0);
@@ -685,14 +662,14 @@
     }
 
     function updatePlayPauseUI() {
-      if (!audioBuffer) {
+      if (!audio.hasAudio) {
         playPauseBtn.disabled = true;
         playPauseBtn.innerHTML = '▶ <span class="action-label">Play</span>';
         playPauseBtn.title = "Play";
         return;
       }
       playPauseBtn.disabled = false;
-      if (isPlaying) {
+      if (audio.isPlaying) {
         playPauseBtn.innerHTML = '⏸ <span class="action-label">Pause</span>';
         playPauseBtn.title = "Pause";
       } else {
@@ -702,52 +679,35 @@
     }
 
     async function pausePlayback() {
-      if (!isPlaying) return;
-      if (audioContext && audioContext.state === "running") {
-        await audioContext.suspend();
-      }
-      isPlaying = false;
-      isPaused = true;
+      if (!audio.isPlaying) return;
+      await audio.pause();
       updatePlayPauseUI();
-      setStatus("Paused · " + audioFileName);
+      setStatus("Paused · " + audio.fileName);
     }
 
     async function resumePlayback() {
-      if (isPlaying) return;
-      if (audioContext && audioContext.state === "suspended") {
-        await audioContext.resume();
-      }
-      isPlaying = true;
-      isPaused = false;
+      if (audio.isPlaying) return;
+      await audio.resume();
       updatePlayPauseUI();
-      setStatus("Playing · " + audioFileName, true);
+      setStatus("Playing · " + audio.fileName, true);
     }
 
     function startPlayback(preparedRecording = null) {
-      if (!audioBuffer || offlineExporting) return;
-      stopSource();
-
-      audioSource = audioContext.createBufferSource();
-      audioSource.buffer = audioBuffer;
-      audioSource.connect(analyser);
-      audioSource.onended = () => {
-        isPlaying = false;
-        isPaused = false;
-        audioSource = null;
-        updatePlayPauseUI();
-        setStatus("Playback finished · " + audioFileName);
-        if (recorder.isRecording) recorder.stop();
-      };
+      if (!audio.hasAudio || offlineExporting) return;
 
       if (preparedRecording && !recorder.isRecording) {
         recorder.startAutoRecord(preparedRecording, makeRecordingStream);
       }
 
-      audioSource.start();
-      isPlaying = true;
-      isPaused = false;
+      audio.play({
+        onEnded: () => {
+          updatePlayPauseUI();
+          setStatus("Playback finished · " + audio.fileName);
+          if (recorder.isRecording) recorder.stop();
+        },
+      });
       updatePlayPauseUI();
-      setStatus("Playing · " + audioFileName, true);
+      setStatus("Playing · " + audio.fileName, true);
     }
 
     function pushHistoryRow(data) {
@@ -812,11 +772,11 @@
 
       if (externalFrequencyData) {
         frequencyData.set(externalFrequencyData.subarray(0, FFT_BINS));
-      } else if (isPlaying && analyser) {
-        analyser.getByteFrequencyData(frequencyData);
+      } else {
+        audio.pullFrequencyData();
       }
 
-      if (isPlaying || externalFrequencyData) {
+      if (audio.isPlaying || externalFrequencyData) {
         flowAccumulator += delta * settings.speed * 60;
         while (flowAccumulator >= 1) {
           pushHistoryRow(frequencyData);
@@ -862,14 +822,14 @@
       onStart: () => {
         recordBtn.classList.add("recording");
         recordBtn.innerHTML = "■ <span class=\"action-label\">Stop</span>";
-        setStatus("Recording · " + (audioFileName || "canvas"), true);
+        setStatus("Recording · " + (audio.fileName || "canvas"), true);
       },
       onStop: () => {
         recordBtn.classList.remove("recording");
         recordBtn.innerHTML = "<span class=\"record-dot\"></span><span class=\"action-label\">Record</span>";
         recordingTrack = null;
         restoreCaptureSize();
-        setStatus(audioFileName ? "Recording saved · " + audioFileName : "Recording saved");
+        setStatus(audio.fileName ? "Recording saved · " + audio.fileName : "Recording saved");
       },
     });
 
@@ -911,26 +871,21 @@
     }
 
     function makeRecordingStream() {
-      if (!renderer || !mediaStreamDestination) return null;
+      if (!renderer) return null;
       preCaptureState = saveCaptureState();
       setCaptureSize(EXPORT_WIDTH, EXPORT_HEIGHT);
 
       const stream = renderer.domElement.captureStream(0);
       recordingTrack = stream.getVideoTracks()[0];
-      const audioTrack = mediaStreamDestination.stream.getAudioTracks()[0];
+      const audioTrack = audio.getRecordingAudioTrack();
       if (audioTrack) stream.addTrack(audioTrack);
       lastCaptureTime = 0;
       return stream;
     }
 
     async function loadAudio(file, preparedRecording, exportWritable) {
-      initAudio();
-      await audioContext.resume();
       setStatus("Decoding · " + file.name);
-
-      stopSource();
-      audioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
-      audioFileName = file.name;
+      await audio.load(file);
       resetLiveField();
       setButtonsEnabled(true);
 
@@ -954,7 +909,7 @@
     }
 
     async function exportVideo() {
-      if (!audioBuffer || offlineExporting || recorder.isRecording) return;
+      if (!audio.hasAudio || offlineExporting || recorder.isRecording) return;
 
       const writable = exportBtn.pendingWritable || await (async () => {
         if (!window.showSaveFilePicker) return null;
@@ -972,6 +927,9 @@
       exportBtn.pendingWritable = null;
       if (!writable) return;
 
+      const exportAudio = audio.getExportAudio();
+      if (!exportAudio) return;
+
       const saved = {
         capture: saveCaptureState(),
         historyData: new Uint8Array(historyData),
@@ -982,8 +940,6 @@
         orbitAngle,
         cameraPosition: camera.position.clone(),
         controlsTarget: controls.target.clone(),
-        wasPlaying: isPlaying,
-        wasPaused: isPaused,
       };
 
       offlineExporting = true;
@@ -993,7 +949,7 @@
       $("exportPercent").textContent = "0%";
       $("exportStatus").textContent = "Rendering the tide…";
 
-      if (audioContext?.state === "running") await audioContext.suspend();
+      await audio.suspendContext();
 
       historyData.fill(0);
       frequencyData.fill(0);
@@ -1009,14 +965,10 @@
 
       try {
         await offlineExport({
-          audioBuffer,
+          ...exportAudio,
           fps: EXPORT_FPS,
           width: EXPORT_WIDTH,
           height: EXPORT_HEIGHT,
-          fftSize: analyser.fftSize,
-          smoothingTimeConstant: analyser.smoothingTimeConstant,
-          minDecibels: analyser.minDecibels,
-          maxDecibels: analyser.maxDecibels,
           writable,
           isCancelled: () => exportCancelled,
           renderFrame: (fftData, delta) => renderFrame(delta, fftData),
@@ -1027,8 +979,8 @@
             $("exportProgressBar").style.width = percent + "%";
             $("exportPercent").textContent = percent + "%";
             $("exportStatus").textContent = "Rendering frame " +
-              Math.round(fraction * Math.ceil(audioBuffer.duration * EXPORT_FPS)) +
-              " of " + Math.ceil(audioBuffer.duration * EXPORT_FPS);
+              Math.round(fraction * Math.ceil(audio.duration * EXPORT_FPS)) +
+              " of " + Math.ceil(audio.duration * EXPORT_FPS);
           },
           onDone: () => {
             $("exportStatus").textContent = "Export complete";
@@ -1058,8 +1010,6 @@
         controls.target.copy(saved.controlsTarget);
         fieldMaterial.uniforms.uHistoryHead.value = historyHead;
         historyTexture.needsUpdate = true;
-        isPlaying = saved.wasPlaying;
-        isPaused = saved.wasPaused;
         updatePlayPauseUI();
         updateRidge();
 
@@ -1072,19 +1022,13 @@
         camera.updateProjectionMatrix();
 
         offlineExporting = false;
-        if (audioContext?.state === "suspended") await audioContext.resume();
+        await audio.resumeContext();
       }
     }
 
     function unloadAudio() {
       if (offlineExporting || recorder.isRecording) return;
-      stopSource();
-      if (audioContext && audioContext.state === "suspended") {
-        audioContext.resume();
-      }
-      isPaused = false;
-      audioBuffer = null;
-      audioFileName = "";
+      audio.unload();
       $("fileInput").value = "";
       seedDemoHistory();
       const newestRow = (historyHead - 1 + HISTORY) % HISTORY;
@@ -1118,7 +1062,7 @@
     });
     bindRange("scatter", "scatter", 0, (value) => { fieldMaterial.uniforms.uScatter.value = value; });
     bindRange("smoothing", "smoothing", 2, (value) => {
-      if (analyser) analyser.smoothingTimeConstant = value;
+      audio.setSmoothing(value);
     });
     bindRange("pointSize", "pointSize", 1, (value) => { fieldMaterial.uniforms.uPointSize.value = value; });
     bindRange("density", "density", 2, (value) => { fieldMaterial.uniforms.uDensity.value = value; });
@@ -1219,8 +1163,8 @@
     });
 
     recordBtn.addEventListener("click", () => {
-      if (!audioBuffer || offlineExporting) return;
-      if (isPaused) {
+      if (!audio.hasAudio || offlineExporting) return;
+      if (audio.isPaused) {
         resumePlayback();
       }
       recorder.toggle(makeRecordingStream);
@@ -1230,19 +1174,19 @@
 
     playPauseBtn.addEventListener("click", async () => {
       if (offlineExporting) return;
-      if (isPlaying) {
+      if (audio.isPlaying) {
         await pausePlayback();
-      } else if (isPaused) {
+      } else if (audio.isPaused) {
         await resumePlayback();
       } else {
-        await audioContext.resume();
+        await audio.resumeContext();
         startPlayback();
       }
     });
 
     replayBtn.addEventListener("click", async () => {
-      if (!audioBuffer || offlineExporting || recorder.isRecording) return;
-      await audioContext.resume();
+      if (!audio.hasAudio || offlineExporting || recorder.isRecording) return;
+      await audio.resumeContext();
       resetLiveField();
       startPlayback();
     });
