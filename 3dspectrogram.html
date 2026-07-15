@@ -3,309 +3,139 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>3D Spectrogram</title>
-
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background: #020305;
-      font-family: Arial, sans-serif;
-    }
-
-    #ui {
-      position: absolute;
-      top: 20px;
-      left: 20px;
-      z-index: 100;
-      background: rgba(0,0,0,0.7);
-      color: white;
-      padding: 14px;
-      border-radius: 12px;
-      width: 260px;
-      backdrop-filter: blur(10px);
-      max-height: calc(100vh - 40px);
-      overflow-y: auto;
-      transition: transform 0.3s ease, opacity 0.3s ease;
-    }
-
-    #ui.hidden {
-      transform: translateX(-280px);
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    #togglePanel {
-      position: absolute;
-      top: 20px;
-      left: 20px;
-      z-index: 200;
-      background: rgba(0,0,0,0.7);
-      color: white;
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 8px;
-      padding: 8px 12px;
-      font-size: 13px;
-      cursor: pointer;
-      backdrop-filter: blur(10px);
-      transition: left 0.3s ease;
-    }
-
-    #togglePanel.shifted {
-      left: 290px;
-    }
-
-    .top-right-buttons {
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      z-index: 200;
-      display: flex;
-      gap: 8px;
-    }
-
-    .top-btn {
-      background: rgba(0,0,0,0.7);
-      color: white;
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 8px;
-      padding: 8px 12px;
-      font-size: 13px;
-      cursor: pointer;
-      backdrop-filter: blur(10px);
-    }
-
-    .top-btn:hover {
-      background: rgba(255,255,255,0.1);
-    }
-
-    #fpsCounter {
-      background: rgba(0,0,0,0.7);
-      color: #aaa;
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 8px;
-      padding: 8px 12px;
-      font-size: 13px;
-      backdrop-filter: blur(10px);
-      min-width: 60px;
-      text-align: center;
-      pointer-events: none;
-    }
-
-    .top-btn.recording {
-      background: rgba(200,0,0,0.7);
-      border-color: rgba(255,100,100,0.5);
-    }
-
-    input[type="range"] {
-      width: 100%;
-    }
-
-    label {
-      display: block;
-      margin-top: 12px;
-      margin-bottom: 6px;
-      font-size: 14px;
-    }
-
-    .checkbox-row {
-      display: flex;
-      align-items: center;
-      margin-top: 10px;
-      font-size: 14px;
-      gap: 8px;
-    }
-
-    .checkbox-row input[type="checkbox"] {
-      width: 16px;
-      height: 16px;
-    }
-
-    .color-row {
-      display: flex;
-      align-items: center;
-      margin-top: 8px;
-      gap: 10px;
-      font-size: 13px;
-    }
-
-    .color-row input[type="color"] {
-      width: 36px;
-      height: 28px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      background: none;
-      padding: 0;
-    }
-
-    .section-label {
-      margin-top: 16px;
-      margin-bottom: 4px;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #888;
-      border-top: 1px solid rgba(255,255,255,0.1);
-      padding-top: 12px;
-    }
-
-    canvas {
-      display: block;
-    }
-
-  </style>
+  <title>3D Spectrogram — Audio Visualiser</title>
+  <link rel="stylesheet" href="visualiser-ui.css">
 </head>
 <body>
+  <div id="stage"></div>
 
-<button id="togglePanel" class="shifted">☰ Hide Panel</button>
+  <button id="panelToggle" class="glass" aria-label="Hide settings" title="Hide settings">×</button>
 
-<div class="top-right-buttons">
-  <div id="fpsCounter">-- fps</div>
-  <button id="replayBtn" class="top-btn">⏮ Replay</button>
-  <button id="unloadBtn" class="top-btn">⏏ Unload</button>
-  <button id="recordBtn" class="top-btn">⏺ Record</button>
-  <button id="exportBtn" class="top-btn">⬇ Export</button>
-  <button id="fullscreenBtn" class="top-btn">⛶ Fullscreen</button>
-</div>
+  <aside id="panel" class="glass">
+    <div class="brand">
+      <div>
+        <div class="eyebrow">Audio reactive study</div>
+        <h1>3D Spectrogram</h1>
+      </div>
+    </div>
 
-<div id="exportOverlay" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.85); display:none; align-items:center; justify-content:center; flex-direction:column; color:#fff; font-family:Arial,sans-serif;">
-  <div style="font-size:18px; margin-bottom:16px;" id="exportStatus">Exporting...</div>
-  <div style="width:400px; height:8px; background:#333; border-radius:4px; overflow:hidden;">
-    <div id="exportProgressBar" style="width:0%; height:100%; background:#4af; transition:width 0.1s;"></div>
-  </div>
-  <div style="font-size:14px; margin-top:8px; color:#aaa;" id="exportPercent">0%</div>
-  <button id="exportCancelBtn" style="margin-top:20px; padding:8px 20px; cursor:pointer; background:#c33; border:none; color:#fff; border-radius:4px; font-size:14px;">Cancel</button>
-</div>
+    <label class="file-picker" for="fileInput">Choose an audio file</label>
+    <input id="fileInput" type="file" accept="audio/*">
 
-<div id="ui">
-  <input type="file" id="fileInput" accept="audio/*" />
+    <section class="section">
+      <div class="section-title">Movement</div>
 
-  <!-- Movement -->
-  <div class="section-label">Movement</div>
+      <div class="control">
+        <div class="control-head"><span>Scroll speed</span><span class="value" id="speedLabel">0.8</span></div>
+        <input id="speedSlider" type="range" min="0.2" max="4" step="0.1" value="0.8">
+      </div>
 
-  <label>
-    Scroll Speed: <span id="speedLabel">0.8</span>
-  </label>
-  <input
-    type="range"
-    id="speedSlider"
-    min="0.2"
-    max="4"
-    step="0.1"
-    value="0.8"
-  />
+      <div class="control">
+        <div class="control-head"><span>History rows</span><span class="value" id="historyLabel">300</span></div>
+        <input id="historySlider" type="range" min="100" max="500" step="20" value="300">
+      </div>
 
-  <label>
-    History Rows: <span id="historyLabel">300</span>
-  </label>
-  <input type="range" id="historySlider" min="100" max="500" step="20" value="300" />
+      <label class="toggle-row">
+        <span>Rotate</span>
+        <input id="rotateToggle" type="checkbox" checked>
+      </label>
+      <label class="toggle-row">
+        <span>Drift</span>
+        <input id="driftToggle" type="checkbox">
+      </label>
 
-  <div class="checkbox-row">
-    <input type="checkbox" id="rotateToggle" checked />
-    <span>Rotate</span>
-  </div>
+      <div class="control">
+        <div class="control-head"><span>Drift angle</span><span class="value" id="driftAngleLabel">45°</span></div>
+        <input id="driftAngleSlider" type="range" min="0" max="135" step="1" value="45">
+      </div>
 
-  <div class="checkbox-row">
-    <input type="checkbox" id="driftToggle" />
-    <span>Drift</span>
-  </div>
+      <div class="control">
+        <div class="control-head"><span>Camera speed</span><span class="value" id="rotSpeedLabel">0.02</span></div>
+        <input id="rotSpeedSlider" type="range" min="0" max="0.3" step="0.01" value="0.02">
+      </div>
+    </section>
 
-  <label>
-    Drift Angle: <span id="driftAngleLabel">45</span>°
-  </label>
-  <input type="range" id="driftAngleSlider" min="0" max="135" value="45" step="1" />
+    <section class="section">
+      <div class="section-title">Camera</div>
+      <p class="hint">Drag to orbit · Scroll to zoom · Right-drag to pan</p>
+    </section>
 
-  <label>
-    Camera Speed: <span id="rotSpeedLabel">0.02</span>
-  </label>
-  <input
-    type="range"
-    id="rotSpeedSlider"
-    min="0"
-    max="0.3"
-    step="0.01"
-    value="0.02"
-  />
+    <section class="section">
+      <div class="section-title">Color gradient</div>
+      <div class="color-row"><span>Low (quiet)</span><input id="colorLow" type="color" value="#000033"></div>
+      <div class="color-row"><span>Mid</span><input id="colorMid" type="color" value="#39a7c0"></div>
+      <div class="color-row"><span>High (loud)</span><input id="colorHigh" type="color" value="#d6eae8"></div>
+      <label class="toggle-row">
+        <span>Hue shift over time</span>
+        <input id="hueShiftToggle" type="checkbox" checked>
+      </label>
+    </section>
 
-  <!-- Camera -->
-  <div class="section-label">Camera</div>
-  <div style="font-size:12px; color:#888; margin-top:4px;">
-    Drag to orbit · Scroll to zoom · Right-drag to pan
-  </div>
+    <section class="section">
+      <div class="section-title">Rendering</div>
 
-  <!-- Color Gradient Section -->
-  <div class="section-label">Color Gradient</div>
+      <div class="control">
+        <div class="control-head"><span>Gain</span><span class="value" id="gainLabel">1.4</span></div>
+        <input id="gainSlider" type="range" min="0.5" max="4" step="0.1" value="1.4">
+      </div>
 
-  <div class="color-row">
-    <input type="color" id="colorLow" value="#000033" />
-    <span>Low (quiet)</span>
-  </div>
-  <div class="color-row">
-    <input type="color" id="colorMid" value="#39a7c0" />
-    <span>Mid</span>
-  </div>
-  <div class="color-row">
-    <input type="color" id="colorHigh" value="#d6eae8" />
-    <span>High (loud)</span>
-  </div>
+      <div class="control">
+        <div class="control-head"><span>Wireframe width</span><span class="value" id="wireWidthLabel">2.0</span></div>
+        <input id="wireWidthSlider" type="range" min="0.5" max="10" step="0.5" value="2">
+      </div>
+    </section>
 
-  <div class="checkbox-row">
-    <input type="checkbox" id="hueShiftToggle" checked />
-    <span>Hue Shift Over Time</span>
-  </div>
+    <section class="section">
+      <div class="section-title">Effects</div>
+      <label class="toggle-row">
+        <span>Film grain</span>
+        <input id="filmGrainToggle" type="checkbox">
+      </label>
+      <label class="toggle-row">
+        <span>Emissive glow</span>
+        <input id="emissiveGlowToggle" type="checkbox" checked>
+      </label>
+    </section>
 
-  <!-- Rendering -->
-  <div class="section-label">Rendering</div>
+    <section class="section">
+      <div class="section-title">Capture</div>
+      <label class="toggle-row">
+        <span>Record on load</span>
+        <input id="autoRecordToggle" type="checkbox">
+      </label>
+      <label class="toggle-row">
+        <span>Export on load</span>
+        <input id="autoExportToggle" type="checkbox">
+      </label>
+      <label class="toggle-row">
+        <span>Lock recording to 60 fps</span>
+        <input id="lock60fpsToggle" type="checkbox">
+      </label>
+    </section>
+  </aside>
 
-  <label>
-    Gain: <span id="gainLabel">1.4</span>
-  </label>
-  <input type="range" id="gainSlider" min="0.5" max="4" step="0.1" value="1.4" />
+  <nav id="actions">
+    <button id="replayBtn" class="action glass" title="Replay">↺ <span class="action-label">Replay</span></button>
+    <button id="unloadBtn" class="action glass" title="Unload">⊘ <span class="action-label">Unload</span></button>
+    <button id="recordBtn" class="action glass"><span class="record-dot"></span><span class="action-label">Record</span></button>
+    <button id="exportBtn" class="action glass">↓ <span class="action-label">Export</span></button>
+    <button id="fullscreenBtn" class="action glass" title="Fullscreen">⛶</button>
+  </nav>
 
-  <label>
-    Wireframe Width: <span id="wireWidthLabel">2.0</span>
-  </label>
-  <input
-    type="range"
-    id="wireWidthSlider"
-    min="0.5"
-    max="10"
-    step="0.5"
-    value="2"
-  />
-
-  <!-- Effects -->
-  <div class="section-label">Effects</div>
-
-  <div class="checkbox-row">
-    <input type="checkbox" id="filmGrainToggle" />
-    <span>Film Grain</span>
+  <div id="readout" class="glass">
+    <span id="statusLight"></span>
+    <span id="statusText">Choose an audio file to begin</span>
+    <span id="fps">— fps</span>
   </div>
 
-  <div class="checkbox-row">
-    <input type="checkbox" id="emissiveGlowToggle" checked />
-    <span>Emissive Glow</span>
+  <div id="exportOverlay">
+    <div class="export-card glass">
+      <div id="exportStatus">Rendering the spectrogram…</div>
+      <div class="progress"><div id="exportProgressBar"></div></div>
+      <div id="exportPercent">0%</div>
+      <button id="exportCancelBtn" class="action glass">Cancel export</button>
+    </div>
   </div>
-
-  <!-- Recording -->
-  <div class="section-label">Recording</div>
-
-  <div class="checkbox-row">
-    <input type="checkbox" id="autoRecordToggle" />
-    <span>Record on Play</span>
-  </div>
-
-  <div class="checkbox-row">
-    <input type="checkbox" id="autoExportToggle" />
-    <span>Export on Play</span>
-  </div>
-
-  <div class="checkbox-row">
-    <input type="checkbox" id="lock60fpsToggle" />
-    <span>Lock 60fps</span>
-  </div>
-</div>
 
 <script type="importmap">
 {
@@ -349,7 +179,7 @@ camera.lookAt(0, 0, 0);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
-document.body.appendChild(renderer.domElement);
+document.getElementById('stage').appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0, 0);
@@ -672,17 +502,26 @@ let preRecordWidth = 0;
 let preRecordHeight = 0;
 let preRecordPixelRatio = 1;
 
+const statusLight = document.getElementById('statusLight');
+const statusText = document.getElementById('statusText');
+
+function setStatus(message, live = false) {
+  statusText.textContent = message;
+  statusLight.classList.toggle('live', live);
+}
+
 const recorder = createRecorder({
   defaultFilename: 'spectrogram_1080p',
-  onStart: (codec) => {
+  onStart: () => {
     const btn = document.getElementById('recordBtn');
-    btn.textContent = '⏹ Stop';
     btn.classList.add('recording');
+    btn.innerHTML = '■ <span class="action-label">Stop</span>';
+    setStatus('Recording', true);
   },
   onStop: () => {
     const btn = document.getElementById('recordBtn');
-    btn.textContent = '⏺ Record';
     btn.classList.remove('recording');
+    btn.innerHTML = '<span class="record-dot"></span><span class="action-label">Record</span>';
 
     try { analyser.disconnect(audioDestNode); } catch(e) {}
     audioDestNode = null;
@@ -692,6 +531,7 @@ const recorder = createRecorder({
     renderer.setSize(preRecordWidth, preRecordHeight);
     camera.aspect = preRecordWidth / preRecordHeight;
     camera.updateProjectionMatrix();
+    setStatus(audioBuffer ? 'Recording saved' : 'Choose an audio file to begin');
   },
 });
 
@@ -731,7 +571,7 @@ document.getElementById('recordBtn').addEventListener('click', () => {
 const clock = new THREE.Clock();
 let accumulator = 0;
 
-const fpsCounter = document.getElementById('fpsCounter');
+const fpsEl = document.getElementById('fps');
 const glCtx = renderer.getContext();
 let fpsFrames = 0;
 let fpsElapsed = 0;
@@ -787,7 +627,7 @@ function tickFrame(delta) {
   lastTickTime = now;
   fpsFrames++;
   if (fpsElapsed >= 500) {
-    fpsCounter.textContent = Math.round(fpsFrames / (fpsElapsed / 1000)) + ' fps';
+    fpsEl.textContent = Math.round(fpsFrames / (fpsElapsed / 1000)) + ' fps';
     fpsFrames = 0;
     fpsElapsed = 0;
   }
@@ -809,18 +649,13 @@ function animate() {
 animate();
 
 // UI Listeners
-document.getElementById('togglePanel').addEventListener('click', (e) => {
-  const ui = document.getElementById('ui');
-  const btn = e.target;
-  if (ui.classList.contains('hidden')) {
-    ui.classList.remove('hidden');
-    btn.classList.add('shifted');
-    btn.textContent = '☰ Hide Panel';
-  } else {
-    ui.classList.add('hidden');
-    btn.classList.remove('shifted');
-    btn.textContent = '☰ Show Panel';
-  }
+document.getElementById('panelToggle').addEventListener('click', () => {
+  const hidden = document.getElementById('panel').classList.toggle('hidden');
+  const btn = document.getElementById('panelToggle');
+  btn.classList.toggle('closed', hidden);
+  btn.textContent = hidden ? '☰' : '×';
+  btn.title = hidden ? 'Show settings' : 'Hide settings';
+  btn.setAttribute('aria-label', hidden ? 'Show settings' : 'Hide settings');
 });
 
 document.getElementById('fullscreenBtn').addEventListener('click', () => {
@@ -856,7 +691,7 @@ driftToggle.addEventListener('change', (e) => {
 });
 document.getElementById('driftAngleSlider').addEventListener('input', (e) => {
   driftMaxAngle = parseFloat(e.target.value);
-  document.getElementById('driftAngleLabel').textContent = Math.round(driftMaxAngle);
+  document.getElementById('driftAngleLabel').textContent = Math.round(driftMaxAngle) + '°';
 });
 
 document.getElementById('rotSpeedSlider').addEventListener('input', (e) => {
@@ -938,6 +773,7 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
     if (!prepared) return;
   }
 
+  setStatus('Loading · ' + file.name);
   await audioContext.resume();
   audioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
 
@@ -953,6 +789,7 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
   analyser.connect(audioContext.destination);
   audioSource.start();
   audioStarted = true;
+  setStatus('Playing · ' + file.name, true);
 
   if (prepared && !recorder.isRecording) {
     recorder.startAutoRecord(prepared, makeRecordingStream);
@@ -1093,6 +930,7 @@ document.getElementById('replayBtn').addEventListener('click', () => {
   analyser.connect(audioContext.destination);
   audioSource.start();
   audioStarted = true;
+  setStatus('Playing', true);
 });
 
 document.getElementById('unloadBtn').addEventListener('click', () => {
@@ -1108,11 +946,12 @@ document.getElementById('unloadBtn').addEventListener('click', () => {
   audioBuffer = null;
   audioStarted = false;
   document.getElementById('fileInput').value = '';
+  setStatus('Choose an audio file to begin');
 });
 
 document.getElementById('exportCancelBtn').addEventListener('click', () => {
   exportCancelled = true;
-  document.getElementById('exportStatus').textContent = 'Cancelling...';
+  document.getElementById('exportStatus').textContent = 'Cancelling…';
 });
 
 </script>
