@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>3D Spectrogram — Audio Visualiser</title>
-  <link rel="stylesheet" href="visualiser-ui.css">
+  <link rel="stylesheet" href="css/visualiser-ui.css">
 </head>
 <body>
   <div id="stage"></div>
@@ -146,15 +146,16 @@
 }
 </script>
 
-<script src="recorder.js"></script>
+<script src="js/recorder.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
-<script src="offline-exporter.js"></script>
+<script src="js/offline-exporter.js"></script>
 
 <script type="module">
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createAudioPlayback } from './audio-playback.js';
+import { createAudioPlayback } from './js/audio-playback.js';
+import { createCaptureSession } from './js/capture-export.js';
 
 // =====================================================
 // Scene
@@ -489,14 +490,8 @@ function pushNewRow() {
 }
 
 // =====================================================
-// Recording
+// Recording / export
 // =====================================================
-
-let videoTrack = null;
-let lastCaptureMs = 0;
-let preRecordWidth = 0;
-let preRecordHeight = 0;
-let preRecordPixelRatio = 1;
 
 const statusLight = document.getElementById('statusLight');
 const statusText = document.getElementById('statusText');
@@ -505,6 +500,39 @@ function setStatus(message, live = false) {
   statusText.textContent = message;
   statusLight.classList.toggle('live', live);
 }
+
+const capture = createCaptureSession({
+  width: 1920,
+  height: 1080,
+  fps: 60,
+  getCanvas: () => renderer.domElement,
+  getAudioTrack: () => audio.getRecordingAudioTrack(),
+  saveViewport: () => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+    pixelRatio: renderer.getPixelRatio(),
+    aspect: camera.aspect,
+  }),
+  applyViewport: (width, height) => {
+    renderer.setPixelRatio(1);
+    renderer.setSize(width, height);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+  },
+  restoreViewport: (state) => {
+    renderer.setPixelRatio(state.pixelRatio);
+    renderer.setSize(state.width, state.height);
+    camera.aspect = state.aspect;
+    camera.updateProjectionMatrix();
+  },
+  overlay: {
+    root: document.getElementById('exportOverlay'),
+    status: document.getElementById('exportStatus'),
+    progress: document.getElementById('exportProgressBar'),
+    percent: document.getElementById('exportPercent'),
+    cancelBtn: document.getElementById('exportCancelBtn'),
+  },
+});
 
 const recorder = createRecorder({
   defaultFilename: 'spectrogram_1080p',
@@ -518,43 +546,17 @@ const recorder = createRecorder({
     const btn = document.getElementById('recordBtn');
     btn.classList.remove('recording');
     btn.innerHTML = '<span class="record-dot"></span><span class="action-label">Record</span>';
-    videoTrack = null;
-
-    renderer.setPixelRatio(preRecordPixelRatio);
-    renderer.setSize(preRecordWidth, preRecordHeight);
-    camera.aspect = preRecordWidth / preRecordHeight;
-    camera.updateProjectionMatrix();
+    capture.onRecordingStopped();
     setStatus(audio.hasAudio ? 'Recording saved' : 'Choose an audio file to begin');
   },
 });
-
-function makeRecordingStream() {
-  preRecordWidth = window.innerWidth;
-  preRecordHeight = window.innerHeight;
-  preRecordPixelRatio = renderer.getPixelRatio();
-
-  renderer.setPixelRatio(1);
-  renderer.setSize(1920, 1080);
-  camera.aspect = 1920 / 1080;
-  camera.updateProjectionMatrix();
-
-  const canvas = renderer.domElement;
-  const videoStream = canvas.captureStream(0);
-  videoTrack = videoStream.getVideoTracks()[0];
-  lastCaptureMs = 0;
-
-  const audioTrack = audio.getRecordingAudioTrack();
-  if (audioTrack) videoStream.addTrack(audioTrack);
-
-  return videoStream;
-}
 
 // =====================================================
 // UI & Animation
 // =====================================================
 
 document.getElementById('recordBtn').addEventListener('click', () => {
-  recorder.toggle(makeRecordingStream);
+  recorder.toggle(() => capture.makeRecordingStream());
 });
 
 const clock = new THREE.Clock();
@@ -565,11 +567,10 @@ const glCtx = renderer.getContext();
 let fpsFrames = 0;
 let fpsElapsed = 0;
 let lastTickTime = performance.now();
-let offlineExporting = false;
 
 function tickFrame(delta) {
   spectrogramMaterial.uniforms.uTime.value += delta;
-  if (!offlineExporting) audio.pullFrequencyData();
+  if (!capture.isExporting) audio.pullFrequencyData();
 
   if (hueShiftEnabled) {
     hueShiftOffset += delta * 0.03;
@@ -587,7 +588,7 @@ function tickFrame(delta) {
     pushNewRow();
   }
   spectrogramMaterial.uniforms.uHistoryHead.value = historyHead;
-  const audioActive = audio.isPlaying || offlineExporting;
+  const audioActive = audio.isPlaying || capture.isExporting;
   if (rotationEnabled && audioActive) {
     mesh.rotation.y += delta * rotationSpeed;
   }
@@ -625,15 +626,12 @@ function tickFrame(delta) {
 
 function animate() {
   requestAnimationFrame(animate);
-  if (offlineExporting) { clock.getDelta(); return; }
+  if (capture.isExporting) { clock.getDelta(); return; }
   const now = performance.now();
-  if (recorder.isRecording && lockRecordingFps && now - lastCaptureMs < 16.5) return;
+  if (recorder.isRecording && capture.shouldSkipRecordingFrame(now, lockRecordingFps)) return;
   const delta = recorder.isRecording ? (1 / 60) : clock.getDelta();
   tickFrame(delta);
-  if (recorder.isRecording && videoTrack) {
-    videoTrack.requestFrame();
-    lastCaptureMs = now;
-  }
+  if (recorder.isRecording) capture.requestRecordingFrame(now);
 }
 
 animate();
@@ -747,14 +745,9 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
 
   let writable;
   if (autoExport) {
-    if (offlineExporting) return;
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: 'spectrogram_export.mp4',
-        types: [{ description: 'MP4 Video', accept: { 'video/mp4': ['.mp4'] } }]
-      });
-      writable = await handle.createWritable();
-    } catch (err) { return; }
+    if (capture.isExporting) return;
+    writable = await capture.pickWritable('spectrogram_export.mp4');
+    if (!writable) return;
   }
 
   let prepared;
@@ -767,13 +760,13 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
   await audio.load(file);
 
   if (autoExport) {
-    document.getElementById('exportBtn').writable = writable;
+    document.getElementById('exportBtn').pendingWritable = writable;
     document.getElementById('exportBtn').click();
     return;
   }
 
   if (prepared && !recorder.isRecording) {
-    recorder.startAutoRecord(prepared, makeRecordingStream);
+    recorder.startAutoRecord(prepared, () => capture.makeRecordingStream());
   }
 
   audio.play();
@@ -781,123 +774,80 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
 });
 
 window.addEventListener('resize', () => {
+  if (capture.isExporting || recorder.isRecording) return;
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Offline Export
-let exportCancelled = false;
 document.getElementById('exportBtn').addEventListener('click', async () => {
   if (!audio.hasAudio) { alert('Load an audio file first.'); return; }
-  if (offlineExporting) return;
-
-  const exportAudio = audio.getExportAudio();
-  if (!exportAudio) return;
+  if (capture.isExporting || recorder.isRecording) return;
 
   const btn = document.getElementById('exportBtn');
-  const writable = btn.writable || await (async () => {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: 'spectrogram_export.mp4',
-        types: [{ description: 'MP4 Video', accept: { 'video/mp4': ['.mp4'] } }]
-      });
-      return await handle.createWritable();
-    } catch (e) { return null; }
-  })();
-  btn.writable = null;
-  if (!writable) return;
+  const pendingWritable = btn.pendingWritable || null;
+  btn.pendingWritable = null;
 
-  const overlay = document.getElementById('exportOverlay');
-  const progressBar = document.getElementById('exportProgressBar');
-  const percentText = document.getElementById('exportPercent');
-  const statusText = document.getElementById('exportStatus');
-  overlay.style.display = 'flex';
-  exportCancelled = false;
+  await capture.runOfflineExport({
+    audio,
+    suggestedName: 'spectrogram_export.mp4',
+    pendingWritable,
+    onStatus: setStatus,
+    labels: {
+      rendering: 'Rendering the spectrogram…',
+      progress: 'Exporting... frame {frame}/{total}',
+      complete: 'Export complete!',
+      completeDelayMs: 1500,
+      cancelled: 'Export cancelled',
+      saved: 'Export saved · spectrogram_export.mp4',
+      failed: 'Export failed: {message}',
+      failedDelayMs: 3000,
+    },
+    prepare: () => {
+      const saved = {
+        rotationY: mesh.rotation.y,
+        cameraPosition: camera.position.clone(),
+        controlsTarget: controls.target.clone(),
+        driftAngle,
+        historyHead,
+        accumulator,
+        uTime: spectrogramMaterial.uniforms.uTime.value,
+        hueOffset: hueShiftOffset,
+        lastHueUpdateOffset,
+      };
 
-  // Save and set export resolution
-  const savedWidth = renderer.domElement.width;
-  const savedHeight = renderer.domElement.height;
-  const savedAspect = camera.aspect;
-  renderer.setSize(1920, 1080);
-  camera.aspect = 1920 / 1080;
-  camera.updateProjectionMatrix();
-
-  // Save scene state to restore after
-  const savedRotationY = mesh.rotation.y;
-  const savedCamPos = camera.position.clone();
-  const savedControlsTarget = controls.target.clone();
-  const savedDriftAngle = driftAngle;
-  const savedHistoryHead = historyHead;
-  const savedAccumulator = accumulator;
-  const savedUTime = spectrogramMaterial.uniforms.uTime.value;
-  const savedHueOffset = hueShiftOffset;
-  const savedLastHueUpdateOffset = lastHueUpdateOffset;
-
-  // Reset scene for export: use current camera position
-  mesh.rotation.y = 0;
-  driftAngle = 0;
-  historyHead = 0;
-  accumulator = 0;
-  spectrogramMaterial.uniforms.uTime.value = 0;
-
-  offlineExporting = true;
-  await audio.suspendContext();
-
-  try {
-    await offlineExport({
-      ...exportAudio,
-      fps: 60,
-      width: 1920,
-      height: 1080,
-      writable,
-      isCancelled: () => exportCancelled,
-      renderFrame: (fftData, delta) => {
-        frequencyData.set(fftData);
-        tickFrame(delta);
-      },
-      readCanvas: () => renderer.domElement,
-      gpuFinish: () => glCtx.finish(),
-      onProgress: (frac) => {
-        const pct = Math.round(frac * 100);
-        progressBar.style.width = pct + '%';
-        percentText.textContent = pct + '%';
-        statusText.textContent = 'Exporting... frame ' + Math.round(frac * Math.ceil(audio.duration * 60)) + '/' + Math.ceil(audio.duration * 60);
-      },
-      onDone: () => {
-        statusText.textContent = 'Export complete!';
-        setTimeout(() => { overlay.style.display = 'none'; }, 1500);
-      },
-    });
-  } catch (e) {
-    console.error('Export error:', e);
-    statusText.textContent = 'Export failed: ' + e.message;
-    setTimeout(() => { overlay.style.display = 'none'; }, 3000);
-  }
-
-  offlineExporting = false;
-  await audio.resumeContext();
-
-  // Restore scene state
-  mesh.rotation.y = savedRotationY;
-  camera.position.copy(savedCamPos);
-  controls.target.copy(savedControlsTarget);
-  driftAngle = savedDriftAngle;
-  historyHead = savedHistoryHead;
-  accumulator = savedAccumulator;
-  spectrogramMaterial.uniforms.uTime.value = savedUTime;
-  hueShiftOffset = savedHueOffset;
-  lastHueUpdateOffset = savedLastHueUpdateOffset;
-  spectrogramMaterial.uniforms.uHistoryHead.value = historyHead;
-
-  renderer.setSize(savedWidth, savedHeight);
-  camera.aspect = savedAspect;
-  camera.updateProjectionMatrix();
+      mesh.rotation.y = 0;
+      driftAngle = 0;
+      historyHead = 0;
+      accumulator = 0;
+      spectrogramMaterial.uniforms.uTime.value = 0;
+      return saved;
+    },
+    restore: (saved) => {
+      if (!saved) return;
+      mesh.rotation.y = saved.rotationY;
+      camera.position.copy(saved.cameraPosition);
+      controls.target.copy(saved.controlsTarget);
+      driftAngle = saved.driftAngle;
+      historyHead = saved.historyHead;
+      accumulator = saved.accumulator;
+      spectrogramMaterial.uniforms.uTime.value = saved.uTime;
+      hueShiftOffset = saved.hueOffset;
+      lastHueUpdateOffset = saved.lastHueUpdateOffset;
+      spectrogramMaterial.uniforms.uHistoryHead.value = historyHead;
+    },
+    renderFrame: (fftData, delta) => {
+      frequencyData.set(fftData);
+      tickFrame(delta);
+    },
+    readCanvas: () => renderer.domElement,
+    gpuFinish: () => glCtx.finish(),
+  });
 });
 
 document.getElementById('replayBtn').addEventListener('click', async () => {
   if (!audio.hasAudio) { alert('Load an audio file first.'); return; }
-  if (offlineExporting || recorder.isRecording) return;
+  if (capture.isExporting || recorder.isRecording) return;
 
   await audio.resumeContext();
   audio.play();
@@ -906,16 +856,11 @@ document.getElementById('replayBtn').addEventListener('click', async () => {
 
 document.getElementById('unloadBtn').addEventListener('click', () => {
   if (!audio.hasAudio) return;
-  if (offlineExporting || recorder.isRecording) return;
+  if (capture.isExporting || recorder.isRecording) return;
 
   audio.unload();
   document.getElementById('fileInput').value = '';
   setStatus('Choose an audio file to begin');
-});
-
-document.getElementById('exportCancelBtn').addEventListener('click', () => {
-  exportCancelled = true;
-  document.getElementById('exportStatus').textContent = 'Cancelling…';
 });
 
 </script>

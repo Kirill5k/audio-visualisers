@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Particle Tide — Audio Visualiser</title>
-  <link rel="stylesheet" href="visualiser-ui.css">
+  <link rel="stylesheet" href="css/visualiser-ui.css">
 </head>
 <body>
   <div id="stage"></div>
@@ -196,9 +196,9 @@
     }
   }
   </script>
-  <script src="recorder.js"></script>
+  <script src="js/recorder.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
-  <script src="offline-exporter.js"></script>
+  <script src="js/offline-exporter.js"></script>
 
   <script type="module">
     import * as THREE from "three";
@@ -210,7 +210,8 @@
     import { Line2 } from "three/addons/lines/Line2.js";
     import { LineGeometry } from "three/addons/lines/LineGeometry.js";
     import { LineMaterial } from "three/addons/lines/LineMaterial.js";
-    import { createAudioPlayback } from "./audio-playback.js";
+    import { createAudioPlayback } from "./js/audio-playback.js";
+    import { createCaptureSession } from "./js/capture-export.js";
 
     const FFT_SIZE = 1024;
     const COLUMNS = 280;
@@ -262,6 +263,51 @@
     const playPauseBtn = $("playPauseBtn");
     const exportOverlay = $("exportOverlay");
 
+    const capture = createCaptureSession({
+      width: EXPORT_WIDTH,
+      height: EXPORT_HEIGHT,
+      fps: EXPORT_FPS,
+      getCanvas: () => renderer?.domElement,
+      getAudioTrack: () => audio.getRecordingAudioTrack(),
+      saveViewport: () => ({
+        width: innerWidth,
+        height: innerHeight,
+        pixelRatio: renderer.getPixelRatio(),
+        aspect: camera.aspect,
+      }),
+      applyViewport: (width, height) => {
+        renderer.setPixelRatio(1);
+        composer.setPixelRatio(1);
+        renderer.setSize(width, height, false);
+        composer.setSize(width, height);
+        updateLineResolution(width, height);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        if (fieldMaterial) {
+          fieldMaterial.uniforms.uViewportHeight.value = height;
+        }
+      },
+      restoreViewport: (state) => {
+        renderer.setPixelRatio(state.pixelRatio);
+        composer.setPixelRatio(state.pixelRatio);
+        renderer.setSize(state.width, state.height, false);
+        composer.setSize(state.width, state.height);
+        updateLineResolution(state.width, state.height);
+        camera.aspect = state.aspect;
+        camera.updateProjectionMatrix();
+        if (fieldMaterial) {
+          fieldMaterial.uniforms.uViewportHeight.value = state.height * state.pixelRatio;
+        }
+      },
+      overlay: {
+        root: exportOverlay,
+        status: $("exportStatus"),
+        progress: $("exportProgressBar"),
+        percent: $("exportPercent"),
+        cancelBtn: $("exportCancelBtn"),
+      },
+    });
+
     let scene;
     let camera;
     let renderer;
@@ -277,9 +323,6 @@
     let ridgePositions;
     let ridgeRawHeights;
 
-    let offlineExporting = false;
-    let exportCancelled = false;
-
     let historyData = new Uint8Array(FFT_BINS * HISTORY);
     let historyTexture;
     let historyHead = 0;
@@ -292,10 +335,6 @@
     const cameraRight = new THREE.Vector3();
     const cameraUp = new THREE.Vector3();
     const cameraForward = new THREE.Vector3();
-
-    let recordingTrack = null;
-    let preCaptureState = null;
-    let lastCaptureTime = 0;
 
     function setStatus(message, live = false) {
       statusText.textContent = message;
@@ -693,10 +732,10 @@
     }
 
     function startPlayback(preparedRecording = null) {
-      if (!audio.hasAudio || offlineExporting) return;
+      if (!audio.hasAudio || capture.isExporting) return;
 
       if (preparedRecording && !recorder.isRecording) {
-        recorder.startAutoRecord(preparedRecording, makeRecordingStream);
+        recorder.startAutoRecord(preparedRecording, () => capture.makeRecordingStream());
       }
 
       audio.play({
@@ -827,61 +866,10 @@
       onStop: () => {
         recordBtn.classList.remove("recording");
         recordBtn.innerHTML = "<span class=\"record-dot\"></span><span class=\"action-label\">Record</span>";
-        recordingTrack = null;
-        restoreCaptureSize();
+        capture.onRecordingStopped();
         setStatus(audio.fileName ? "Recording saved · " + audio.fileName : "Recording saved");
       },
     });
-
-    function saveCaptureState() {
-      return {
-        width: innerWidth,
-        height: innerHeight,
-        pixelRatio: renderer.getPixelRatio(),
-        aspect: camera.aspect,
-      };
-    }
-
-    function setCaptureSize(width, height) {
-      renderer.setPixelRatio(1);
-      composer.setPixelRatio(1);
-      renderer.setSize(width, height, false);
-      composer.setSize(width, height);
-      updateLineResolution(width, height);
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-      if (fieldMaterial) {
-        fieldMaterial.uniforms.uViewportHeight.value = height;
-      }
-    }
-
-    function restoreCaptureSize() {
-      if (!preCaptureState) return;
-      renderer.setPixelRatio(preCaptureState.pixelRatio);
-      composer.setPixelRatio(preCaptureState.pixelRatio);
-      renderer.setSize(preCaptureState.width, preCaptureState.height, false);
-      composer.setSize(preCaptureState.width, preCaptureState.height);
-      updateLineResolution(preCaptureState.width, preCaptureState.height);
-      camera.aspect = preCaptureState.aspect;
-      camera.updateProjectionMatrix();
-      if (fieldMaterial) {
-        fieldMaterial.uniforms.uViewportHeight.value = preCaptureState.height * preCaptureState.pixelRatio;
-      }
-      preCaptureState = null;
-    }
-
-    function makeRecordingStream() {
-      if (!renderer) return null;
-      preCaptureState = saveCaptureState();
-      setCaptureSize(EXPORT_WIDTH, EXPORT_HEIGHT);
-
-      const stream = renderer.domElement.captureStream(0);
-      recordingTrack = stream.getVideoTracks()[0];
-      const audioTrack = audio.getRecordingAudioTrack();
-      if (audioTrack) stream.addTrack(audioTrack);
-      lastCaptureTime = 0;
-      return stream;
-    }
 
     async function loadAudio(file, preparedRecording, exportWritable) {
       setStatus("Decoding · " + file.name);
@@ -909,125 +897,69 @@
     }
 
     async function exportVideo() {
-      if (!audio.hasAudio || offlineExporting || recorder.isRecording) return;
+      if (!audio.hasAudio || capture.isExporting || recorder.isRecording) return;
 
-      const writable = exportBtn.pendingWritable || await (async () => {
-        if (!window.showSaveFilePicker) return null;
-        try {
-          const handle = await window.showSaveFilePicker({
-            suggestedName: "particle_tide.mp4",
-            types: [{ description: "MP4 Video", accept: { "video/mp4": [".mp4"] } }],
-          });
-          return await handle.createWritable();
-        } catch (error) {
-          if (error.name !== "AbortError") setStatus("Export error · " + error.message);
-          return null;
-        }
-      })();
+      const pendingWritable = exportBtn.pendingWritable || null;
       exportBtn.pendingWritable = null;
-      if (!writable) return;
 
-      const exportAudio = audio.getExportAudio();
-      if (!exportAudio) return;
+      await capture.runOfflineExport({
+        audio,
+        suggestedName: "particle_tide.mp4",
+        pendingWritable,
+        onStatus: setStatus,
+        labels: {
+          rendering: "Rendering the tide…",
+          progress: "Rendering frame {frame} of {total}",
+          complete: "Export complete",
+          cancelled: "Export cancelled",
+          saved: "Export saved · particle_tide.mp4",
+          failed: "Export failed · {message}",
+        },
+        prepare: () => {
+          const saved = {
+            historyData: new Uint8Array(historyData),
+            frequencyData: new Uint8Array(frequencyData),
+            historyHead,
+            flowAccumulator,
+            elapsedTime,
+            orbitAngle,
+            cameraPosition: camera.position.clone(),
+            controlsTarget: controls.target.clone(),
+          };
 
-      const saved = {
-        capture: saveCaptureState(),
-        historyData: new Uint8Array(historyData),
-        frequencyData: new Uint8Array(frequencyData),
-        historyHead,
-        flowAccumulator,
-        elapsedTime,
-        orbitAngle,
-        cameraPosition: camera.position.clone(),
-        controlsTarget: controls.target.clone(),
-      };
-
-      offlineExporting = true;
-      exportCancelled = false;
-      exportOverlay.style.display = "flex";
-      $("exportProgressBar").style.width = "0%";
-      $("exportPercent").textContent = "0%";
-      $("exportStatus").textContent = "Rendering the tide…";
-
-      await audio.suspendContext();
-
-      historyData.fill(0);
-      frequencyData.fill(0);
-      historyHead = 0;
-      flowAccumulator = 0;
-      elapsedTime = 0;
-      orbitAngle = 0;
-      fieldMaterial.uniforms.uHistoryHead.value = 0;
-      historyTexture.needsUpdate = true;
-      setCaptureSize(EXPORT_WIDTH, EXPORT_HEIGHT);
-
-      const gl = renderer.getContext();
-
-      try {
-        await offlineExport({
-          ...exportAudio,
-          fps: EXPORT_FPS,
-          width: EXPORT_WIDTH,
-          height: EXPORT_HEIGHT,
-          writable,
-          isCancelled: () => exportCancelled,
-          renderFrame: (fftData, delta) => renderFrame(delta, fftData),
-          readCanvas: () => renderer.domElement,
-          gpuFinish: () => gl.finish(),
-          onProgress: (fraction) => {
-            const percent = Math.round(fraction * 100);
-            $("exportProgressBar").style.width = percent + "%";
-            $("exportPercent").textContent = percent + "%";
-            $("exportStatus").textContent = "Rendering frame " +
-              Math.round(fraction * Math.ceil(audio.duration * EXPORT_FPS)) +
-              " of " + Math.ceil(audio.duration * EXPORT_FPS);
-          },
-          onDone: () => {
-            $("exportStatus").textContent = "Export complete";
-            setTimeout(() => { exportOverlay.style.display = "none"; }, 900);
-          },
-        });
-        if (exportCancelled) {
-          exportOverlay.style.display = "none";
-          setStatus("Export cancelled");
-        } else {
-          setStatus("Export saved · particle_tide.mp4");
-        }
-      } catch (error) {
-        console.error(error);
-        try { await writable.abort(); } catch (abortError) {}
-        $("exportStatus").textContent = "Export failed · " + error.message;
-        setTimeout(() => { exportOverlay.style.display = "none"; }, 2600);
-        setStatus("Export failed · " + error.message);
-      } finally {
-        historyData.set(saved.historyData);
-        frequencyData.set(saved.frequencyData);
-        historyHead = saved.historyHead;
-        flowAccumulator = saved.flowAccumulator;
-        elapsedTime = saved.elapsedTime;
-        orbitAngle = saved.orbitAngle;
-        camera.position.copy(saved.cameraPosition);
-        controls.target.copy(saved.controlsTarget);
-        fieldMaterial.uniforms.uHistoryHead.value = historyHead;
-        historyTexture.needsUpdate = true;
-        updatePlayPauseUI();
-        updateRidge();
-
-        renderer.setPixelRatio(saved.capture.pixelRatio);
-        composer.setPixelRatio(saved.capture.pixelRatio);
-        renderer.setSize(saved.capture.width, saved.capture.height, false);
-        composer.setSize(saved.capture.width, saved.capture.height);
-        updateLineResolution(saved.capture.width, saved.capture.height);
-        camera.aspect = saved.capture.aspect;
-        camera.updateProjectionMatrix();
-
-        offlineExporting = false;
-        await audio.resumeContext();
-      }
+          historyData.fill(0);
+          frequencyData.fill(0);
+          historyHead = 0;
+          flowAccumulator = 0;
+          elapsedTime = 0;
+          orbitAngle = 0;
+          fieldMaterial.uniforms.uHistoryHead.value = 0;
+          historyTexture.needsUpdate = true;
+          return saved;
+        },
+        restore: (saved) => {
+          if (!saved) return;
+          historyData.set(saved.historyData);
+          frequencyData.set(saved.frequencyData);
+          historyHead = saved.historyHead;
+          flowAccumulator = saved.flowAccumulator;
+          elapsedTime = saved.elapsedTime;
+          orbitAngle = saved.orbitAngle;
+          camera.position.copy(saved.cameraPosition);
+          controls.target.copy(saved.controlsTarget);
+          fieldMaterial.uniforms.uHistoryHead.value = historyHead;
+          historyTexture.needsUpdate = true;
+          updatePlayPauseUI();
+          updateRidge();
+        },
+        renderFrame: (fftData, delta) => renderFrame(delta, fftData),
+        readCanvas: () => renderer.domElement,
+        gpuFinish: () => renderer.getContext().finish(),
+      });
     }
 
     function unloadAudio() {
-      if (offlineExporting || recorder.isRecording) return;
+      if (capture.isExporting || recorder.isRecording) return;
       audio.unload();
       $("fileInput").value = "";
       seedDemoHistory();
@@ -1163,17 +1095,17 @@
     });
 
     recordBtn.addEventListener("click", () => {
-      if (!audio.hasAudio || offlineExporting) return;
+      if (!audio.hasAudio || capture.isExporting) return;
       if (audio.isPaused) {
         resumePlayback();
       }
-      recorder.toggle(makeRecordingStream);
+      recorder.toggle(() => capture.makeRecordingStream());
     });
 
     exportBtn.addEventListener("click", exportVideo);
 
     playPauseBtn.addEventListener("click", async () => {
-      if (offlineExporting) return;
+      if (capture.isExporting) return;
       if (audio.isPlaying) {
         await pausePlayback();
       } else if (audio.isPaused) {
@@ -1185,7 +1117,7 @@
     });
 
     replayBtn.addEventListener("click", async () => {
-      if (!audio.hasAudio || offlineExporting || recorder.isRecording) return;
+      if (!audio.hasAudio || capture.isExporting || recorder.isRecording) return;
       await audio.resumeContext();
       resetLiveField();
       startPlayback();
@@ -1198,16 +1130,11 @@
       else document.documentElement.requestFullscreen();
     });
 
-    $("exportCancelBtn").addEventListener("click", () => {
-      exportCancelled = true;
-      $("exportStatus").textContent = "Cancelling…";
-    });
-
     let resizeTimer;
     addEventListener("resize", () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        if (offlineExporting || recorder.isRecording) return;
+        if (capture.isExporting || recorder.isRecording) return;
         const pixelRatio = Math.min(devicePixelRatio, innerWidth < 760 ? 1 : 1.5);
         renderer.setPixelRatio(pixelRatio);
         composer.setPixelRatio(pixelRatio);
@@ -1228,22 +1155,19 @@
 
     function animate(now) {
       requestAnimationFrame(animate);
-      if (offlineExporting) {
+      if (capture.isExporting) {
         previousTime = now;
         return;
       }
 
-      if (recorder.isRecording && settings.lock60 && now - lastCaptureTime < 16.5) return;
+      if (recorder.isRecording && capture.shouldSkipRecordingFrame(now, settings.lock60)) return;
 
       const measuredDelta = Math.min((now - previousTime) / 1000, .05);
       previousTime = now;
       const delta = recorder.isRecording && settings.lock60 ? 1 / 60 : measuredDelta;
       renderFrame(delta);
 
-      if (recorder.isRecording && recordingTrack) {
-        recordingTrack.requestFrame();
-        lastCaptureTime = now;
-      }
+      if (recorder.isRecording) capture.requestRecordingFrame(now);
 
       fpsFrames++;
       fpsElapsed += measuredDelta;
