@@ -1104,8 +1104,12 @@
 
     exportBtn.addEventListener("click", exportVideo);
 
-    playPauseBtn.addEventListener("click", async () => {
+    async function togglePlayPause() {
       if (capture.isExporting) return;
+      if (!audio.hasAudio) {
+        $("fileInput").click();
+        return;
+      }
       if (audio.isPlaying) {
         await pausePlayback();
       } else if (audio.isPaused) {
@@ -1114,13 +1118,33 @@
         await audio.resumeContext();
         startPlayback();
       }
-    });
+    }
 
-    replayBtn.addEventListener("click", async () => {
+    async function replayTrack() {
       if (!audio.hasAudio || capture.isExporting || recorder.isRecording) return;
       await audio.resumeContext();
       resetLiveField();
       startPlayback();
+    }
+
+    playPauseBtn.addEventListener("click", togglePlayPause);
+    replayBtn.addEventListener("click", replayTrack);
+
+    addEventListener("keydown", (event) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      const tag = event.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || event.target?.isContentEditable) return;
+
+      if (event.code === "Space") {
+        event.preventDefault();
+        togglePlayPause();
+        return;
+      }
+
+      if (event.key === "r" || event.key === "R") {
+        event.preventDefault();
+        replayTrack();
+      }
     });
 
     unloadBtn.addEventListener("click", unloadAudio);
