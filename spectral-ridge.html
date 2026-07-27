@@ -60,8 +60,22 @@
       </div>
 
       <div class="control">
+        <div class="control-head"><span>Waveform thickness</span><span class="value" id="waveformThicknessValue">1.5</span></div>
+        <input id="waveformThickness" type="range" min="0.5" max="8" step="0.1" value="1.5">
+      </div>
+
+      <div class="control">
         <div class="control-head"><span>FFT smoothing</span><span class="value" id="smoothingValue">0.68</span></div>
         <input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.68">
+      </div>
+
+      <div class="color-row">
+        <span>Minimum frequency</span>
+        <input id="minFrequency" class="frequency-input" type="number" min="20" max="21990" step="10" value="40">
+      </div>
+      <div class="color-row">
+        <span>Maximum frequency</span>
+        <input id="maxFrequency" class="frequency-input" type="number" min="30" max="22000" step="10" value="16000">
       </div>
     </section>
 
@@ -166,6 +180,9 @@
     import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
     import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
     import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+    import { Line2 } from "three/addons/lines/Line2.js";
+    import { LineGeometry } from "three/addons/lines/LineGeometry.js";
+    import { LineMaterial } from "three/addons/lines/LineMaterial.js";
     import { createAudioPlayback } from "./js/audio-playback.js";
     import { createCaptureSession } from "./js/capture-export.js";
 
@@ -184,7 +201,10 @@
       trailFade: 1.1,
       gain: 1.35,
       height: 18,
+      waveformThickness: 1.5,
       smoothing: 0.68,
+      minFrequency: 40,
+      maxFrequency: 16000,
       pointSize: 1.4,
       density: 0.95,
       brightness: 1.8,
@@ -258,6 +278,7 @@
         composer.setSize(width, height);
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
+        updateLineResolution(width, height);
         fieldMaterial.uniforms.uViewportHeight.value = height;
         finishPass.uniforms.uResolution.value.set(width, height);
       },
@@ -268,6 +289,7 @@
         composer.setSize(state.width, state.height);
         camera.aspect = state.aspect;
         camera.updateProjectionMatrix();
+        updateLineResolution(state.width, state.height);
         fieldMaterial.uniforms.uViewportHeight.value = state.height * state.pixelRatio;
         finishPass.uniforms.uResolution.value.set(
           state.width * state.pixelRatio,
@@ -344,6 +366,9 @@
           uHistorySize: { value: HISTORY },
           uGain: { value: settings.gain },
           uHeight: { value: settings.height },
+          uMinFrequency: { value: settings.minFrequency },
+          uMaxFrequency: { value: settings.maxFrequency },
+          uNyquist: { value: (audio.context?.sampleRate || 48000) / 2 },
           uTrailDepth: { value: settings.trailDepth },
           uTrailFade: { value: settings.trailFade },
           uPointSize: { value: settings.pointSize },
@@ -361,6 +386,9 @@
           uniform float uHistorySize;
           uniform float uGain;
           uniform float uHeight;
+          uniform float uMinFrequency;
+          uniform float uMaxFrequency;
+          uniform float uNyquist;
           uniform float uTrailDepth;
           uniform float uTrailFade;
           uniform float uPointSize;
@@ -383,7 +411,9 @@
             float ageRow = age * (uHistorySize - 1.0);
             float textureRow = mod(uHistoryHead - 1.0 - ageRow + uHistorySize, uHistorySize);
             float textureV = (textureRow + 0.5) / uHistorySize;
-            float frequencyX = 0.008 + pow(aGrid.x, 2.15) * 0.84;
+            float minFrequencyX = clamp(uMinFrequency / uNyquist, 0.0, 0.998);
+            float maxFrequencyX = clamp(uMaxFrequency / uNyquist, minFrequencyX + 0.001, 0.999);
+            float frequencyX = mix(minFrequencyX, maxFrequencyX, pow(aGrid.x, 2.15));
             float raw = texture2D(uHistory, vec2(frequencyX, textureV)).r;
             float amplitude = clamp(pow(raw, 1.12) * uGain, 0.0, 1.0);
             float shaped = pow(amplitude, 1.36);
@@ -443,29 +473,41 @@
     function createRidge() {
       ridgePositions = new Float32Array(COLUMNS * 3);
       ridgeRawHeights = new Float32Array(COLUMNS);
-      ridgeGeometry = new THREE.BufferGeometry();
-      ridgeGeometry.setAttribute("position", new THREE.BufferAttribute(ridgePositions, 3));
+      ridgeGeometry = new LineGeometry();
+      ridgeGeometry.setPositions(ridgePositions);
 
-      const material = new THREE.LineBasicMaterial({
+      const material = new LineMaterial({
         color: $("waveformColor").value,
+        linewidth: settings.waveformThickness,
         transparent: true,
         opacity: 0.72,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       });
 
-      ridge = new THREE.Line(ridgeGeometry, material);
+      ridge = new Line2(ridgeGeometry, material);
       ridge.frustumCulled = false;
       scene.add(ridge);
+      updateLineResolution(innerWidth, innerHeight);
 
       const newestRow = (historyHead - 1 + HISTORY) % HISTORY;
       frequencyData.set(historyData.subarray(newestRow * FFT_BINS, (newestRow + 1) * FFT_BINS));
       updateRidge();
     }
 
+    function updateLineResolution(width, height) {
+      if (ridge) ridge.material.resolution.set(width, height);
+    }
+
     function sampleAmplitude(column) {
       const u = column / (COLUMNS - 1);
-      const frequencyX = 0.008 + Math.pow(u, 2.15) * 0.84;
+      const nyquist = (audio.context?.sampleRate || 48000) / 2;
+      const frequency = THREE.MathUtils.lerp(
+        settings.minFrequency,
+        settings.maxFrequency,
+        Math.pow(u, 2.15),
+      );
+      const frequencyX = Math.min(0.999, frequency / nyquist);
       const bin = Math.min(FFT_BINS - 1, Math.floor(frequencyX * FFT_BINS));
       const raw = frequencyData[bin] / 255;
       const amplitude = Math.min(1, Math.pow(raw, 1.12) * settings.gain);
@@ -495,8 +537,7 @@
         ridgePositions[index + 2] = 1;
       }
 
-      ridgeGeometry.attributes.position.needsUpdate = true;
-      ridgeGeometry.computeBoundingSphere();
+      ridgeGeometry.setPositions(ridgePositions);
     }
 
     function createPostProcessing() {
@@ -787,6 +828,7 @@
     async function loadAudio(file, preparedRecording, exportWritable) {
       setStatus("Decoding · " + file.name);
       await audio.load(file);
+      fieldMaterial.uniforms.uNyquist.value = audio.context.sampleRate / 2;
       resetLiveField();
       setButtonsEnabled(true);
 
@@ -894,6 +936,9 @@
       fieldMaterial.uniforms.uHeight.value = value;
       updateRidge();
     });
+    bindRange("waveformThickness", "waveformThickness", 1, (value) => {
+      ridge.material.linewidth = value;
+    });
     bindRange("smoothing", "smoothing", 2, (value) => audio.setSmoothing(value));
     bindRange("pointSize", "pointSize", 2, (value) => {
       fieldMaterial.uniforms.uPointSize.value = value;
@@ -913,6 +958,32 @@
     bindRange("grain", "grain", 2, (value) => {
       finishPass.uniforms.uGrain.value = value;
     });
+
+    function updateFrequencyRange(changedInput) {
+      const minInput = $("minFrequency");
+      const maxInput = $("maxFrequency");
+      let minimum = Number(minInput.value);
+      let maximum = Number(maxInput.value);
+      if (!Number.isFinite(minimum) || !Number.isFinite(maximum)) return;
+
+      minimum = THREE.MathUtils.clamp(minimum, 20, 21990);
+      maximum = THREE.MathUtils.clamp(maximum, 30, 22000);
+      if (minimum >= maximum) {
+        if (changedInput === minInput) maximum = Math.min(22000, minimum + 10);
+        else minimum = Math.max(20, maximum - 10);
+      }
+
+      minInput.value = minimum;
+      maxInput.value = maximum;
+      settings.minFrequency = minimum;
+      settings.maxFrequency = maximum;
+      fieldMaterial.uniforms.uMinFrequency.value = minimum;
+      fieldMaterial.uniforms.uMaxFrequency.value = maximum;
+      updateRidge();
+    }
+
+    $("minFrequency").addEventListener("input", (event) => updateFrequencyRange(event.target));
+    $("maxFrequency").addEventListener("input", (event) => updateFrequencyRange(event.target));
 
     $("particleColor").addEventListener("input", (event) => {
       fieldMaterial.uniforms.uParticleColor.value.set(event.target.value);
@@ -1046,6 +1117,7 @@
         composer.setSize(innerWidth, innerHeight);
         camera.aspect = innerWidth / innerHeight;
         camera.updateProjectionMatrix();
+        updateLineResolution(innerWidth, innerHeight);
         fieldMaterial.uniforms.uViewportHeight.value = innerHeight * pixelRatio;
         finishPass.uniforms.uResolution.value.set(innerWidth * pixelRatio, innerHeight * pixelRatio);
       }, 80);
