@@ -41,6 +41,11 @@
       </div>
 
       <div class="control">
+        <div class="control-head"><span>Fall depth</span><span class="value" id="fallDepthValue">18</span></div>
+        <input id="fallDepth" type="range" min="0" max="60" step="1" value="18">
+      </div>
+
+      <div class="control">
         <div class="control-head"><span>Trail fade</span><span class="value" id="trailFadeValue">1.00</span></div>
         <input id="trailFade" type="range" min="0.1" max="4" step="0.05" value="1">
       </div>
@@ -97,12 +102,18 @@
         <input id="brightness" type="range" min="0.2" max="3" step="0.05" value="2.6">
       </div>
 
-      <div class="color-row"><span>Particle colour</span><input id="particleColor" type="color" value="#ffffff"></div>
+      <div class="color-row"><span>Crest colour</span><input id="particleColor" type="color" value="#ffffff"></div>
+      <div class="color-row"><span>Trail colour</span><input id="trailColor" type="color" value="#5b7cff"></div>
       <div class="color-row"><span>Waveform colour</span><input id="waveformColor" type="color" value="#ffffff"></div>
     </section>
 
     <section class="section">
       <div class="section-title">Dither</div>
+
+      <div class="control">
+        <div class="control-head"><span>Glow</span><span class="value" id="glowValue">0.50</span></div>
+        <input id="glow" type="range" min="0" max="1.5" step="0.05" value="0.5">
+      </div>
 
       <div class="control">
         <div class="control-head"><span>Dot size</span><span class="value" id="dotSizeValue">2.5</span></div>
@@ -180,6 +191,7 @@
     import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
     import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
     import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+    import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
     import { Line2 } from "three/addons/lines/Line2.js";
     import { LineGeometry } from "three/addons/lines/LineGeometry.js";
     import { LineMaterial } from "three/addons/lines/LineMaterial.js";
@@ -198,6 +210,7 @@
       speed: 2.5,
       historyBins: 500,
       trailDepth: 43,
+      fallDepth: 18,
       trailFade: 1,
       gain: 1,
       height: 25,
@@ -210,6 +223,7 @@
       brightness: 2.6,
       dotSize: 2.5,
       dither: 0.2,
+      glow: 0.5,
       grain: 0,
       lock60: false,
     };
@@ -236,6 +250,7 @@
     let camera;
     let renderer;
     let composer;
+    let bloomPass;
     let finishPass;
     let field;
     let fieldMaterial;
@@ -370,11 +385,13 @@
           uMaxFrequency: { value: settings.maxFrequency },
           uNyquist: { value: (audio.context?.sampleRate || 48000) / 2 },
           uTrailDepth: { value: settings.trailDepth },
+          uFallDepth: { value: settings.fallDepth },
           uTrailFade: { value: settings.trailFade },
           uPointSize: { value: settings.pointSize },
           uDensity: { value: settings.density },
           uBrightness: { value: settings.brightness },
           uParticleColor: { value: new THREE.Color($("particleColor").value) },
+          uTrailColor: { value: new THREE.Color($("trailColor").value) },
           uTime: { value: 0 },
           uViewportHeight: { value: innerHeight * renderer.getPixelRatio() },
         },
@@ -390,15 +407,18 @@
           uniform float uMaxFrequency;
           uniform float uNyquist;
           uniform float uTrailDepth;
+          uniform float uFallDepth;
           uniform float uTrailFade;
           uniform float uPointSize;
           uniform float uDensity;
           uniform float uBrightness;
+          uniform vec3 uParticleColor;
+          uniform vec3 uTrailColor;
           uniform float uTime;
           uniform float uViewportHeight;
 
           varying float vAlpha;
-          varying float vLight;
+          varying vec3 vTint;
 
           float hash21(vec2 p) {
             p = fract(p * vec2(123.34, 456.21));
@@ -430,33 +450,39 @@
             transformed.x = (aGrid.x - 0.5) * ${FIELD_WIDTH.toFixed(1)} + drift;
             transformed.y = shaped * uHeight - fall;
             transformed.y += (seed - 0.5) * (0.3 + shaped * 1.8 + age * 1.2);
-            transformed.z = (seedB - 0.5) * 1.6 - age * 0.35;
+            transformed.z = (seedB - 0.5) * 1.6 - age * (0.35 + uFallDepth);
 
             vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
+            float viewDistance = max(-mvPosition.z, 1.0);
             gl_PointSize = uPointSize
               * (0.62 + shaped * 1.05)
-              * (uViewportHeight / 900.0);
+              * (uViewportHeight / 900.0)
+              * (105.0 / viewDistance);
             gl_Position = projectionMatrix * mvPosition;
 
             float fallingDensity = mix(uDensity, uDensity * 0.72, age);
             float visible = 1.0 - step(fallingDensity, seed);
             float signal = smoothstep(0.018, 0.15, amplitude);
-            vAlpha = visible * fade * flicker * signal * (0.62 + shaped * 0.75);
-            vLight = mix(0.4, 1.0, shaped) * uBrightness;
+            float edge = smoothstep(0.0, 0.09, aGrid.x) * smoothstep(1.0, 0.91, aGrid.x);
+            float tail = smoothstep(1.0, 0.72, age);
+            float depthFade = mix(1.0, 0.35, smoothstep(105.0, 105.0 + uFallDepth * 3.4 + 40.0, viewDistance));
+            vAlpha = visible * fade * flicker * signal * edge * tail * depthFade
+              * (0.62 + shaped * 0.75);
+            vTint = mix(uParticleColor, uTrailColor, clamp(age * 0.8 + (1.0 - shaped) * 0.3, 0.0, 1.0))
+              * mix(0.4, 1.0, shaped) * uBrightness;
           }
         `,
         fragmentShader: `
           precision highp float;
-          uniform vec3 uParticleColor;
           varying float vAlpha;
-          varying float vLight;
+          varying vec3 vTint;
 
           void main() {
             vec2 point = gl_PointCoord - 0.5;
             float radius = length(point);
             if (radius > 0.5 || vAlpha < 0.004) discard;
             float core = 1.0 - smoothstep(0.04, 0.5, radius);
-            gl_FragColor = vec4(uParticleColor * vLight, vAlpha * core);
+            gl_FragColor = vec4(vTint, vAlpha * core);
           }
         `,
         transparent: true,
@@ -476,9 +502,21 @@
       ridgeGeometry = new LineGeometry();
       ridgeGeometry.setPositions(ridgePositions);
 
+      // Taper the ends to black so additive blending dissolves them, matching the particle edge fade.
+      const colors = new Float32Array(COLUMNS * 3);
+      for (let column = 0; column < COLUMNS; column++) {
+        const u = column / (COLUMNS - 1);
+        const taper = THREE.MathUtils.smoothstep(u, 0, 0.09) * (1 - THREE.MathUtils.smoothstep(u, 0.91, 1));
+        colors[column * 3] = taper;
+        colors[column * 3 + 1] = taper;
+        colors[column * 3 + 2] = taper;
+      }
+      ridgeGeometry.setColors(colors);
+
       const material = new LineMaterial({
         color: $("waveformColor").value,
         linewidth: settings.waveformThickness,
+        vertexColors: true,
         transparent: true,
         opacity: 0.72,
         blending: THREE.AdditiveBlending,
@@ -544,6 +582,9 @@
       composer = new EffectComposer(renderer);
       composer.setPixelRatio(renderer.getPixelRatio());
       composer.addPass(new RenderPass(scene, camera));
+
+      bloomPass = new UnrealBloomPass(physicalResolution(), settings.glow, 0.4, 0.55);
+      composer.addPass(bloomPass);
 
       const FinishShader = {
         uniforms: {
@@ -925,6 +966,9 @@
     bindRange("trailDepth", "trailDepth", 0, (value) => {
       fieldMaterial.uniforms.uTrailDepth.value = value;
     });
+    bindRange("fallDepth", "fallDepth", 0, (value) => {
+      fieldMaterial.uniforms.uFallDepth.value = value;
+    });
     bindRange("trailFade", "trailFade", 2, (value) => {
       fieldMaterial.uniforms.uTrailFade.value = value;
     });
@@ -948,6 +992,9 @@
     });
     bindRange("brightness", "brightness", 2, (value) => {
       fieldMaterial.uniforms.uBrightness.value = value;
+    });
+    bindRange("glow", "glow", 2, (value) => {
+      bloomPass.strength = value;
     });
     bindRange("dotSize", "dotSize", 1, (value) => {
       finishPass.uniforms.uDotSize.value = value;
@@ -987,6 +1034,9 @@
 
     $("particleColor").addEventListener("input", (event) => {
       fieldMaterial.uniforms.uParticleColor.value.set(event.target.value);
+    });
+    $("trailColor").addEventListener("input", (event) => {
+      fieldMaterial.uniforms.uTrailColor.value.set(event.target.value);
     });
     $("waveformColor").addEventListener("input", (event) => {
       ridge.material.color.set(event.target.value);
