@@ -73,6 +73,15 @@
         <div class="control-head"><span>FFT smoothing</span><span class="value" id="smoothingValue">0.75</span></div>
         <input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.75">
       </div>
+
+      <label class="color-row">
+        <span>Minimum frequency</span>
+        <input id="minFrequency" class="frequency-input" type="number" min="20" max="21990" step="10" value="40">
+      </label>
+      <label class="color-row">
+        <span>Maximum frequency</span>
+        <input id="maxFrequency" class="frequency-input" type="number" min="30" max="22000" step="10" value="8000">
+      </label>
     </section>
 
     <section class="section">
@@ -231,6 +240,8 @@
       height: 15,
       scatter: 1,
       smoothing: 0.75,
+      minFrequency: 40,
+      maxFrequency: 8000,
       pointSize: 1.0,
       density: 1,
       brightness: 2.5,
@@ -453,6 +464,9 @@
           uGain: { value: settings.gain },
           uHeight: { value: settings.height },
           uScatter: { value: settings.scatter },
+          uMinFrequency: { value: settings.minFrequency },
+          uMaxFrequency: { value: settings.maxFrequency },
+          uNyquist: { value: (audio.context?.sampleRate || 48000) / 2 },
           uPointSize: { value: settings.pointSize },
           uDensity: { value: settings.density },
           uBrightness: { value: settings.brightness },
@@ -474,6 +488,9 @@
           uniform float uGain;
           uniform float uHeight;
           uniform float uScatter;
+          uniform float uMinFrequency;
+          uniform float uMaxFrequency;
+          uniform float uNyquist;
           uniform float uPointSize;
           uniform float uDensity;
           uniform float uBrightness;
@@ -496,7 +513,9 @@
           }
 
           void main() {
-            float frequencyX = .012 + pow(aGrid.x, 2.32) * .78;
+            float minFrequencyX = clamp(uMinFrequency / uNyquist, 0.0, 0.998);
+            float maxFrequencyX = clamp(uMaxFrequency / uNyquist, minFrequencyX + 0.001, 0.999);
+            float frequencyX = mix(minFrequencyX, maxFrequencyX, pow(aGrid.x, 2.32));
             float ageNorm = uReverseFlow > .5 ? (1.0 - aGrid.y) : aGrid.y;
             float ageRow = ageNorm * (uHistorySize - 1.0);
             float textureRow = mod(uHistoryHead - 1.0 - ageRow + uHistorySize, uHistorySize);
@@ -758,7 +777,13 @@
 
     function sampleAmplitude(column) {
       const u = column / (COLUMNS - 1);
-      const frequencyX = .012 + Math.pow(u, 2.32) * .78;
+      const nyquist = (audio.context?.sampleRate || 48000) / 2;
+      const frequency = THREE.MathUtils.lerp(
+        settings.minFrequency,
+        settings.maxFrequency,
+        Math.pow(u, 2.32),
+      );
+      const frequencyX = Math.min(0.999, frequency / nyquist);
       const bin = Math.min(FFT_BINS - 1, Math.floor(frequencyX * FFT_BINS));
       const raw = frequencyData[bin] / 255;
       const amplitude = Math.min(1, Math.pow(raw, 1.18) * settings.gain);
@@ -874,6 +899,7 @@
     async function loadAudio(file, preparedRecording, exportWritable) {
       setStatus("Decoding · " + file.name);
       await audio.load(file);
+      fieldMaterial.uniforms.uNyquist.value = audio.context.sampleRate / 2;
       resetLiveField();
       setButtonsEnabled(true);
 
@@ -996,6 +1022,33 @@
     bindRange("smoothing", "smoothing", 2, (value) => {
       audio.setSmoothing(value);
     });
+
+    function updateFrequencyRange(changedInput) {
+      const minInput = $("minFrequency");
+      const maxInput = $("maxFrequency");
+      let minimum = Number(minInput.value);
+      let maximum = Number(maxInput.value);
+      if (!Number.isFinite(minimum) || !Number.isFinite(maximum)) return;
+
+      minimum = THREE.MathUtils.clamp(minimum, 20, 21990);
+      maximum = THREE.MathUtils.clamp(maximum, 30, 22000);
+      if (minimum >= maximum) {
+        if (changedInput === minInput) maximum = Math.min(22000, minimum + 10);
+        else minimum = Math.max(20, maximum - 10);
+      }
+
+      minInput.value = minimum;
+      maxInput.value = maximum;
+      settings.minFrequency = minimum;
+      settings.maxFrequency = maximum;
+      fieldMaterial.uniforms.uMinFrequency.value = minimum;
+      fieldMaterial.uniforms.uMaxFrequency.value = maximum;
+      updateRidge();
+    }
+
+    $("minFrequency").addEventListener("input", (event) => updateFrequencyRange(event.target));
+    $("maxFrequency").addEventListener("input", (event) => updateFrequencyRange(event.target));
+
     bindRange("pointSize", "pointSize", 1, (value) => { fieldMaterial.uniforms.uPointSize.value = value; });
     bindRange("density", "density", 2, (value) => { fieldMaterial.uniforms.uDensity.value = value; });
     bindRange("brightness", "brightness", 2, (value) => {
