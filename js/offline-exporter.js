@@ -145,12 +145,20 @@ async function offlineExport(opts) {
     error: (e) => console.error('VideoEncoder error:', e),
   });
 
+  const videoColorSpace = {
+    primaries: 'bt709',
+    transfer: 'iec61966-2-1',
+    matrix: 'rgb',
+    fullRange: true,
+  };
+
   videoEncoder.configure({
     codec: 'avc1.640033',
     width,
     height,
     bitrate: 40_000_000,
     framerate: fps,
+    colorSpace: videoColorSpace,
     avc: { format: 'avc' },
   });
 

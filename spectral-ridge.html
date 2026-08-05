@@ -65,6 +65,11 @@
       </div>
 
       <div class="control">
+        <div class="control-head"><span>Waveform width</span><span class="value" id="waveformWidthValue">80%</span></div>
+        <input id="waveformWidth" type="range" min="50" max="100" step="1" value="80">
+      </div>
+
+      <div class="control">
         <div class="control-head"><span>Waveform thickness</span><span class="value" id="waveformThicknessValue">3.0</span></div>
         <input id="waveformThickness" type="range" min="0.5" max="8" step="0.1" value="3">
       </div>
@@ -192,6 +197,7 @@
     import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
     import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
     import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+    import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     import { Line2 } from "three/addons/lines/Line2.js";
     import { LineGeometry } from "three/addons/lines/LineGeometry.js";
     import { LineMaterial } from "three/addons/lines/LineMaterial.js";
@@ -214,6 +220,7 @@
       trailFade: 1,
       gain: 1,
       height: 25,
+      waveformWidth: 80,
       waveformThickness: 3,
       smoothing: 0.8,
       minFrequency: 40,
@@ -294,6 +301,7 @@
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
         updateLineResolution(width, height);
+        updateWaveformWidth();
         fieldMaterial.uniforms.uViewportHeight.value = height;
         finishPass.uniforms.uResolution.value.set(width, height);
       },
@@ -305,6 +313,7 @@
         camera.aspect = state.aspect;
         camera.updateProjectionMatrix();
         updateLineResolution(state.width, state.height);
+        updateWaveformWidth();
         fieldMaterial.uniforms.uViewportHeight.value = state.height * state.pixelRatio;
         finishPass.uniforms.uResolution.value.set(
           state.width * state.pixelRatio,
@@ -494,6 +503,7 @@
       field = new THREE.Points(geometry, fieldMaterial);
       field.frustumCulled = false;
       scene.add(field);
+      updateWaveformWidth();
     }
 
     function createRidge() {
@@ -527,6 +537,7 @@
       ridge.frustumCulled = false;
       scene.add(ridge);
       updateLineResolution(innerWidth, innerHeight);
+      updateWaveformWidth();
 
       const newestRow = (historyHead - 1 + HISTORY) % HISTORY;
       frequencyData.set(historyData.subarray(newestRow * FFT_BINS, (newestRow + 1) * FFT_BINS));
@@ -535,6 +546,18 @@
 
     function updateLineResolution(width, height) {
       if (ridge) ridge.material.resolution.set(width, height);
+    }
+
+    function updateWaveformWidth() {
+      if (!camera) return;
+
+      const distanceToRidge = Math.abs(camera.position.z - 1);
+      const visibleHeight = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * distanceToRidge;
+      const visibleWidth = visibleHeight * camera.aspect;
+      const scale = (visibleWidth / FIELD_WIDTH) * (settings.waveformWidth / 100);
+
+      if (field) field.scale.x = scale;
+      if (ridge) ridge.scale.x = scale;
     }
 
     function sampleAmplitude(column) {
@@ -678,6 +701,7 @@
 
       finishPass = new ShaderPass(FinishShader);
       composer.addPass(finishPass);
+      composer.addPass(new OutputPass());
     }
 
     function initScene() {
@@ -951,12 +975,12 @@
       setStatus("Choose an audio file to begin");
     }
 
-    function bindRange(id, key, decimals, onInput) {
+    function bindRange(id, key, decimals, onInput, suffix = "") {
       const input = $(id);
       const output = $(id + "Value");
       input.addEventListener("input", () => {
         settings[key] = Number(input.value);
-        output.textContent = settings[key].toFixed(decimals);
+        output.textContent = settings[key].toFixed(decimals) + suffix;
         if (onInput) onInput(settings[key]);
       });
     }
@@ -980,6 +1004,7 @@
       fieldMaterial.uniforms.uHeight.value = value;
       updateRidge();
     });
+    bindRange("waveformWidth", "waveformWidth", 0, updateWaveformWidth, "%");
     bindRange("waveformThickness", "waveformThickness", 1, (value) => {
       ridge.material.linewidth = value;
     });
@@ -1168,6 +1193,7 @@
         camera.aspect = innerWidth / innerHeight;
         camera.updateProjectionMatrix();
         updateLineResolution(innerWidth, innerHeight);
+        updateWaveformWidth();
         fieldMaterial.uniforms.uViewportHeight.value = innerHeight * pixelRatio;
         finishPass.uniforms.uResolution.value.set(innerWidth * pixelRatio, innerHeight * pixelRatio);
       }, 80);
