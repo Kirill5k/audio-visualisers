@@ -46,8 +46,8 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Trail fade</span><span class="value" id="fadeValue">0.50</span></div>
-        <input id="fade" type="range" min="0" max="1" step="0.01" value="0.5">
+        <div class="control-head"><span>Trail fade</span><span class="value" id="fadeValue">0.60</span></div>
+        <input id="fade" type="range" min="0" max="1" step="0.01" value="0.6">
       </div>
 
       <div class="control">
@@ -98,13 +98,13 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Density</span><span class="value" id="densityValue">0.89</span></div>
-        <input id="density" type="range" min="0.05" max="1" step="0.01" value="0.89">
+        <div class="control-head"><span>Density</span><span class="value" id="densityValue">0.90</span></div>
+        <input id="density" type="range" min="0.05" max="1" step="0.01" value="0.9">
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Opacity</span><span class="value" id="opacityValue">0.20</span></div>
-        <input id="opacity" type="range" min="0.02" max="1" step="0.01" value="0.2">
+        <div class="control-head"><span>Opacity</span><span class="value" id="opacityValue">0.290</span></div>
+        <input id="opacity" type="range" min="0.005" max="1" step="0.005" value="0.29">
       </div>
 
       <div class="control">
@@ -124,8 +124,8 @@
       <div class="section-title">Waveform</div>
 
       <div class="control">
-        <div class="control-head"><span>Thickness</span><span class="value" id="waveThicknessValue">1.6</span></div>
-        <input id="waveThickness" type="range" min="0" max="8" step="0.1" value="1.6">
+        <div class="control-head"><span>Thickness</span><span class="value" id="waveThicknessValue">1.5</span></div>
+        <input id="waveThickness" type="range" min="0" max="8" step="0.1" value="1.5">
       </div>
 
       <div class="control">
@@ -134,8 +134,8 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Glow</span><span class="value" id="waveGlowValue">0.16</span></div>
-        <input id="waveGlow" type="range" min="0" max="1" step="0.01" value="0.16">
+        <div class="control-head"><span>Glow</span><span class="value" id="waveGlowValue">0.06</span></div>
+        <input id="waveGlow" type="range" min="0" max="1" step="0.01" value="0.06">
       </div>
 
       <div class="color-row"><span>Waveform colour</span><input id="colorWave" type="color" value="#f2f4e4"></div>
@@ -221,10 +221,11 @@
     // 2048 = 43ms window, 1024 bins. At 1024 the bottom ~10 bins were stretched across
     // the left third of the screen by FREQUENCY_CURVE, so the bass was 10 numbers magnified.
     const FFT_SIZE = 2048;
-    // 520 columns left ~7px between dots at 2x DPR, so the bright bass region resolved
-    // as separate specks (local contrast 1.8x its own brightness). Tripling the sampling
-    // fills it into a surface: same brightness at opacity 0.2, 55% less graininess.
-    const COLUMNS = 1560;
+    // 520 columns left ~7px between dots at 2x DPR, so the bright bass region resolved as
+    // separate specks (local contrast 1.8x its own brightness). ~1 column per device pixel
+    // fills it into a surface: same brightness at opacity 0.02, local contrast down to 0.21.
+    // Past ~2048 this adds rendering density, not spectrum — FFT_SIZE only yields 1024 bins.
+    const COLUMNS = 4096;
     const WORLD_WIDTH = 100;
     const FREQUENCY_CURVE = 2.32;
     let HISTORY = 320;
@@ -238,7 +239,7 @@
       historyBins: 320,
       driftX: 0,
       driftY: 0.3,
-      fade: 0.5,
+      fade: 0.6,
       motionSmooth: 0,
       gain: 1,
       height: 20,
@@ -247,12 +248,12 @@
       minFrequency: 40,
       maxFrequency: 12000,
       pointSize: 3,
-      density: 0.89,
-      opacity: 0.2,
+      density: 0.9,
+      opacity: 0.29,
       scatter: 0,
-      waveThickness: 1.6,
+      waveThickness: 1.5,
       waveSmoothness: 0.13,
-      waveGlow: 0.16,
+      waveGlow: 0.06,
       reverseFlow: true,
       bloom: true,
       grain: false,
@@ -999,7 +1000,7 @@
     bindRange("smoothing", "smoothing", 2, (value) => audio.setSmoothing(value));
     bindRange("pointSize", "pointSize", 1, setUniform("uPointSize"));
     bindRange("density", "density", 2, setUniform("uDensity"));
-    bindRange("opacity", "opacity", 2, setUniform("uOpacity"));
+    bindRange("opacity", "opacity", 3, setUniform("uOpacity"));
     bindRange("scatter", "scatter", 1, setUniform("uScatter"));
     bindRange("waveThickness", "waveThickness", 1, (value) => {
       wave.material.linewidth = value;
