@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Waveform Drift — Audio Visualiser</title>
+  <link rel="stylesheet" href="css/visualiser-ui.css">
+</head>
+<body>
+  <div id="stage"></div>
+
+  <button id="panelToggle" class="glass" aria-label="Hide settings" title="Hide settings">×</button>
+
+  <aside id="panel" class="glass">
+    <div class="brand">
+      <div>
+        <div class="eyebrow">Audio reactive study</div>
+        <h1>Waveform Drift</h1>
+      </div>
+    </div>
+
+    <label class="file-picker" for="fileInput">Choose an audio file</label>
+    <input id="fileInput" type="file" accept="audio/*">
+
+    <section class="section">
+      <div class="section-title">Trail</div>
+
+      <div class="control">
+        <div class="control-head"><span>Flow speed</span><span class="value" id="speedValue">2.50</span></div>
+        <input id="speed" type="range" min="0.15" max="2.5" step="0.05" value="2.5">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Trail length</span><span class="value" id="historyBinsValue">420</span></div>
+        <input id="historyBins" type="range" min="40" max="420" step="20" value="420">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Trail drop</span><span class="value" id="driftYValue">0.30</span></div>
+        <input id="driftY" type="range" min="-0.3" max="0.3" step="0.01" value="0.3">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Trail shear</span><span class="value" id="driftXValue">0.00</span></div>
+        <input id="driftX" type="range" min="-0.2" max="0.2" step="0.01" value="0">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Trail fade</span><span class="value" id="fadeValue">0.44</span></div>
+        <input id="fade" type="range" min="0" max="1" step="0.01" value="0.44">
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Audio response</div>
+
+      <div class="control">
+        <div class="control-head"><span>Gain</span><span class="value" id="gainValue">1.00</span></div>
+        <input id="gain" type="range" min="0.4" max="4" step="0.05" value="1">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Wave height</span><span class="value" id="heightValue">20</span></div>
+        <input id="height" type="range" min="4" max="60" step="1" value="20">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Baseline</span><span class="value" id="baselineValue">0.05</span></div>
+        <input id="baseline" type="range" min="-0.4" max="0.45" step="0.01" value="0.05">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>FFT smoothing</span><span class="value" id="smoothingValue">0.65</span></div>
+        <input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.65">
+      </div>
+
+      <label class="color-row">
+        <span>Minimum frequency</span>
+        <input id="minFrequency" class="frequency-input" type="number" min="20" max="21990" step="10" value="40">
+      </label>
+      <label class="color-row">
+        <span>Maximum frequency</span>
+        <input id="maxFrequency" class="frequency-input" type="number" min="30" max="22000" step="10" value="12000">
+      </label>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Particles</div>
+
+      <div class="control">
+        <div class="control-head"><span>Point size</span><span class="value" id="pointSizeValue">2.3</span></div>
+        <input id="pointSize" type="range" min="0.4" max="5" step="0.1" value="2.3">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Density</span><span class="value" id="densityValue">0.90</span></div>
+        <input id="density" type="range" min="0.05" max="1" step="0.01" value="0.9">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Opacity</span><span class="value" id="opacityValue">0.90</span></div>
+        <input id="opacity" type="range" min="0.02" max="1" step="0.01" value="0.9">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Spray</span><span class="value" id="scatterValue">0.5</span></div>
+        <input id="scatter" type="range" min="0" max="25" step="0.5" value="0.5">
+      </div>
+
+      <label class="toggle-row">
+        <span>Reverse flow</span>
+        <input id="reverseFlow" type="checkbox">
+      </label>
+
+      <div class="color-row"><span>Particle colour</span><input id="colorParticles" type="color" value="#c9cf9a"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Waveform</div>
+
+      <div class="control">
+        <div class="control-head"><span>Thickness</span><span class="value" id="waveThicknessValue">1.9</span></div>
+        <input id="waveThickness" type="range" min="0" max="8" step="0.1" value="1.9">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Smoothness</span><span class="value" id="waveSmoothnessValue">0.13</span></div>
+        <input id="waveSmoothness" type="range" min="0" max="1" step="0.01" value="0.13">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Glow</span><span class="value" id="waveGlowValue">0.16</span></div>
+        <input id="waveGlow" type="range" min="0" max="1" step="0.01" value="0.16">
+      </div>
+
+      <div class="color-row"><span>Waveform colour</span><input id="colorWave" type="color" value="#f2f4e4"></div>
+
+      <label class="toggle-row">
+        <span>Bloom</span>
+        <input id="bloom" type="checkbox" checked>
+      </label>
+      <label class="toggle-row">
+        <span>Film grain</span>
+        <input id="grain" type="checkbox" checked>
+      </label>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Capture</div>
+      <label class="toggle-row">
+        <span>Record on load</span>
+        <input id="autoRecord" type="checkbox">
+      </label>
+      <label class="toggle-row">
+        <span>Export on load</span>
+        <input id="autoExport" type="checkbox">
+      </label>
+      <label class="toggle-row">
+        <span>Lock recording to 60 fps</span>
+        <input id="lock60" type="checkbox">
+      </label>
+    </section>
+  </aside>
+
+  <nav id="actions">
+    <button id="playPauseBtn" class="action glass" disabled title="Play">▶ <span class="action-label">Play</span></button>
+    <button id="replayBtn" class="action glass" disabled title="Replay">↺ <span class="action-label">Replay</span></button>
+    <button id="unloadBtn" class="action glass" disabled title="Unload">⊘ <span class="action-label">Unload</span></button>
+    <button id="recordBtn" class="action glass" disabled><span class="record-dot"></span><span class="action-label">Record</span></button>
+    <button id="exportBtn" class="action glass" disabled>↓ <span class="action-label">Export</span></button>
+    <button id="fullscreenBtn" class="action glass" title="Fullscreen">⛶</button>
+  </nav>
+
+  <div id="readout" class="glass">
+    <span id="statusLight"></span>
+    <span id="statusText">Choose an audio file to begin</span>
+    <span id="fps">— fps</span>
+  </div>
+
+  <div id="exportOverlay">
+    <div class="export-card glass">
+      <div id="exportStatus">Rendering the drift…</div>
+      <div class="progress"><div id="exportProgressBar"></div></div>
+      <div id="exportPercent">0%</div>
+      <button id="exportCancelBtn" class="action glass">Cancel export</button>
+    </div>
+  </div>
+
+  <div id="fatal">WebGL is unavailable in this browser.</div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script src="js/recorder.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
+  <script src="js/offline-exporter.js"></script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+    import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+    import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+    import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+    import { Line2 } from "three/addons/lines/Line2.js";
+    import { LineGeometry } from "three/addons/lines/LineGeometry.js";
+    import { LineMaterial } from "three/addons/lines/LineMaterial.js";
+    import { createAudioPlayback } from "./js/audio-playback.js";
+    import { createCaptureSession } from "./js/capture-export.js";
+
+    const FFT_SIZE = 1024;
+    const COLUMNS = 520;
+    const WORLD_WIDTH = 100;
+    const FREQUENCY_CURVE = 2.32;
+    let HISTORY = 420;
+    const EXPORT_WIDTH = 1920;
+    const EXPORT_HEIGHT = 1080;
+    const EXPORT_FPS = 60;
+
+    const settings = {
+      speed: 2.5,
+      historyBins: 420,
+      driftX: 0,
+      driftY: 0.3,
+      fade: 0.44,
+      gain: 1,
+      height: 20,
+      baseline: 0.05,
+      smoothing: 0.65,
+      minFrequency: 40,
+      maxFrequency: 12000,
+      pointSize: 2.3,
+      density: 0.9,
+      opacity: 0.9,
+      scatter: 0.5,
+      waveThickness: 1.9,
+      waveSmoothness: 0.13,
+      waveGlow: 0.16,
+      reverseFlow: false,
+      bloom: true,
+      grain: true,
+      lock60: false,
+    };
+
+    const audio = createAudioPlayback({
+      fftSize: FFT_SIZE,
+      smoothing: settings.smoothing,
+      minDecibels: -100,
+      maxDecibels: -26,
+    });
+    const FFT_BINS = audio.binCount;
+    const frequencyData = audio.frequencyData;
+
+    const $ = (id) => document.getElementById(id);
+    const statusText = $("statusText");
+    const statusLight = $("statusLight");
+    const recordBtn = $("recordBtn");
+    const exportBtn = $("exportBtn");
+    const replayBtn = $("replayBtn");
+    const unloadBtn = $("unloadBtn");
+    const playPauseBtn = $("playPauseBtn");
+    const exportOverlay = $("exportOverlay");
+
+    let scene;
+    let camera;
+    let renderer;
+    let composer;
+    let bloomPass;
+    let finishPass;
+    let field;
+    let fieldMaterial;
+    let wave;
+    let waveGlow;
+    let waveGeometry;
+    let wavePositions;
+    let waveRawHeights;
+
+    let historyData = new Uint8Array(FFT_BINS * HISTORY);
+    let historyTexture;
+    let historyHead = 0;
+    let flowAccumulator = 0;
+    let elapsedTime = 0;
+
+    function worldHeight() {
+      return WORLD_WIDTH / camera.userData.aspect;
+    }
+
+    function baselineY() {
+      return settings.baseline * worldHeight();
+    }
+
+    function setStatus(message, live = false) {
+      statusText.textContent = message;
+      statusLight.classList.toggle("live", live);
+    }
+
+    const capture = createCaptureSession({
+      width: EXPORT_WIDTH,
+      height: EXPORT_HEIGHT,
+      fps: EXPORT_FPS,
+      getCanvas: () => renderer?.domElement,
+      getAudioTrack: () => audio.getRecordingAudioTrack(),
+      saveViewport: () => ({
+        width: innerWidth,
+        height: innerHeight,
+        pixelRatio: renderer.getPixelRatio(),
+      }),
+      applyViewport: (width, height) => {
+        renderer.setPixelRatio(1);
+        composer.setPixelRatio(1);
+        renderer.setSize(width, height, false);
+        composer.setSize(width, height);
+        applyLayout(width, height, 1);
+      },
+      restoreViewport: (state) => {
+        renderer.setPixelRatio(state.pixelRatio);
+        composer.setPixelRatio(state.pixelRatio);
+        renderer.setSize(state.width, state.height, false);
+        composer.setSize(state.width, state.height);
+        applyLayout(state.width, state.height, state.pixelRatio);
+      },
+      overlay: {
+        root: exportOverlay,
+        status: $("exportStatus"),
+        progress: $("exportProgressBar"),
+        percent: $("exportPercent"),
+        cancelBtn: $("exportCancelBtn"),
+      },
+    });
+
+    function initScene() {
+      try {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x040503);
+
+        camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100);
+        camera.position.z = 10;
+        camera.userData.aspect = innerWidth / innerHeight;
+
+        renderer = new THREE.WebGLRenderer({
+          antialias: true,
+          alpha: false,
+          preserveDrawingBuffer: true,
+          powerPreference: "high-performance",
+        });
+      } catch (error) {
+        console.error(error);
+        $("fatal").style.display = "flex";
+        return false;
+      }
+
+      const pixelRatio = Math.min(devicePixelRatio, innerWidth < 760 ? 1 : 1.5);
+      renderer.setPixelRatio(pixelRatio);
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      $("stage").appendChild(renderer.domElement);
+
+      createHistoryTexture();
+      seedDemoHistory();
+      createParticleField();
+      createWave();
+      createPostProcessing();
+      applyLayout(innerWidth, innerHeight, pixelRatio);
+      return true;
+    }
+
+    // Camera frustum, baseline and point scale all follow the current viewport.
+    function applyLayout(width, height, pixelRatio) {
+      camera.userData.aspect = width / height;
+      const halfHeight = worldHeight() / 2;
+      camera.left = -WORLD_WIDTH / 2;
+      camera.right = WORLD_WIDTH / 2;
+      camera.top = halfHeight;
+      camera.bottom = -halfHeight;
+      camera.updateProjectionMatrix();
+
+      if (fieldMaterial) {
+        fieldMaterial.uniforms.uBaseline.value = baselineY();
+        fieldMaterial.uniforms.uViewportHeight.value = height * pixelRatio;
+      }
+      if (wave) {
+        wave.material.resolution.set(width, height);
+        waveGlow.material.resolution.set(width, height);
+      }
+      updateWave();
+    }
+
+    function createHistoryTexture() {
+      historyTexture = new THREE.DataTexture(
+        historyData,
+        FFT_BINS,
+        HISTORY,
+        THREE.RedFormat,
+        THREE.UnsignedByteType,
+      );
+      historyTexture.minFilter = THREE.LinearFilter;
+      historyTexture.magFilter = THREE.LinearFilter;
+      historyTexture.wrapS = THREE.ClampToEdgeWrapping;
+      historyTexture.wrapT = THREE.ClampToEdgeWrapping;
+      historyTexture.needsUpdate = true;
+    }
+
+    function seedDemoHistory() {
+      for (let row = 0; row < HISTORY; row++) {
+        const phase = row * 0.075;
+        for (let bin = 0; bin < FFT_BINS; bin++) {
+          const x = bin / FFT_BINS;
+          const ridgeA = Math.exp(-Math.pow((x - .05 - Math.sin(phase) * .012) * 16, 2));
+          const ridgeB = Math.exp(-Math.pow((x - .17 - Math.cos(phase * .7) * .025) * 10, 2));
+          const ripple = Math.max(0, Math.sin(x * 75 - phase * 2.1)) * Math.exp(-x * 5.2);
+          const noise = Math.sin(bin * 12.9898 + row * 78.233) * 43758.5453;
+          const grain = (noise - Math.floor(noise)) * 16;
+          historyData[row * FFT_BINS + bin] = Math.min(160, 18 + ridgeA * 96 + ridgeB * 58 + ripple * 26 + grain);
+        }
+      }
+      historyHead = 0;
+      historyTexture.needsUpdate = true;
+      const newestRow = (historyHead - 1 + HISTORY) % HISTORY;
+      frequencyData.set(historyData.subarray(newestRow * FFT_BINS, (newestRow + 1) * FFT_BINS));
+    }
+
+    function createParticleField() {
+      const count = COLUMNS * HISTORY;
+      const grids = new Float32Array(count * 2);
+      let index = 0;
+
+      // Oldest rows first so the newest waveform paints over its own trail.
+      for (let row = HISTORY - 1; row >= 0; row--) {
+        for (let column = 0; column < COLUMNS; column++) {
+          grids[index * 2] = column / (COLUMNS - 1);
+          grids[index * 2 + 1] = row / (HISTORY - 1);
+          index++;
+        }
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+      geometry.setAttribute("aGrid", new THREE.BufferAttribute(grids, 2));
+
+      fieldMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uHistory: { value: historyTexture },
+          uHistoryHead: { value: historyHead },
+          uHistorySize: { value: HISTORY },
+          uGain: { value: settings.gain },
+          uHeight: { value: settings.height },
+          uBaseline: { value: 0 },
+          uScatter: { value: settings.scatter },
+          uMinFrequency: { value: settings.minFrequency },
+          uMaxFrequency: { value: settings.maxFrequency },
+          uNyquist: { value: (audio.context?.sampleRate || 48000) / 2 },
+          uPointSize: { value: settings.pointSize },
+          uDensity: { value: settings.density },
+          uOpacity: { value: settings.opacity },
+          uTrailFade: { value: settings.fade },
+          uDriftX: { value: settings.driftX },
+          uDriftY: { value: settings.driftY },
+          uWorldWidth: { value: WORLD_WIDTH },
+          uReverseFlow: { value: settings.reverseFlow ? -1 : 1 },
+          uTime: { value: 0 },
+          uColor: { value: new THREE.Color($("colorParticles").value) },
+          uViewportHeight: { value: innerHeight },
+        },
+        vertexShader: `
+          attribute vec2 aGrid;
+
+          uniform sampler2D uHistory;
+          uniform float uHistoryHead;
+          uniform float uHistorySize;
+          uniform float uGain;
+          uniform float uHeight;
+          uniform float uBaseline;
+          uniform float uScatter;
+          uniform float uMinFrequency;
+          uniform float uMaxFrequency;
+          uniform float uNyquist;
+          uniform float uPointSize;
+          uniform float uDensity;
+          uniform float uOpacity;
+          uniform float uTrailFade;
+          uniform float uDriftX;
+          uniform float uDriftY;
+          uniform float uWorldWidth;
+          uniform float uReverseFlow;
+          uniform float uTime;
+          uniform vec3 uColor;
+          uniform float uViewportHeight;
+
+          varying vec3 vColor;
+          varying float vAlpha;
+
+          float hash21(vec2 p) {
+            p = fract(p * vec2(123.34, 456.21));
+            p += dot(p, p + 45.32);
+            return fract(p.x * p.y);
+          }
+
+          void main() {
+            float minFrequencyX = clamp(uMinFrequency / uNyquist, 0.0, 0.998);
+            float maxFrequencyX = clamp(uMaxFrequency / uNyquist, minFrequencyX + 0.001, 0.999);
+            float frequencyX = mix(minFrequencyX, maxFrequencyX, pow(aGrid.x, ${FREQUENCY_CURVE.toFixed(2)}));
+
+            float age = aGrid.y;
+            float ageRow = age * (uHistorySize - 1.0);
+            float textureRow = mod(uHistoryHead - 1.0 - ageRow + uHistorySize, uHistorySize);
+            float raw = texture2D(uHistory, vec2(frequencyX, (textureRow + .5) / uHistorySize)).r;
+            float amplitude = clamp(pow(raw, 1.18) * uGain, 0.0, 1.0);
+            float shaped = pow(amplitude, 1.55);
+
+            float seed = hash21(aGrid * vec2(811.7, 437.2));
+            float seedB = hash21(aGrid.yx * vec2(309.4, 971.1) + 1.7);
+            float flicker = .85 + .15 * sin(uTime * 2.4 + seed * 25.0);
+
+            vec3 transformed;
+            transformed.x = (aGrid.x - .5) * uWorldWidth
+              + age * uDriftX * uWorldWidth * uReverseFlow
+              + (seed - .5) * (.12 + shaped * .8);
+            // Spray hangs off the crest and packs towards it, so the trail reads as a
+            // body on one side of the waveform rather than a symmetric fuzz around it.
+            transformed.y = uBaseline + shaped * uHeight
+              + uReverseFlow * (
+                  -age * uDriftY * uWorldWidth
+                  - pow(seedB, 1.7) * uScatter * (.4 + shaped * .8)
+                );
+            transformed.z = 0.0;
+
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
+            gl_PointSize = uPointSize * (.65 + shaped * .9) * (uViewportHeight / 900.0);
+
+            // Alpha compositing (not additive): dense clusters converge on the picked
+            // colour instead of blowing out to white when opacity is raised.
+            float visible = 1.0 - step(uDensity, seed);
+            float quiet = smoothstep(.015, .16, amplitude);
+            float trail = mix(1.0, pow(1.0 - age, 1.6), uTrailFade);
+            vAlpha = visible * trail * flicker * quiet * uOpacity;
+            vColor = uColor;
+          }
+        `,
+        fragmentShader: `
+          precision highp float;
+          varying vec3 vColor;
+          varying float vAlpha;
+
+          void main() {
+            float radius = length(gl_PointCoord - .5);
+            if (radius > .5 || vAlpha < .004) discard;
+            float core = 1.0 - smoothstep(.08, .5, radius);
+            gl_FragColor = vec4(vColor, vAlpha * core);
+          }
+        `,
+        transparent: true,
+        depthWrite: false,
+        depthTest: false,
+        blending: THREE.NormalBlending,
+      });
+
+      field = new THREE.Points(geometry, fieldMaterial);
+      field.frustumCulled = false;
+      field.renderOrder = 0;
+      scene.add(field);
+    }
+
+    function createWave() {
+      wavePositions = new Float32Array(COLUMNS * 3);
+      waveRawHeights = new Float32Array(COLUMNS);
+      waveGeometry = new LineGeometry();
+      waveGeometry.setPositions(wavePositions);
+
+      const waveMaterial = new LineMaterial({
+        color: $("colorWave").value,
+        linewidth: settings.waveThickness,
+        transparent: true,
+        opacity: .95,
+        depthWrite: false,
+        depthTest: false,
+      });
+      const glowMaterial = new LineMaterial({
+        color: $("colorWave").value,
+        linewidth: settings.waveThickness * 4.5,
+        transparent: true,
+        opacity: settings.waveGlow,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        depthTest: false,
+      });
+
+      wave = new Line2(waveGeometry, waveMaterial);
+      waveGlow = new Line2(waveGeometry, glowMaterial);
+      wave.frustumCulled = false;
+      waveGlow.frustumCulled = false;
+      waveGlow.renderOrder = 1;
+      wave.renderOrder = 2;
+      scene.add(waveGlow, wave);
+    }
+
+    function rebuildHistory(newSize) {
+      const oldData = historyData;
+      const oldSize = HISTORY;
+      const oldHead = historyHead;
+
+      HISTORY = newSize;
+      historyData = new Uint8Array(FFT_BINS * HISTORY);
+      historyHead = 0;
+      flowAccumulator = 0;
+
+      if (audio.hasAudio) {
+        const rowsToCopy = Math.min(oldSize, HISTORY);
+        for (let destinationRow = 0; destinationRow < rowsToCopy; destinationRow++) {
+          const age = rowsToCopy - 1 - destinationRow;
+          const sourceRow = (oldHead - 1 - age + oldSize) % oldSize;
+          const sourceOffset = sourceRow * FFT_BINS;
+          historyData.set(
+            oldData.subarray(sourceOffset, sourceOffset + FFT_BINS),
+            destinationRow * FFT_BINS,
+          );
+        }
+        historyHead = rowsToCopy % HISTORY;
+      }
+
+      scene.remove(field);
+      field.geometry.dispose();
+      fieldMaterial.dispose();
+      historyTexture.dispose();
+
+      createHistoryTexture();
+      if (!audio.hasAudio) seedDemoHistory();
+      createParticleField();
+      fieldMaterial.uniforms.uTime.value = elapsedTime;
+      fieldMaterial.uniforms.uBaseline.value = baselineY();
+      fieldMaterial.uniforms.uViewportHeight.value = innerHeight * renderer.getPixelRatio();
+      if (audio.context) fieldMaterial.uniforms.uNyquist.value = audio.context.sampleRate / 2;
+    }
+
+    function createPostProcessing() {
+      composer = new EffectComposer(renderer);
+      composer.setPixelRatio(renderer.getPixelRatio());
+      composer.addPass(new RenderPass(scene, camera));
+
+      bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .38, .3, .5);
+      bloomPass.enabled = settings.bloom;
+      composer.addPass(bloomPass);
+
+      const FinishShader = {
+        uniforms: {
+          tDiffuse: { value: null },
+          uTime: { value: 0 },
+          uGrain: { value: settings.grain ? 1 : 0 },
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D tDiffuse;
+          uniform float uTime;
+          uniform float uGrain;
+          varying vec2 vUv;
+
+          float hash21(vec2 p) {
+            return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+          }
+
+          void main() {
+            vec3 color = texture2D(tDiffuse, vUv).rgb;
+            float distanceFromCenter = length((vUv - .5) * vec2(1.0, .72));
+            float vignette = 1.0 - smoothstep(.3, .9, distanceFromCenter) * .5;
+            float grain = (hash21(vUv * 1900.0 + fract(uTime)) - .5) * .06 * uGrain;
+            color = color * vignette + grain;
+            gl_FragColor = vec4(max(color, 0.0), 1.0);
+          }
+        `,
+      };
+      finishPass = new ShaderPass(FinishShader);
+      composer.addPass(finishPass);
+    }
+
+    function resetLiveField() {
+      historyData.fill(0);
+      frequencyData.fill(0);
+      historyHead = 0;
+      flowAccumulator = 0;
+      historyTexture.needsUpdate = true;
+      fieldMaterial.uniforms.uHistoryHead.value = historyHead;
+      updateWave();
+    }
+
+    function pushHistoryRow(data) {
+      historyData.set(data, historyHead * FFT_BINS);
+      historyHead = (historyHead + 1) % HISTORY;
+      historyTexture.needsUpdate = true;
+      fieldMaterial.uniforms.uHistoryHead.value = historyHead;
+    }
+
+    function sampleAmplitude(column) {
+      const u = column / (COLUMNS - 1);
+      const nyquist = (audio.context?.sampleRate || 48000) / 2;
+      const frequency = THREE.MathUtils.lerp(
+        settings.minFrequency,
+        settings.maxFrequency,
+        Math.pow(u, FREQUENCY_CURVE),
+      );
+      const bin = Math.min(FFT_BINS - 1, Math.floor(Math.min(0.999, frequency / nyquist) * FFT_BINS));
+      const amplitude = Math.min(1, Math.pow(frequencyData[bin] / 255, 1.18) * settings.gain);
+      return Math.pow(amplitude, 1.55);
+    }
+
+    function updateWave() {
+      if (!wave) return;
+      const smoothingRadius = Math.round(settings.waveSmoothness * 18);
+      const base = baselineY();
+
+      for (let column = 0; column < COLUMNS; column++) {
+        waveRawHeights[column] = sampleAmplitude(column) * settings.height;
+      }
+
+      for (let column = 0; column < COLUMNS; column++) {
+        const i = column * 3;
+        let height = waveRawHeights[column];
+
+        if (smoothingRadius > 0) {
+          let weightedHeight = 0;
+          let totalWeight = 0;
+          for (let offset = -smoothingRadius; offset <= smoothingRadius; offset++) {
+            const sampleIndex = Math.max(0, Math.min(COLUMNS - 1, column + offset));
+            const weight = smoothingRadius + 1 - Math.abs(offset);
+            weightedHeight += waveRawHeights[sampleIndex] * weight;
+            totalWeight += weight;
+          }
+          height = weightedHeight / totalWeight;
+        }
+
+        wavePositions[i] = (column / (COLUMNS - 1) - .5) * WORLD_WIDTH;
+        wavePositions[i + 1] = base + height;
+        wavePositions[i + 2] = 0;
+      }
+      waveGeometry.setPositions(wavePositions);
+    }
+
+    function renderFrame(delta, externalFrequencyData = null) {
+      elapsedTime += delta;
+      fieldMaterial.uniforms.uTime.value = elapsedTime;
+      finishPass.uniforms.uTime.value = elapsedTime;
+
+      if (externalFrequencyData) {
+        frequencyData.set(externalFrequencyData.subarray(0, FFT_BINS));
+      } else {
+        audio.pullFrequencyData();
+      }
+
+      if (audio.isPlaying || externalFrequencyData) {
+        flowAccumulator += delta * settings.speed * 60;
+        while (flowAccumulator >= 1) {
+          pushHistoryRow(frequencyData);
+          flowAccumulator -= 1;
+        }
+        updateWave();
+      }
+
+      composer.render();
+    }
+
+    function updatePlayPauseUI() {
+      if (!audio.hasAudio) {
+        playPauseBtn.disabled = true;
+        playPauseBtn.innerHTML = '▶ <span class="action-label">Play</span>';
+        playPauseBtn.title = "Play";
+        return;
+      }
+      playPauseBtn.disabled = false;
+      if (audio.isPlaying) {
+        playPauseBtn.innerHTML = '⏸ <span class="action-label">Pause</span>';
+        playPauseBtn.title = "Pause";
+      } else {
+        playPauseBtn.innerHTML = '▶ <span class="action-label">Play</span>';
+        playPauseBtn.title = "Play";
+      }
+    }
+
+    async function pausePlayback() {
+      if (!audio.isPlaying) return;
+      await audio.pause();
+      updatePlayPauseUI();
+      setStatus("Paused · " + audio.fileName);
+    }
+
+    async function resumePlayback() {
+      if (audio.isPlaying) return;
+      await audio.resume();
+      updatePlayPauseUI();
+      setStatus("Playing · " + audio.fileName, true);
+    }
+
+    function startPlayback(preparedRecording = null) {
+      if (!audio.hasAudio || capture.isExporting) return;
+
+      if (preparedRecording && !recorder.isRecording) {
+        recorder.startAutoRecord(preparedRecording, () => capture.makeRecordingStream());
+      }
+
+      audio.play({
+        onEnded: () => {
+          updatePlayPauseUI();
+          setStatus("Playback finished · " + audio.fileName);
+          if (recorder.isRecording) recorder.stop();
+        },
+      });
+      updatePlayPauseUI();
+      setStatus("Playing · " + audio.fileName, true);
+    }
+
+    const recorder = createRecorder({
+      defaultFilename: "waveform_drift",
+      videoBitsPerSecond: 32_000_000,
+      onStatus: (message) => setStatus(message),
+      onStart: () => {
+        recordBtn.classList.add("recording");
+        recordBtn.innerHTML = "■ <span class=\"action-label\">Stop</span>";
+        setStatus("Recording · " + (audio.fileName || "canvas"), true);
+      },
+      onStop: () => {
+        recordBtn.classList.remove("recording");
+        recordBtn.innerHTML = "<span class=\"record-dot\"></span><span class=\"action-label\">Record</span>";
+        capture.onRecordingStopped();
+        setStatus(audio.fileName ? "Recording saved · " + audio.fileName : "Recording saved");
+      },
+    });
+
+    async function loadAudio(file, preparedRecording, exportWritable) {
+      setStatus("Decoding · " + file.name);
+      await audio.load(file);
+      fieldMaterial.uniforms.uNyquist.value = audio.context.sampleRate / 2;
+      resetLiveField();
+      setButtonsEnabled(true);
+
+      if (exportWritable) {
+        exportBtn.pendingWritable = exportWritable;
+        exportBtn.click();
+        return;
+      }
+
+      startPlayback(preparedRecording);
+    }
+
+    function setButtonsEnabled(enabled) {
+      replayBtn.disabled = !enabled;
+      unloadBtn.disabled = !enabled;
+      recordBtn.disabled = !enabled;
+      const exportSupported = Boolean(window.showSaveFilePicker && window.VideoEncoder && window.AudioEncoder);
+      exportBtn.disabled = !enabled || !exportSupported;
+      if (enabled && !exportSupported) exportBtn.title = "Offline export requires Chromium with WebCodecs";
+      updatePlayPauseUI();
+    }
+
+    async function exportVideo() {
+      if (!audio.hasAudio || capture.isExporting || recorder.isRecording) return;
+
+      const pendingWritable = exportBtn.pendingWritable || null;
+      exportBtn.pendingWritable = null;
+
+      await capture.runOfflineExport({
+        audio,
+        suggestedName: "waveform_drift.mp4",
+        pendingWritable,
+        onStatus: setStatus,
+        labels: {
+          rendering: "Rendering the drift…",
+          progress: "Rendering frame {frame} of {total}",
+          complete: "Export complete",
+          cancelled: "Export cancelled",
+          saved: "Export saved · waveform_drift.mp4",
+          failed: "Export failed · {message}",
+        },
+        prepare: () => {
+          const saved = {
+            historyData: new Uint8Array(historyData),
+            frequencyData: new Uint8Array(frequencyData),
+            historyHead,
+            flowAccumulator,
+            elapsedTime,
+          };
+
+          historyData.fill(0);
+          frequencyData.fill(0);
+          historyHead = 0;
+          flowAccumulator = 0;
+          elapsedTime = 0;
+          fieldMaterial.uniforms.uHistoryHead.value = 0;
+          historyTexture.needsUpdate = true;
+          return saved;
+        },
+        restore: (saved) => {
+          if (!saved) return;
+          historyData.set(saved.historyData);
+          frequencyData.set(saved.frequencyData);
+          historyHead = saved.historyHead;
+          flowAccumulator = saved.flowAccumulator;
+          elapsedTime = saved.elapsedTime;
+          fieldMaterial.uniforms.uHistoryHead.value = historyHead;
+          historyTexture.needsUpdate = true;
+          updatePlayPauseUI();
+          updateWave();
+        },
+        renderFrame: (fftData, delta) => renderFrame(delta, fftData),
+        readCanvas: () => renderer.domElement,
+        gpuFinish: () => renderer.getContext().finish(),
+      });
+    }
+
+    function unloadAudio() {
+      if (capture.isExporting || recorder.isRecording) return;
+      audio.unload();
+      $("fileInput").value = "";
+      seedDemoHistory();
+      fieldMaterial.uniforms.uHistoryHead.value = historyHead;
+      updateWave();
+      setButtonsEnabled(false);
+      setStatus("Choose an audio file to begin");
+    }
+
+    function bindRange(id, key, decimals, onInput) {
+      const input = $(id);
+      const output = $(id + "Value");
+      input.addEventListener("input", () => {
+        settings[key] = Number(input.value);
+        output.textContent = settings[key].toFixed(decimals);
+        if (onInput) onInput(settings[key]);
+      });
+    }
+
+    const setUniform = (name) => (value) => { fieldMaterial.uniforms[name].value = value; };
+
+    bindRange("speed", "speed", 2);
+    bindRange("historyBins", "historyBins", 0, rebuildHistory);
+    bindRange("driftX", "driftX", 2, setUniform("uDriftX"));
+    bindRange("driftY", "driftY", 2, setUniform("uDriftY"));
+    bindRange("fade", "fade", 2, setUniform("uTrailFade"));
+    bindRange("gain", "gain", 2, (value) => {
+      fieldMaterial.uniforms.uGain.value = value;
+      updateWave();
+    });
+    bindRange("height", "height", 0, (value) => {
+      fieldMaterial.uniforms.uHeight.value = value;
+      updateWave();
+    });
+    bindRange("baseline", "baseline", 2, () => {
+      fieldMaterial.uniforms.uBaseline.value = baselineY();
+      updateWave();
+    });
+    bindRange("smoothing", "smoothing", 2, (value) => audio.setSmoothing(value));
+    bindRange("pointSize", "pointSize", 1, setUniform("uPointSize"));
+    bindRange("density", "density", 2, setUniform("uDensity"));
+    bindRange("opacity", "opacity", 2, setUniform("uOpacity"));
+    bindRange("scatter", "scatter", 1, setUniform("uScatter"));
+    bindRange("waveThickness", "waveThickness", 1, (value) => {
+      wave.material.linewidth = value;
+      waveGlow.material.linewidth = value * 4.5;
+      wave.visible = value > 0;
+      waveGlow.visible = value > 0 && settings.waveGlow > 0;
+    });
+    bindRange("waveSmoothness", "waveSmoothness", 2, updateWave);
+    bindRange("waveGlow", "waveGlow", 2, (value) => {
+      waveGlow.material.opacity = value;
+      waveGlow.visible = value > 0 && settings.waveThickness > 0;
+    });
+
+    function updateFrequencyRange(changedInput) {
+      const minInput = $("minFrequency");
+      const maxInput = $("maxFrequency");
+      let minimum = Number(minInput.value);
+      let maximum = Number(maxInput.value);
+      if (!Number.isFinite(minimum) || !Number.isFinite(maximum)) return;
+
+      minimum = THREE.MathUtils.clamp(minimum, 20, 21990);
+      maximum = THREE.MathUtils.clamp(maximum, 30, 22000);
+      if (minimum >= maximum) {
+        if (changedInput === minInput) maximum = Math.min(22000, minimum + 10);
+        else minimum = Math.max(20, maximum - 10);
+      }
+
+      minInput.value = minimum;
+      maxInput.value = maximum;
+      settings.minFrequency = minimum;
+      settings.maxFrequency = maximum;
+      fieldMaterial.uniforms.uMinFrequency.value = minimum;
+      fieldMaterial.uniforms.uMaxFrequency.value = maximum;
+      updateWave();
+    }
+
+    $("minFrequency").addEventListener("input", (event) => updateFrequencyRange(event.target));
+    $("maxFrequency").addEventListener("input", (event) => updateFrequencyRange(event.target));
+
+    $("colorParticles").addEventListener("input", (event) => {
+      fieldMaterial.uniforms.uColor.value.set(event.target.value);
+    });
+    $("colorWave").addEventListener("input", (event) => {
+      wave.material.color.set(event.target.value);
+      waveGlow.material.color.set(event.target.value);
+    });
+
+    $("reverseFlow").addEventListener("change", (event) => {
+      settings.reverseFlow = event.target.checked;
+      fieldMaterial.uniforms.uReverseFlow.value = settings.reverseFlow ? -1 : 1;
+    });
+    $("bloom").addEventListener("change", (event) => {
+      settings.bloom = event.target.checked;
+      bloomPass.enabled = settings.bloom;
+    });
+    $("grain").addEventListener("change", (event) => {
+      settings.grain = event.target.checked;
+      finishPass.uniforms.uGrain.value = settings.grain ? 1 : 0;
+    });
+    $("lock60").addEventListener("change", (event) => { settings.lock60 = event.target.checked; });
+
+    $("autoRecord").addEventListener("change", (event) => {
+      if (event.target.checked) $("autoExport").checked = false;
+    });
+    $("autoExport").addEventListener("change", (event) => {
+      if (event.target.checked) $("autoRecord").checked = false;
+    });
+
+    $("panelToggle").addEventListener("click", () => {
+      const hidden = $("panel").classList.toggle("hidden");
+      $("panelToggle").classList.toggle("closed", hidden);
+      $("panelToggle").textContent = hidden ? "☰" : "×";
+      $("panelToggle").title = hidden ? "Show settings" : "Hide settings";
+      $("panelToggle").setAttribute("aria-label", hidden ? "Show settings" : "Hide settings");
+    });
+
+    $("fileInput").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      let preparedRecording = null;
+      let exportWritable = null;
+
+      if ($("autoRecord").checked) {
+        preparedRecording = await recorder.prepareAutoRecord();
+        if (!preparedRecording) {
+          event.target.value = "";
+          return;
+        }
+      }
+
+      if ($("autoExport").checked) {
+        if (!window.showSaveFilePicker) {
+          setStatus("Automatic export requires Chromium");
+          event.target.value = "";
+          return;
+        }
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: "waveform_drift.mp4",
+            types: [{ description: "MP4 Video", accept: { "video/mp4": [".mp4"] } }],
+          });
+          exportWritable = await handle.createWritable();
+        } catch (error) {
+          event.target.value = "";
+          return;
+        }
+      }
+
+      try {
+        await loadAudio(file, preparedRecording, exportWritable);
+      } catch (error) {
+        console.error(error);
+        setStatus("Could not load audio · " + error.message);
+        event.target.value = "";
+      }
+    });
+
+    recordBtn.addEventListener("click", () => {
+      if (!audio.hasAudio || capture.isExporting) return;
+      if (audio.isPaused) resumePlayback();
+      recorder.toggle(() => capture.makeRecordingStream());
+    });
+
+    exportBtn.addEventListener("click", exportVideo);
+
+    async function togglePlayPause() {
+      if (capture.isExporting) return;
+      if (!audio.hasAudio) {
+        $("fileInput").click();
+        return;
+      }
+      if (audio.isPlaying) {
+        await pausePlayback();
+      } else if (audio.isPaused) {
+        await resumePlayback();
+      } else {
+        await audio.resumeContext();
+        startPlayback();
+      }
+    }
+
+    async function replayTrack() {
+      if (!audio.hasAudio || capture.isExporting || recorder.isRecording) return;
+      await audio.resumeContext();
+      resetLiveField();
+      startPlayback();
+    }
+
+    playPauseBtn.addEventListener("click", togglePlayPause);
+    replayBtn.addEventListener("click", replayTrack);
+    unloadBtn.addEventListener("click", unloadAudio);
+
+    addEventListener("keydown", (event) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      const tag = event.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || event.target?.isContentEditable) return;
+
+      if (event.code === "Space") {
+        event.preventDefault();
+        togglePlayPause();
+        return;
+      }
+      if (event.key === "r" || event.key === "R") {
+        event.preventDefault();
+        replayTrack();
+      }
+    });
+
+    $("fullscreenBtn").addEventListener("click", () => {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    });
+
+    let resizeTimer;
+    addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (capture.isExporting || recorder.isRecording) return;
+        const pixelRatio = Math.min(devicePixelRatio, innerWidth < 760 ? 1 : 1.5);
+        renderer.setPixelRatio(pixelRatio);
+        composer.setPixelRatio(pixelRatio);
+        renderer.setSize(innerWidth, innerHeight);
+        composer.setSize(innerWidth, innerHeight);
+        applyLayout(innerWidth, innerHeight, pixelRatio);
+      }, 80);
+    });
+
+    let previousTime = performance.now();
+    let fpsFrames = 0;
+    let fpsElapsed = 0;
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      if (capture.isExporting) {
+        previousTime = now;
+        return;
+      }
+
+      if (recorder.isRecording && capture.shouldSkipRecordingFrame(now, settings.lock60)) return;
+
+      const measuredDelta = Math.min((now - previousTime) / 1000, .05);
+      previousTime = now;
+      renderFrame(recorder.isRecording && settings.lock60 ? 1 / 60 : measuredDelta);
+
+      if (recorder.isRecording) capture.requestRecordingFrame(now);
+
+      fpsFrames++;
+      fpsElapsed += measuredDelta;
+      if (fpsElapsed >= .6) {
+        $("fps").textContent = Math.round(fpsFrames / fpsElapsed) + " fps";
+        fpsFrames = 0;
+        fpsElapsed = 0;
+      }
+    }
+
+    if (initScene()) {
+      setButtonsEnabled(false);
+      requestAnimationFrame(animate);
+    }
+  </script>
+</body>
+</html>
