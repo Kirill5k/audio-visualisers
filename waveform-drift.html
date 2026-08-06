@@ -75,8 +75,8 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>FFT smoothing</span><span class="value" id="smoothingValue">0.65</span></div>
-        <input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.65">
+        <div class="control-head"><span>FFT smoothing</span><span class="value" id="smoothingValue">0.85</span></div>
+        <input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.85">
       </div>
 
       <label class="color-row">
@@ -103,8 +103,8 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Opacity</span><span class="value" id="opacityValue">0.90</span></div>
-        <input id="opacity" type="range" min="0.02" max="1" step="0.01" value="0.9">
+        <div class="control-head"><span>Opacity</span><span class="value" id="opacityValue">0.20</span></div>
+        <input id="opacity" type="range" min="0.02" max="1" step="0.01" value="0.2">
       </div>
 
       <div class="control">
@@ -218,8 +218,13 @@
     import { createAudioPlayback } from "./js/audio-playback.js";
     import { createCaptureSession } from "./js/capture-export.js";
 
-    const FFT_SIZE = 1024;
-    const COLUMNS = 520;
+    // 2048 = 43ms window, 1024 bins. At 1024 the bottom ~10 bins were stretched across
+    // the left third of the screen by FREQUENCY_CURVE, so the bass was 10 numbers magnified.
+    const FFT_SIZE = 2048;
+    // 520 columns left ~7px between dots at 2x DPR, so the bright bass region resolved
+    // as separate specks (local contrast 1.8x its own brightness). Tripling the sampling
+    // fills it into a surface: same brightness at opacity 0.2, 55% less graininess.
+    const COLUMNS = 1560;
     const WORLD_WIDTH = 100;
     const FREQUENCY_CURVE = 2.32;
     let HISTORY = 320;
@@ -238,12 +243,12 @@
       gain: 1,
       height: 20,
       baseline: -0.37,
-      smoothing: 0.65,
+      smoothing: 0.85,
       minFrequency: 40,
       maxFrequency: 12000,
       pointSize: 3,
       density: 0.89,
-      opacity: 0.9,
+      opacity: 0.2,
       scatter: 0,
       waveThickness: 1.6,
       waveSmoothness: 0.13,
