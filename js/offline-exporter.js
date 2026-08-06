@@ -171,6 +171,11 @@ async function offlineExport(opts) {
 
   const delta = 1 / fps;
   const canvas = readCanvas();
+  // Pages may render supersampled (pixelRatio > 1) so the 1:1 rasterisation of fine
+  // detail doesn't alias. Downscale to the target size before encoding.
+  const scaler = canvas.width > width ? new OffscreenCanvas(width, height) : null;
+  const scalerCtx = scaler ? scaler.getContext('2d', { alpha: false }) : null;
+  if (scalerCtx) scalerCtx.imageSmoothingQuality = 'high';
   const maxSamplesPerFrame = Math.ceil(samplesPerFrame) + 1;
   const planarData = new Float32Array(maxSamplesPerFrame * numChannels);
 
@@ -232,7 +237,8 @@ async function offlineExport(opts) {
 
     // Flush GPU pipeline and capture the rendered frame
     if (gpuFinish) gpuFinish();
-    const vf = new VideoFrame(canvas, {
+    if (scalerCtx) scalerCtx.drawImage(canvas, 0, 0, width, height);
+    const vf = new VideoFrame(scaler || canvas, {
       timestamp: Math.round(frame * 1_000_000 / fps),
       duration: Math.round(1_000_000 / fps),
     });

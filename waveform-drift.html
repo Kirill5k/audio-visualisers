@@ -31,8 +31,8 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Trail length</span><span class="value" id="historyBinsValue">420</span></div>
-        <input id="historyBins" type="range" min="40" max="420" step="20" value="420">
+        <div class="control-head"><span>Trail length</span><span class="value" id="historyBinsValue">320</span></div>
+        <input id="historyBins" type="range" min="40" max="420" step="20" value="320">
       </div>
 
       <div class="control">
@@ -46,8 +46,8 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Trail fade</span><span class="value" id="fadeValue">0.44</span></div>
-        <input id="fade" type="range" min="0" max="1" step="0.01" value="0.44">
+        <div class="control-head"><span>Trail fade</span><span class="value" id="fadeValue">0.50</span></div>
+        <input id="fade" type="range" min="0" max="1" step="0.01" value="0.5">
       </div>
     </section>
 
@@ -65,8 +65,8 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Baseline</span><span class="value" id="baselineValue">0.05</span></div>
-        <input id="baseline" type="range" min="-0.4" max="0.45" step="0.01" value="0.05">
+        <div class="control-head"><span>Baseline</span><span class="value" id="baselineValue">-0.37</span></div>
+        <input id="baseline" type="range" min="-0.4" max="0.45" step="0.01" value="-0.37">
       </div>
 
       <div class="control">
@@ -88,13 +88,13 @@
       <div class="section-title">Particles</div>
 
       <div class="control">
-        <div class="control-head"><span>Point size</span><span class="value" id="pointSizeValue">2.3</span></div>
-        <input id="pointSize" type="range" min="0.4" max="5" step="0.1" value="2.3">
+        <div class="control-head"><span>Point size</span><span class="value" id="pointSizeValue">3.0</span></div>
+        <input id="pointSize" type="range" min="0.4" max="5" step="0.1" value="3">
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Density</span><span class="value" id="densityValue">0.90</span></div>
-        <input id="density" type="range" min="0.05" max="1" step="0.01" value="0.9">
+        <div class="control-head"><span>Density</span><span class="value" id="densityValue">0.89</span></div>
+        <input id="density" type="range" min="0.05" max="1" step="0.01" value="0.89">
       </div>
 
       <div class="control">
@@ -103,13 +103,13 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Spray</span><span class="value" id="scatterValue">0.5</span></div>
-        <input id="scatter" type="range" min="0" max="25" step="0.5" value="0.5">
+        <div class="control-head"><span>Spray</span><span class="value" id="scatterValue">0.0</span></div>
+        <input id="scatter" type="range" min="0" max="25" step="0.5" value="0">
       </div>
 
       <label class="toggle-row">
         <span>Reverse flow</span>
-        <input id="reverseFlow" type="checkbox">
+        <input id="reverseFlow" type="checkbox" checked>
       </label>
 
       <div class="color-row"><span>Particle colour</span><input id="colorParticles" type="color" value="#c9cf9a"></div>
@@ -119,8 +119,8 @@
       <div class="section-title">Waveform</div>
 
       <div class="control">
-        <div class="control-head"><span>Thickness</span><span class="value" id="waveThicknessValue">1.9</span></div>
-        <input id="waveThickness" type="range" min="0" max="8" step="0.1" value="1.9">
+        <div class="control-head"><span>Thickness</span><span class="value" id="waveThicknessValue">1.6</span></div>
+        <input id="waveThickness" type="range" min="0" max="8" step="0.1" value="1.6">
       </div>
 
       <div class="control">
@@ -141,7 +141,7 @@
       </label>
       <label class="toggle-row">
         <span>Film grain</span>
-        <input id="grain" type="checkbox" checked>
+        <input id="grain" type="checkbox">
       </label>
     </section>
 
@@ -216,33 +216,34 @@
     const COLUMNS = 520;
     const WORLD_WIDTH = 100;
     const FREQUENCY_CURVE = 2.32;
-    let HISTORY = 420;
+    let HISTORY = 320;
     const EXPORT_WIDTH = 1920;
     const EXPORT_HEIGHT = 1080;
     const EXPORT_FPS = 60;
+    const EXPORT_SUPERSAMPLE = 2;
 
     const settings = {
       speed: 2.5,
-      historyBins: 420,
+      historyBins: 320,
       driftX: 0,
       driftY: 0.3,
-      fade: 0.44,
+      fade: 0.5,
       gain: 1,
       height: 20,
-      baseline: 0.05,
+      baseline: -0.37,
       smoothing: 0.65,
       minFrequency: 40,
       maxFrequency: 12000,
-      pointSize: 2.3,
-      density: 0.9,
+      pointSize: 3,
+      density: 0.89,
       opacity: 0.9,
-      scatter: 0.5,
-      waveThickness: 1.9,
+      scatter: 0,
+      waveThickness: 1.6,
       waveSmoothness: 0.13,
       waveGlow: 0.16,
-      reverseFlow: false,
+      reverseFlow: true,
       bloom: true,
-      grain: true,
+      grain: false,
       lock60: false,
     };
 
@@ -309,12 +310,14 @@
         height: innerHeight,
         pixelRatio: renderer.getPixelRatio(),
       }),
+      // Render 2x and let the exporter downscale: the field is ~200k soft 2-4px dots,
+      // which alias badly (and eat the encoder's bitrate) when rasterised 1:1.
       applyViewport: (width, height) => {
-        renderer.setPixelRatio(1);
-        composer.setPixelRatio(1);
+        renderer.setPixelRatio(EXPORT_SUPERSAMPLE);
+        composer.setPixelRatio(EXPORT_SUPERSAMPLE);
         renderer.setSize(width, height, false);
         composer.setSize(width, height);
-        applyLayout(width, height, 1);
+        applyLayout(width, height, EXPORT_SUPERSAMPLE);
       },
       restoreViewport: (state) => {
         renderer.setPixelRatio(state.pixelRatio);
