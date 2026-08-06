@@ -92,6 +92,11 @@
     <section class="section">
       <div class="section-title">Particles</div>
 
+      <label class="toggle-row">
+        <span>Draw as lines</span>
+        <input id="lines" type="checkbox">
+      </label>
+
       <div class="control">
         <div class="control-head"><span>Point size</span><span class="value" id="pointSizeValue">3.0</span></div>
         <input id="pointSize" type="range" min="0.4" max="5" step="0.1" value="3">
@@ -251,6 +256,7 @@
       density: 0.9,
       opacity: 0.29,
       scatter: 0,
+      lines: false,
       waveThickness: 1.5,
       waveSmoothness: 0.13,
       waveGlow: 0.06,
@@ -288,6 +294,7 @@
     let resetSmoothing = false;
     let finishPass;
     let field;
+    let fieldLines;
     let fieldMaterial;
     let wave;
     let waveGlow;
@@ -455,9 +462,26 @@
         }
       }
 
+      const positionAttribute = new THREE.BufferAttribute(new Float32Array(count * 3), 3);
+      const gridAttribute = new THREE.BufferAttribute(grids, 2);
       const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(count * 3), 3));
-      geometry.setAttribute("aGrid", new THREE.BufferAttribute(grids, 2));
+      geometry.setAttribute("position", positionAttribute);
+      geometry.setAttribute("aGrid", gridAttribute);
+
+      // Line mode shares those same vertices (the shader derives every coordinate from
+      // aGrid, so nothing is per-mode) and only adds an index: one strip per history row.
+      const indices = new Uint32Array((COLUMNS - 1) * HISTORY * 2);
+      let cursor = 0;
+      for (let row = 0; row < HISTORY; row++) {
+        for (let column = 0; column < COLUMNS - 1; column++) {
+          indices[cursor++] = row * COLUMNS + column;
+          indices[cursor++] = row * COLUMNS + column + 1;
+        }
+      }
+      const lineGeometry = new THREE.BufferGeometry();
+      lineGeometry.setAttribute("position", positionAttribute);
+      lineGeometry.setAttribute("aGrid", gridAttribute);
+      lineGeometry.setIndex(new THREE.BufferAttribute(indices, 1));
 
       fieldMaterial = new THREE.ShaderMaterial({
         uniforms: {
@@ -479,6 +503,7 @@
           uDriftY: { value: settings.driftY },
           uWorldWidth: { value: WORLD_WIDTH },
           uReverseFlow: { value: settings.reverseFlow ? -1 : 1 },
+          uLines: { value: settings.lines ? 1 : 0 },
           uTime: { value: 0 },
           uColor: { value: new THREE.Color($("colorParticles").value) },
           uViewportHeight: { value: innerHeight },
@@ -504,6 +529,7 @@
           uniform float uDriftY;
           uniform float uWorldWidth;
           uniform float uReverseFlow;
+          uniform float uLines;
           uniform float uTime;
           uniform vec3 uColor;
           uniform float uViewportHeight;
@@ -531,12 +557,17 @@
 
             float seed = hash21(aGrid * vec2(811.7, 437.2));
             float seedB = hash21(aGrid.yx * vec2(309.4, 971.1) + 1.7);
+            // Per-vertex randomness turns a polyline into a jagged, strobing mess: in line
+            // mode every vertex of a row draws the same seeds, so density culls whole rows
+            // and spray/flicker move the row as one.
+            seed = mix(seed, hash21(vec2(age, 12.7) * vec2(811.7, 437.2)), uLines);
+            seedB = mix(seedB, hash21(vec2(age, 4.1) * vec2(309.4, 971.1) + 1.7), uLines);
             float flicker = .85 + .15 * sin(uTime * 2.4 + seed * 25.0);
 
             vec3 transformed;
             transformed.x = (aGrid.x - .5) * uWorldWidth
               + age * uDriftX * uWorldWidth * uReverseFlow
-              + (seed - .5) * (.12 + shaped * .8);
+              + (seed - .5) * (.12 + shaped * .8) * (1.0 - uLines);
             // Spray hangs off the crest and packs towards it, so the trail reads as a
             // body on one side of the waveform rather than a symmetric fuzz around it.
             transformed.y = uBaseline + shaped * uHeight
@@ -560,13 +591,19 @@
         `,
         fragmentShader: `
           precision highp float;
+          uniform float uLines;
           varying vec3 vColor;
           varying float vAlpha;
 
           void main() {
-            float radius = length(gl_PointCoord - .5);
-            if (radius > .5 || vAlpha < .004) discard;
-            float core = 1.0 - smoothstep(.08, .5, radius);
+            if (vAlpha < .004) discard;
+            // gl_PointCoord is undefined in a line draw, so keep it inside the branch.
+            float core = 1.0;
+            if (uLines < .5) {
+              float radius = length(gl_PointCoord - .5);
+              if (radius > .5) discard;
+              core = 1.0 - smoothstep(.08, .5, radius);
+            }
             gl_FragColor = vec4(vColor, vAlpha * core);
           }
         `,
@@ -577,9 +614,14 @@
       });
 
       field = new THREE.Points(geometry, fieldMaterial);
-      field.frustumCulled = false;
-      field.renderOrder = 0;
-      scene.add(field);
+      fieldLines = new THREE.LineSegments(lineGeometry, fieldMaterial);
+      for (const object of [field, fieldLines]) {
+        object.frustumCulled = false;
+        object.renderOrder = 0;
+      }
+      field.visible = !settings.lines;
+      fieldLines.visible = settings.lines;
+      scene.add(field, fieldLines);
     }
 
     function createWave() {
@@ -639,8 +681,9 @@
         historyHead = rowsToCopy % HISTORY;
       }
 
-      scene.remove(field);
+      scene.remove(field, fieldLines);
       field.geometry.dispose();
+      fieldLines.geometry.dispose();
       fieldMaterial.dispose();
       historyTexture.dispose();
 
@@ -1051,6 +1094,12 @@
     $("reverseFlow").addEventListener("change", (event) => {
       settings.reverseFlow = event.target.checked;
       fieldMaterial.uniforms.uReverseFlow.value = settings.reverseFlow ? -1 : 1;
+    });
+    $("lines").addEventListener("change", (event) => {
+      settings.lines = event.target.checked;
+      fieldMaterial.uniforms.uLines.value = settings.lines ? 1 : 0;
+      field.visible = !settings.lines;
+      fieldLines.visible = settings.lines;
     });
     $("bloom").addEventListener("change", (event) => {
       settings.bloom = event.target.checked;
