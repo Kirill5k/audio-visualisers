@@ -98,8 +98,8 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Brightness</span><span class="value" id="brightnessValue">2.50</span></div>
-        <input id="brightness" type="range" min="0.1" max="3" step="0.05" value="2.5">
+        <div class="control-head"><span>Brightness</span><span class="value" id="brightnessValue">0.18</span></div>
+        <input id="brightness" type="range" min="0.02" max="3" step="0.01" value="0.18">
       </div>
 
       <div class="control">
@@ -222,14 +222,18 @@
     import { createAudioPlayback } from "./js/audio-playback.js";
     import { createCaptureSession } from "./js/capture-export.js";
 
-    const FFT_SIZE = 1024;
-    const COLUMNS = 280;
+    const FFT_SIZE = 2048;
+    // ~1 column per device pixel across the field. At 280 the dots resolved as separate
+    // specks (local contrast 0.50 of the field's own brightness); this halves it to 0.25 at
+    // matched brightness. Past ~1024 it adds rendering density, not spectrum.
+    const COLUMNS = 2520;
     let HISTORY = 260;
     const FIELD_WIDTH = 108;
     const FIELD_DEPTH = 116;
     const EXPORT_WIDTH = 1920;
     const EXPORT_HEIGHT = 1080;
     const EXPORT_FPS = 60;
+    const EXPORT_SUPERSAMPLE = 2;
 
     const settings = {
       speed: 0.85,
@@ -244,7 +248,7 @@
       maxFrequency: 8000,
       pointSize: 1.0,
       density: 1,
-      brightness: 2.5,
+      brightness: 0.18,
       historyBins: 260,
       waveThickness: 1.0,
       waveSmoothness: 0.2,
@@ -286,16 +290,18 @@
         pixelRatio: renderer.getPixelRatio(),
         aspect: camera.aspect,
       }),
+      // Render 2x and let the exporter downscale: rasterising this many small dots 1:1
+      // aliases badly and eats the encoder's bitrate.
       applyViewport: (width, height) => {
-        renderer.setPixelRatio(1);
-        composer.setPixelRatio(1);
+        renderer.setPixelRatio(EXPORT_SUPERSAMPLE);
+        composer.setPixelRatio(EXPORT_SUPERSAMPLE);
         renderer.setSize(width, height, false);
         composer.setSize(width, height);
         updateLineResolution(width, height);
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
         if (fieldMaterial) {
-          fieldMaterial.uniforms.uViewportHeight.value = height;
+          fieldMaterial.uniforms.uViewportHeight.value = height * EXPORT_SUPERSAMPLE;
         }
       },
       restoreViewport: (state) => {
