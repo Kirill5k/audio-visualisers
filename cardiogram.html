@@ -1,0 +1,1591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cardiogram — Audio Visualiser</title>
+  <link rel="stylesheet" href="css/visualiser-ui.css">
+</head>
+<body>
+  <div id="stage"></div>
+
+  <button id="panelToggle" class="glass" aria-label="Hide settings" title="Hide settings">×</button>
+
+  <aside id="panel" class="glass">
+    <div class="brand">
+      <div>
+        <div class="eyebrow">Audio reactive study</div>
+        <h1>Cardiogram</h1>
+      </div>
+    </div>
+
+    <label class="file-picker" for="fileInput">Choose an audio file</label>
+    <input id="fileInput" type="file" accept="audio/*">
+
+    <section class="section">
+      <div class="section-title">Sweep</div>
+
+      <div class="control">
+        <div class="control-head"><span>Flow speed</span><span class="value" id="speedValue">1.00</span></div>
+        <input id="speed" type="range" min="0.15" max="3" step="0.05" value="1">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Window</span><span class="value" id="historyBinsValue">240</span></div>
+        <input id="historyBins" type="range" min="60" max="600" step="20" value="240">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Head position</span><span class="value" id="headValue">0.86</span></div>
+        <input id="head" type="range" min="0.4" max="1" step="0.01" value="0.86">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Motion smoothing</span><span class="value" id="motionSmoothValue">0.00</span></div>
+        <input id="motionSmooth" type="range" min="0" max="0.85" step="0.05" value="0">
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Trace</div>
+
+      <div class="control">
+        <div class="control-head"><span>Gain</span><span class="value" id="gainValue">1.40</span></div>
+        <input id="gain" type="range" min="0.4" max="4" step="0.05" value="1.4">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Spike height</span><span class="value" id="heightValue">2.60</span></div>
+        <input id="height" type="range" min="0.2" max="6" step="0.05" value="2.6">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Transient</span><span class="value" id="transientValue">0.85</span></div>
+        <input id="transient" type="range" min="0" max="1.2" step="0.01" value="0.85">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Smoothness</span><span class="value" id="waveSmoothnessValue">0.10</span></div>
+        <input id="waveSmoothness" type="range" min="0" max="1" step="0.01" value="0.1">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Thickness</span><span class="value" id="waveThicknessValue">1.6</span></div>
+        <input id="waveThickness" type="range" min="0" max="8" step="0.1" value="1.6">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Glow</span><span class="value" id="waveGlowValue">0.14</span></div>
+        <input id="waveGlow" type="range" min="0" max="1" step="0.01" value="0.14">
+      </div>
+
+      <div class="color-row"><span>Trace colour</span><input id="colorWave" type="color" value="#4dfbd0"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Bands</div>
+
+      <label class="color-row">
+        <span>Kick · min</span>
+        <input id="kickMin" class="frequency-input" type="number" min="20" max="21990" step="10" value="40">
+      </label>
+      <label class="color-row">
+        <span>Kick · max</span>
+        <input id="kickMax" class="frequency-input" type="number" min="30" max="22000" step="10" value="120">
+      </label>
+
+      <label class="color-row">
+        <span>Snare · min</span>
+        <input id="snareMin" class="frequency-input" type="number" min="20" max="21990" step="10" value="180">
+      </label>
+      <label class="color-row">
+        <span>Snare · max</span>
+        <input id="snareMax" class="frequency-input" type="number" min="30" max="22000" step="10" value="1200">
+      </label>
+
+      <label class="color-row">
+        <span>Hats · min</span>
+        <input id="hatsMin" class="frequency-input" type="number" min="20" max="21990" step="10" value="6000">
+      </label>
+      <label class="color-row">
+        <span>Hats · max</span>
+        <input id="hatsMax" class="frequency-input" type="number" min="30" max="22000" step="10" value="14000">
+      </label>
+
+      <div class="control">
+        <div class="control-head"><span>FFT size</span><span class="value" id="fftSizeValue">2048</span></div>
+        <input id="fftSize" type="range" min="10" max="13" step="1" value="11">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>FFT smoothing</span><span class="value" id="smoothingValue">0.20</span></div>
+        <input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.2">
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Particles</div>
+
+      <div class="control">
+        <div class="control-head"><span>Point size</span><span class="value" id="pointSizeValue">2.2</span></div>
+        <input id="pointSize" type="range" min="0.4" max="5" step="0.1" value="2.2">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Density</span><span class="value" id="densityValue">0.85</span></div>
+        <input id="density" type="range" min="0.05" max="1" step="0.01" value="0.85">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Opacity</span><span class="value" id="opacityValue">0.180</span></div>
+        <input id="opacity" type="range" min="0.005" max="1" step="0.005" value="0.18">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Spray</span><span class="value" id="scatterValue">0.35</span></div>
+        <input id="scatter" type="range" min="0" max="2" step="0.05" value="0.35">
+      </div>
+
+      <div class="color-row"><span>Particle colour</span><input id="colorParticles" type="color" value="#9ff7ff"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Scene</div>
+
+      <div class="control">
+        <div class="control-head"><span>Grid cell</span><span class="value" id="gridCellValue">2.5</span></div>
+        <input id="gridCell" type="range" min="1" max="10" step="0.5" value="2.5">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Grid opacity</span><span class="value" id="gridOpacityValue">0.50</span></div>
+        <input id="gridOpacity" type="range" min="0" max="1" step="0.01" value="0.5">
+      </div>
+
+      <div class="color-row"><span>Grid colour</span><input id="colorGrid" type="color" value="#1f9f8a"></div>
+
+      <label class="toggle-row">
+        <span>Panel frames</span>
+        <input id="frames" type="checkbox" checked>
+      </label>
+      <label class="toggle-row">
+        <span>Band legend</span>
+        <input id="legend" type="checkbox" checked>
+      </label>
+      <label class="toggle-row">
+        <span>Bloom</span>
+        <input id="bloom" type="checkbox" checked>
+      </label>
+      <label class="toggle-row">
+        <span>Film grain</span>
+        <input id="grain" type="checkbox">
+      </label>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Capture</div>
+      <label class="toggle-row">
+        <span>Record on load</span>
+        <input id="autoRecord" type="checkbox">
+      </label>
+      <label class="toggle-row">
+        <span>Export on load</span>
+        <input id="autoExport" type="checkbox">
+      </label>
+      <label class="toggle-row">
+        <span>Lock recording to 60 fps</span>
+        <input id="lock60" type="checkbox">
+      </label>
+    </section>
+  </aside>
+
+  <nav id="actions">
+    <button id="playPauseBtn" class="action glass" disabled title="Play">▶ <span class="action-label">Play</span></button>
+    <button id="replayBtn" class="action glass" disabled title="Replay">↺ <span class="action-label">Replay</span></button>
+    <button id="unloadBtn" class="action glass" disabled title="Unload">⊘ <span class="action-label">Unload</span></button>
+    <button id="recordBtn" class="action glass" disabled><span class="record-dot"></span><span class="action-label">Record</span></button>
+    <button id="exportBtn" class="action glass" disabled>↓ <span class="action-label">Export</span></button>
+    <button id="fullscreenBtn" class="action glass" title="Fullscreen">⛶</button>
+  </nav>
+
+  <div id="readout" class="glass">
+    <span id="statusLight"></span>
+    <span id="statusText">Choose an audio file to begin</span>
+    <span id="fps">— fps</span>
+  </div>
+
+  <div id="exportOverlay">
+    <div class="export-card glass">
+      <div id="exportStatus">Rendering the trace…</div>
+      <div class="progress"><div id="exportProgressBar"></div></div>
+      <div id="exportPercent">0%</div>
+      <button id="exportCancelBtn" class="action glass">Cancel export</button>
+    </div>
+  </div>
+
+  <div id="fatal">WebGL is unavailable in this browser.</div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script src="js/recorder.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
+  <script src="js/offline-exporter.js"></script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+    import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+    import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+    import { AfterimagePass } from "three/addons/postprocessing/AfterimagePass.js";
+    import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+    import { Line2 } from "three/addons/lines/Line2.js";
+    import { LineGeometry } from "three/addons/lines/LineGeometry.js";
+    import { LineMaterial } from "three/addons/lines/LineMaterial.js";
+    import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
+    import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
+    import { createAudioPlayback } from "./js/audio-playback.js";
+    import { createCaptureSession } from "./js/capture-export.js";
+
+    // Allocate the shared frequencyData at the largest fftSize we ever offer, then move
+    // analyser.fftSize at runtime. getByteFrequencyData with an oversized array fills only
+    // frequencyBinCount entries and leaves the tail alone, so nothing but activeBins() may
+    // be read — audio.binCount stays 4096 forever and is unusable here.
+    const MAX_FFT_SIZE = 8192;
+    const LANES = 3;
+    // One vertex per ~1 device pixel of trace: the polyline is the subject of the frame, so
+    // its corners must resolve at 2x export supersample, not stair-step.
+    const COLUMNS = 2048;
+    const PARTICLE_COLUMNS = 2048;
+    const PARTICLE_ROWS = 64;
+    const WORLD_WIDTH = 100;
+    // Content is inset inside the frustum on both axes so the lane boxes read as boxes —
+    // full-bleed put the frame verticals exactly on the canvas edge, half-clipped.
+    const CONTENT_WIDTH = 76;
+    const CONTENT_HEIGHT_FRACTION = 0.744;
+    let HISTORY = 240;
+    const EXPORT_WIDTH = 1920;
+    const EXPORT_HEIGHT = 1080;
+    const EXPORT_FPS = 60;
+    const EXPORT_SUPERSAMPLE = 2;
+
+    const settings = {
+      speed: 1,
+      historyBins: 240,
+      head: 0.86,
+      motionSmooth: 0,
+      gain: 1.4,
+      height: 2.6,
+      transient: 0.85,
+      waveSmoothness: 0.1,
+      waveThickness: 1.6,
+      waveGlow: 0.14,
+      fftSize: 2048,
+      smoothing: 0.2,
+      pointSize: 2.2,
+      density: 0.85,
+      opacity: 0.18,
+      scatter: 0.35,
+      gridCell: 2.5,
+      gridOpacity: 0.5,
+      frames: true,
+      legend: true,
+      bloom: true,
+      grain: false,
+      lock60: false,
+    };
+
+    const bands = [
+      { min: 40, max: 120 },
+      { min: 180, max: 1200 },
+      { min: 6000, max: 14000 },
+    ];
+
+    const audio = createAudioPlayback({
+      fftSize: MAX_FFT_SIZE,
+      smoothing: settings.smoothing,
+      minDecibels: -100,
+      maxDecibels: -26,
+    });
+    const frequencyData = audio.frequencyData;
+
+    const activeBins = () => settings.fftSize / 2;
+    const nyquist = () => (audio.context?.sampleRate || 48000) / 2;
+
+    const $ = (id) => document.getElementById(id);
+    const statusText = $("statusText");
+    const statusLight = $("statusLight");
+    const recordBtn = $("recordBtn");
+    const exportBtn = $("exportBtn");
+    const replayBtn = $("replayBtn");
+    const unloadBtn = $("unloadBtn");
+    const playPauseBtn = $("playPauseBtn");
+    const exportOverlay = $("exportOverlay");
+    const fftSizeInput = $("fftSize");
+
+    let scene;
+    let camera;
+    let renderer;
+    let composer;
+    let bloomPass;
+    let smoothPass;
+    let resetSmoothing = false;
+    let finishPass;
+    let field;
+    let fieldMaterial;
+    let traceMaterial;
+    let glowMaterial;
+    let gridMaterial;
+    let frameMaterial;
+    let grid;
+    let frames;
+    const traces = [];
+    const traceGeometries = [];
+    const traceGlows = [];
+    const headDots = [];
+    let headMaterial;
+    // Legend boxes are canvas textures in the scene, not DOM: overlay elements would be
+    // missing from the recorded and exported video.
+    const LEGEND_CANVAS = [640, 160];
+    const legendMeshes = [];
+    const legendCanvases = [];
+    const legendTextures = [];
+    const legendMaterials = [];
+    let tracePositions;
+    let traceRawHeights;
+
+    // Ring buffer of shaped lane values, newest at historyHead - 1. Float for the CPU
+    // polyline, Uint8 mirror (128 + v * 127) for the particle shader's texture.
+    let historyData = new Float32Array(LANES * HISTORY);
+    let historyBytes = new Uint8Array(LANES * HISTORY);
+    let historyTexture;
+    let historyHead = 0;
+    let flowAccumulator = 0;
+    let elapsedTime = 0;
+    let demoPhase = 0;
+
+    // Per-lane envelope followers. The QRS shape is a differential: a fast follower minus a
+    // slow one spikes on the transient, then undershoots as the slow one catches up.
+    // ponytail: fixed coefficients, tuned for ~60 pushes/sec. They do not track Flow speed,
+    // so extreme speeds flatten or sharpen the spikes — scale by 1/speed if that bites.
+    const ATTACK = 0.55;
+    const RELEASE = 0.055;
+    const fastEnvelope = new Float32Array(LANES);
+    const slowEnvelope = new Float32Array(LANES);
+
+    function worldHeight() {
+      return WORLD_WIDTH / camera.userData.aspect;
+    }
+
+    function laneStride() {
+      return (worldHeight() * CONTENT_HEIGHT_FRACTION) / LANES;
+    }
+
+    function laneCentre(lane) {
+      return (1 - lane) * laneStride();
+    }
+
+    function laneHalf() {
+      return laneStride() * 0.42;
+    }
+
+    // Where the newest sample is drawn. Below 1 the trace is written at a visible point
+    // inside the panel and scrolls left from it, instead of sliding in from off-frame.
+    function headX() {
+      return CONTENT_WIDTH * (settings.head - .5);
+    }
+
+    function setStatus(message, live = false) {
+      statusText.textContent = message;
+      statusLight.classList.toggle("live", live);
+    }
+
+    const capture = createCaptureSession({
+      width: EXPORT_WIDTH,
+      height: EXPORT_HEIGHT,
+      fps: EXPORT_FPS,
+      getCanvas: () => renderer?.domElement,
+      getAudioTrack: () => audio.getRecordingAudioTrack(),
+      saveViewport: () => ({
+        width: innerWidth,
+        height: innerHeight,
+        pixelRatio: renderer.getPixelRatio(),
+      }),
+      // Render 2x and let the exporter downscale: ~400k soft dots plus six pixel-width
+      // polylines alias badly (and eat the encoder's bitrate) when rasterised 1:1.
+      applyViewport: (width, height) => {
+        renderer.setPixelRatio(EXPORT_SUPERSAMPLE);
+        composer.setPixelRatio(EXPORT_SUPERSAMPLE);
+        renderer.setSize(width, height, false);
+        composer.setSize(width, height);
+        applyLayout(width, height, EXPORT_SUPERSAMPLE);
+      },
+      restoreViewport: (state) => {
+        renderer.setPixelRatio(state.pixelRatio);
+        composer.setPixelRatio(state.pixelRatio);
+        renderer.setSize(state.width, state.height, false);
+        composer.setSize(state.width, state.height);
+        applyLayout(state.width, state.height, state.pixelRatio);
+      },
+      overlay: {
+        root: exportOverlay,
+        status: $("exportStatus"),
+        progress: $("exportProgressBar"),
+        percent: $("exportPercent"),
+        cancelBtn: $("exportCancelBtn"),
+      },
+    });
+
+    function initScene() {
+      try {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x02070a);
+
+        camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100);
+        camera.position.z = 10;
+        camera.userData.aspect = innerWidth / innerHeight;
+
+        renderer = new THREE.WebGLRenderer({
+          antialias: true,
+          alpha: false,
+          preserveDrawingBuffer: true,
+          powerPreference: "high-performance",
+        });
+      } catch (error) {
+        console.error(error);
+        $("fatal").style.display = "flex";
+        return false;
+      }
+
+      const pixelRatio = Math.min(devicePixelRatio, innerWidth < 760 ? 1 : 2);
+      renderer.setPixelRatio(pixelRatio);
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      $("stage").appendChild(renderer.domElement);
+
+      createHistoryTexture();
+      seedDemoHistory();
+      createGrid();
+      createParticleField();
+      createTraces();
+      createLegends();
+      createPostProcessing();
+      applyLayout(innerWidth, innerHeight, pixelRatio);
+      return true;
+    }
+
+    // Camera frustum, grid geometry, lane maths and point scale all follow the viewport.
+    function applyLayout(width, height, pixelRatio) {
+      camera.userData.aspect = width / height;
+      const halfHeight = worldHeight() / 2;
+      camera.left = -WORLD_WIDTH / 2;
+      camera.right = WORLD_WIDTH / 2;
+      camera.top = halfHeight;
+      camera.bottom = -halfHeight;
+      camera.updateProjectionMatrix();
+
+      if (fieldMaterial) {
+        fieldMaterial.uniforms.uLaneStride.value = laneStride();
+        fieldMaterial.uniforms.uLaneHalf.value = laneHalf();
+        fieldMaterial.uniforms.uViewportHeight.value = height * pixelRatio;
+      }
+      for (const material of [traceMaterial, glowMaterial, gridMaterial, frameMaterial]) {
+        if (material) material.resolution.set(width, height);
+      }
+      rebuildGrid();
+      layoutLegends();
+      updateTraces();
+    }
+
+    function createHistoryTexture() {
+      historyTexture = new THREE.DataTexture(
+        historyBytes,
+        HISTORY,
+        LANES,
+        THREE.RedFormat,
+        THREE.UnsignedByteType,
+      );
+      historyTexture.minFilter = THREE.LinearFilter;
+      historyTexture.magFilter = THREE.LinearFilter;
+      historyTexture.wrapS = THREE.ClampToEdgeWrapping;
+      historyTexture.wrapT = THREE.ClampToEdgeWrapping;
+      historyTexture.needsUpdate = true;
+    }
+
+    function writeSample(lane, value) {
+      const index = lane * HISTORY + historyHead;
+      historyData[index] = value;
+      historyBytes[index] = Math.max(0, Math.min(255, Math.round(128 + value * 127)));
+    }
+
+    function advanceHistory() {
+      historyHead = (historyHead + 1) % HISTORY;
+      historyTexture.needsUpdate = true;
+      fieldMaterial.uniforms.uHistoryHead.value = historyHead;
+    }
+
+    function binOf(frequency) {
+      const bins = activeBins();
+      const bin = Math.round((frequency / nyquist()) * bins);
+      return Math.max(0, Math.min(bins - 1, bin));
+    }
+
+    function bandEnergy(lane) {
+      const low = binOf(bands[lane].min);
+      const high = Math.max(low, binOf(bands[lane].max));
+      let sum = 0;
+      for (let bin = low; bin <= high; bin++) sum += frequencyData[bin];
+      const level = sum / (high - low + 1) / 255;
+      return Math.pow(level, 1.18) * settings.gain;
+    }
+
+    function pushSample() {
+      for (let lane = 0; lane < LANES; lane++) {
+        const energy = bandEnergy(lane);
+        fastEnvelope[lane] += (energy - fastEnvelope[lane]) * ATTACK;
+        slowEnvelope[lane] += (energy - slowEnvelope[lane]) * RELEASE;
+        writeSample(lane, fastEnvelope[lane] - slowEnvelope[lane] * settings.transient);
+      }
+      advanceHistory();
+    }
+
+    // Idle beat: a P-QRS-T pulse per lane so the page reads as a cardiogram before any file
+    // is chosen (and so it can be verified without audio).
+    function demoSample(lane, phase) {
+      const beat = (phase * (1 + lane * 0.5)) % 1;
+      const spike = (centre, width, amplitude) =>
+        amplitude * Math.exp(-Math.pow((beat - centre) / width, 2));
+      return spike(0.30, 0.030, 0.12)
+        + spike(0.42, 0.010, 0.92)
+        - spike(0.455, 0.013, 0.34)
+        + spike(0.60, 0.045, 0.15)
+        + Math.sin(beat * 41 + lane) * 0.012;
+    }
+
+    function pushDemoSample() {
+      demoPhase += 0.0072;
+      for (let lane = 0; lane < LANES; lane++) writeSample(lane, demoSample(lane, demoPhase));
+      advanceHistory();
+    }
+
+    function seedDemoHistory() {
+      historyHead = 0;
+      for (let sample = 0; sample < HISTORY; sample++) {
+        const phase = demoPhase + sample * 0.0072;
+        for (let lane = 0; lane < LANES; lane++) writeSample(lane, demoSample(lane, phase));
+        historyHead = (historyHead + 1) % HISTORY;
+      }
+      demoPhase += HISTORY * 0.0072;
+      historyHead = 0;
+      historyTexture.needsUpdate = true;
+    }
+
+    function createGrid() {
+      gridMaterial = new LineMaterial({
+        color: $("colorGrid").value,
+        linewidth: 1,
+        transparent: true,
+        opacity: settings.gridOpacity,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        depthTest: false,
+      });
+      frameMaterial = new LineMaterial({
+        color: $("colorGrid").value,
+        linewidth: 1.6,
+        transparent: true,
+        opacity: Math.min(1, settings.gridOpacity * 2.2),
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        depthTest: false,
+      });
+
+      grid = new LineSegments2(new LineSegmentsGeometry(), gridMaterial);
+      frames = new LineSegments2(new LineSegmentsGeometry(), frameMaterial);
+      for (const object of [grid, frames]) {
+        object.frustumCulled = false;
+        object.renderOrder = -1;
+        scene.add(object);
+      }
+      frames.visible = settings.frames;
+    }
+
+    // Grid lines live inside the lane boxes, so the gaps between panels stay clean.
+    function rebuildGrid() {
+      if (!grid) return;
+      const cell = settings.gridCell;
+      const half = laneHalf();
+      const left = -CONTENT_WIDTH / 2;
+      const right = CONTENT_WIDTH / 2;
+      const gridPoints = [];
+      const framePoints = [];
+
+      for (let lane = 0; lane < LANES; lane++) {
+        const centre = laneCentre(lane);
+        const top = centre + half;
+        const bottom = centre - half;
+
+        for (let y = centre; y <= top + 1e-6; y += cell) {
+          gridPoints.push(left, y, 0, right, y, 0);
+          if (y > centre) gridPoints.push(left, centre * 2 - y, 0, right, centre * 2 - y, 0);
+        }
+        for (let x = 0; x <= right + 1e-6; x += cell) {
+          gridPoints.push(x, bottom, 0, x, top, 0);
+          if (x > 0) gridPoints.push(-x, bottom, 0, -x, top, 0);
+        }
+
+        framePoints.push(
+          left, top, 0, right, top, 0,
+          right, top, 0, right, bottom, 0,
+          right, bottom, 0, left, bottom, 0,
+          left, bottom, 0, left, top, 0,
+        );
+      }
+
+      grid.geometry.dispose();
+      frames.geometry.dispose();
+      grid.geometry = new LineSegmentsGeometry().setPositions(gridPoints);
+      frames.geometry = new LineSegmentsGeometry().setPositions(framePoints);
+      grid.computeLineDistances();
+      frames.computeLineDistances();
+    }
+
+    function createParticleField() {
+      const count = LANES * PARTICLE_COLUMNS * PARTICLE_ROWS;
+      const grids = new Float32Array(count * 3);
+      let index = 0;
+
+      for (let lane = 0; lane < LANES; lane++) {
+        for (let row = 0; row < PARTICLE_ROWS; row++) {
+          for (let column = 0; column < PARTICLE_COLUMNS; column++) {
+            grids[index * 3] = column / (PARTICLE_COLUMNS - 1);
+            grids[index * 3 + 1] = row / (PARTICLE_ROWS - 1);
+            grids[index * 3 + 2] = lane;
+            index++;
+          }
+        }
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+      geometry.setAttribute("aGrid", new THREE.BufferAttribute(grids, 3));
+
+      fieldMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uHistory: { value: historyTexture },
+          uHistoryHead: { value: historyHead },
+          uHistorySize: { value: HISTORY },
+          uHeight: { value: settings.height },
+          uLaneStride: { value: 1 },
+          uLaneHalf: { value: 1 },
+          uScatter: { value: settings.scatter },
+          uPointSize: { value: settings.pointSize },
+          uDensity: { value: settings.density },
+          uOpacity: { value: settings.opacity },
+          uWorldWidth: { value: CONTENT_WIDTH },
+          uHead: { value: settings.head },
+          uTime: { value: 0 },
+          uColor: { value: new THREE.Color($("colorParticles").value) },
+          uViewportHeight: { value: innerHeight },
+        },
+        vertexShader: `
+          attribute vec3 aGrid;
+
+          uniform sampler2D uHistory;
+          uniform float uHistoryHead;
+          uniform float uHistorySize;
+          uniform float uHeight;
+          uniform float uLaneStride;
+          uniform float uLaneHalf;
+          uniform float uScatter;
+          uniform float uPointSize;
+          uniform float uDensity;
+          uniform float uOpacity;
+          uniform float uWorldWidth;
+          uniform float uHead;
+          uniform float uTime;
+          uniform vec3 uColor;
+          uniform float uViewportHeight;
+
+          varying vec3 vColor;
+          varying float vAlpha;
+
+          float hash21(vec2 p) {
+            p = fract(p * vec2(123.34, 456.21));
+            p += dot(p, p + 45.32);
+            return fract(p.x * p.y);
+          }
+
+          void main() {
+            // aGrid.x is age: 0 = oldest sample at the left edge, 1 = newest at the right.
+            float age = aGrid.x;
+            float sampleIndex = mod(uHistoryHead + age * (uHistorySize - 1.0), uHistorySize);
+            float u = (sampleIndex + .5) / uHistorySize;
+            float v = (aGrid.z + .5) / ${LANES}.0;
+            float value = (texture2D(uHistory, vec2(u, v)).r - .5) * 2.0 * (255.0 / 254.0);
+
+            float seed = hash21(aGrid.xy * vec2(811.7, 437.2) + aGrid.z * 17.3);
+            float seedB = hash21(aGrid.yx * vec2(309.4, 971.1) + aGrid.z * 5.1 + 1.7);
+            float flicker = .85 + .15 * sin(uTime * 2.4 + seed * 25.0);
+
+            // Same soft clip as the trace so the dust never leaves its lane.
+            float traceY = (1.0 - aGrid.z) * uLaneStride + tanh(value * uHeight) * uLaneHalf;
+            float punch = abs(tanh(value * uHeight));
+
+            vec3 transformed;
+            transformed.x = (age * uHead - .5) * uWorldWidth + (seed - .5) * uScatter * .6;
+            // Spray widens with the spike, so the dust packs into the peaks and thins out
+            // along the baseline instead of fuzzing the whole trace evenly.
+            transformed.y = traceY + (seedB - .5) * uScatter * uLaneHalf * (.12 + punch * 1.4);
+            transformed.z = 0.0;
+
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
+            gl_PointSize = uPointSize * (.65 + punch * .9) * (uViewportHeight / 900.0);
+
+            // Alpha compositing (not additive): dense clusters converge on the picked colour
+            // instead of blowing out to white when opacity is raised.
+            float visible = 1.0 - step(uDensity, seed);
+            vAlpha = visible * flicker * (.12 + punch * .88) * uOpacity;
+            vColor = uColor;
+          }
+        `,
+        fragmentShader: `
+          precision highp float;
+          varying vec3 vColor;
+          varying float vAlpha;
+
+          void main() {
+            if (vAlpha < .004) discard;
+            float radius = length(gl_PointCoord - .5);
+            if (radius > .5) discard;
+            gl_FragColor = vec4(vColor, vAlpha * (1.0 - smoothstep(.08, .5, radius)));
+          }
+        `,
+        transparent: true,
+        depthWrite: false,
+        depthTest: false,
+        blending: THREE.NormalBlending,
+      });
+
+      field = new THREE.Points(geometry, fieldMaterial);
+      field.frustumCulled = false;
+      field.renderOrder = 0;
+      scene.add(field);
+    }
+
+    function createTraces() {
+      tracePositions = new Float32Array(COLUMNS * 3);
+      traceRawHeights = new Float32Array(COLUMNS);
+
+      traceMaterial = new LineMaterial({
+        color: $("colorWave").value,
+        linewidth: settings.waveThickness,
+        transparent: true,
+        opacity: .96,
+        depthWrite: false,
+        depthTest: false,
+      });
+      glowMaterial = new LineMaterial({
+        color: $("colorWave").value,
+        linewidth: settings.waveThickness * 4.5,
+        transparent: true,
+        opacity: settings.waveGlow,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        depthTest: false,
+      });
+
+      // The write head: marks where the newest sample lands, so the trace reads as being
+      // drawn at a point on screen rather than arriving from beyond the frame.
+      headMaterial = new THREE.MeshBasicMaterial({
+        color: $("colorWave").value,
+        transparent: true,
+        opacity: 1,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        depthTest: false,
+      });
+      const headGeometry = new THREE.CircleGeometry(0.45, 24);
+
+      for (let lane = 0; lane < LANES; lane++) {
+        const geometry = new LineGeometry();
+        geometry.setPositions(tracePositions);
+        const trace = new Line2(geometry, traceMaterial);
+        const glow = new Line2(geometry, glowMaterial);
+        trace.frustumCulled = false;
+        glow.frustumCulled = false;
+        glow.renderOrder = 1;
+        trace.renderOrder = 2;
+        traceGeometries.push(geometry);
+        traces.push(trace);
+        traceGlows.push(glow);
+        scene.add(glow, trace);
+
+        const dot = new THREE.Mesh(headGeometry, headMaterial);
+        dot.renderOrder = 3;
+        headDots.push(dot);
+        scene.add(dot);
+      }
+    }
+
+    function formatBand(lane) {
+      const { min, max } = bands[lane];
+      // kHz only when both ends are >= 1 kHz, otherwise a 180 Hz minimum reads as "0.2".
+      if (min < 1000) return `${min}–${max} Hz`;
+      const kHz = (value) => (value / 1000).toFixed(1).replace(/\.0$/, "");
+      return `${kHz(min)}–${kHz(max)} kHz`;
+    }
+
+    // Drawn white and tinted by the material colour, so changing the trace colour needs no redraw.
+    function drawLegend(lane) {
+      const [width, height] = LEGEND_CANVAS;
+      const ctx = legendCanvases[lane].getContext("2d");
+      ctx.clearRect(0, 0, width, height);
+
+      ctx.strokeStyle = "rgba(255, 255, 255, .8)";
+      ctx.lineWidth = 5;
+      ctx.strokeRect(2.5, 2.5, width - 5, height - 5);
+
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 9;
+      ctx.beginPath();
+      ctx.moveTo(38, height / 2);
+      ctx.lineTo(124, height / 2);
+      ctx.stroke();
+
+      ctx.fillStyle = "#fff";
+      ctx.font = `600 ${Math.round(height * .42)}px Inter, -apple-system, "Segoe UI", sans-serif`;
+      ctx.textBaseline = "middle";
+      ctx.fillText(formatBand(lane), 148, height / 2 + 2);
+
+      legendTextures[lane].needsUpdate = true;
+    }
+
+    function createLegends() {
+      const geometry = new THREE.PlaneGeometry(1, 1);
+      const anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+      for (let lane = 0; lane < LANES; lane++) {
+        const canvas = document.createElement("canvas");
+        canvas.width = LEGEND_CANVAS[0];
+        canvas.height = LEGEND_CANVAS[1];
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = anisotropy;
+        const material = new THREE.MeshBasicMaterial({
+          map: texture,
+          color: $("colorWave").value,
+          transparent: true,
+          depthWrite: false,
+          depthTest: false,
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.renderOrder = 4;
+        mesh.visible = settings.legend;
+
+        legendCanvases.push(canvas);
+        legendTextures.push(texture);
+        legendMaterials.push(material);
+        legendMeshes.push(mesh);
+        scene.add(mesh);
+        drawLegend(lane);
+      }
+    }
+
+    // Bottom-left inside each panel, sized off the lane so it tracks the viewport.
+    function layoutLegends() {
+      if (!legendMeshes.length) return;
+      const height = laneHalf() * .40;
+      const width = height * (LEGEND_CANVAS[0] / LEGEND_CANVAS[1]);
+      const inset = laneHalf() * .12;
+
+      for (let lane = 0; lane < LANES; lane++) {
+        legendMeshes[lane].scale.set(width, height, 1);
+        legendMeshes[lane].position.set(
+          -CONTENT_WIDTH / 2 + inset + width / 2,
+          laneCentre(lane) - laneHalf() + inset + height / 2,
+          0,
+        );
+      }
+    }
+
+    // Reads the ring buffer at fractional sample positions: piecewise-linear at Smoothness 0
+    // (the angular ECG corners), rounded off above it by the triangular kernel below.
+    function sampleHistory(lane, position) {
+      const clamped = Math.max(0, Math.min(HISTORY - 1.001, position));
+      const low = Math.floor(clamped);
+      const fraction = clamped - low;
+      const base = lane * HISTORY;
+      const a = historyData[base + (historyHead + low) % HISTORY];
+      const b = historyData[base + (historyHead + low + 1) % HISTORY];
+      return a + (b - a) * fraction;
+    }
+
+    function updateTraces() {
+      if (!traces.length) return;
+      const smoothingRadius = Math.round(settings.waveSmoothness * 18);
+      const half = laneHalf();
+      const step = (HISTORY - 1) / (COLUMNS - 1);
+
+      for (let lane = 0; lane < LANES; lane++) {
+        const centre = laneCentre(lane);
+
+        for (let column = 0; column < COLUMNS; column++) {
+          traceRawHeights[column] = sampleHistory(lane, column * step);
+        }
+
+        for (let column = 0; column < COLUMNS; column++) {
+          let value = traceRawHeights[column];
+
+          if (smoothingRadius > 0) {
+            let weighted = 0;
+            let totalWeight = 0;
+            for (let offset = -smoothingRadius; offset <= smoothingRadius; offset++) {
+              const index = Math.max(0, Math.min(COLUMNS - 1, column + offset));
+              const weight = smoothingRadius + 1 - Math.abs(offset);
+              weighted += traceRawHeights[index] * weight;
+              totalWeight += weight;
+            }
+            value = weighted / totalWeight;
+          }
+
+          const i = column * 3;
+          tracePositions[i] = ((column / (COLUMNS - 1)) * settings.head - .5) * CONTENT_WIDTH;
+          // tanh soft clip: a huge kick can never spill into the neighbouring lane, and
+          // there is no hard-clip artefact to tune around.
+          tracePositions[i + 1] = centre + Math.tanh(value * settings.height) * half;
+          tracePositions[i + 2] = 0;
+        }
+        traceGeometries[lane].setPositions(tracePositions);
+        // Reuse the smoothed last column so the dot sits exactly on the drawn line.
+        headDots[lane].position.set(headX(), tracePositions[(COLUMNS - 1) * 3 + 1], 0);
+      }
+    }
+
+    function rebuildHistory(newSize) {
+      const oldData = historyData;
+      const oldSize = HISTORY;
+      const oldHead = historyHead;
+
+      HISTORY = newSize;
+      historyData = new Float32Array(LANES * HISTORY);
+      historyBytes = new Uint8Array(LANES * HISTORY);
+      historyHead = 0;
+      flowAccumulator = 0;
+
+      if (audio.hasAudio) {
+        const samplesToCopy = Math.min(oldSize, HISTORY);
+        for (let target = 0; target < samplesToCopy; target++) {
+          const age = samplesToCopy - 1 - target;
+          const source = (oldHead - 1 - age + oldSize) % oldSize;
+          for (let lane = 0; lane < LANES; lane++) {
+            historyData[lane * HISTORY + target] = oldData[lane * oldSize + source];
+            historyBytes[lane * HISTORY + target] =
+              Math.max(0, Math.min(255, Math.round(128 + oldData[lane * oldSize + source] * 127)));
+          }
+        }
+        historyHead = samplesToCopy % HISTORY;
+      }
+
+      historyTexture.dispose();
+      createHistoryTexture();
+      if (!audio.hasAudio) seedDemoHistory();
+
+      fieldMaterial.uniforms.uHistory.value = historyTexture;
+      fieldMaterial.uniforms.uHistorySize.value = HISTORY;
+      fieldMaterial.uniforms.uHistoryHead.value = historyHead;
+      updateTraces();
+    }
+
+    function createPostProcessing() {
+      composer = new EffectComposer(renderer);
+      composer.setPixelRatio(renderer.getPixelRatio());
+      composer.addPass(new RenderPass(scene, camera));
+
+      // Averaging consecutive frames calms the particle shimmer, and doubles as phosphor
+      // persistence for the monitor look. AfterimagePass for its ping-pong buffers, max()
+      // swapped for a real EMA so the image settles instead of leaving comet trails.
+      smoothPass = new AfterimagePass(settings.motionSmooth);
+      smoothPass.compFsMaterial.fragmentShader = `
+        uniform float damp;
+        uniform sampler2D tOld;
+        uniform sampler2D tNew;
+        varying vec2 vUv;
+        void main() {
+          gl_FragColor = mix(texture2D(tNew, vUv), texture2D(tOld, vUv), damp);
+        }
+      `;
+      smoothPass.enabled = settings.motionSmooth > 0;
+      composer.addPass(smoothPass);
+
+      bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .45, .34, .42);
+      bloomPass.enabled = settings.bloom;
+      composer.addPass(bloomPass);
+
+      const FinishShader = {
+        uniforms: {
+          tDiffuse: { value: null },
+          uTime: { value: 0 },
+          uGrain: { value: settings.grain ? 1 : 0 },
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D tDiffuse;
+          uniform float uTime;
+          uniform float uGrain;
+          varying vec2 vUv;
+
+          float hash21(vec2 p) {
+            return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+          }
+
+          void main() {
+            vec3 color = texture2D(tDiffuse, vUv).rgb;
+            float distanceFromCenter = length((vUv - .5) * vec2(1.0, .72));
+            float vignette = 1.0 - smoothstep(.3, .95, distanceFromCenter) * .62;
+            float grain = (hash21(vUv * 1900.0 + fract(uTime)) - .5) * .06 * uGrain;
+            color = color * vignette + grain;
+            gl_FragColor = vec4(max(color, 0.0), 1.0);
+          }
+        `,
+      };
+      finishPass = new ShaderPass(FinishShader);
+      composer.addPass(finishPass);
+    }
+
+    function resetLiveField() {
+      historyData.fill(0);
+      historyBytes.fill(128);
+      frequencyData.fill(0);
+      fastEnvelope.fill(0);
+      slowEnvelope.fill(0);
+      historyHead = 0;
+      flowAccumulator = 0;
+      historyTexture.needsUpdate = true;
+      fieldMaterial.uniforms.uHistoryHead.value = historyHead;
+      updateTraces();
+    }
+
+    // The analyser is created lazily from four different call sites in audio-playback, so
+    // reconciling every frame is cheaper than hooking the lifecycle.
+    function applyFftSize() {
+      const analyser = audio.analyser;
+      if (!analyser || analyser.fftSize === settings.fftSize) return;
+      analyser.fftSize = settings.fftSize;
+      // Bin bandwidth halves per doubling of N, so band-average energy drops ~3 dB and the
+      // trace would visibly shrink as the slider goes up. Compensate the ceiling.
+      analyser.maxDecibels = -26 - 3 * Math.log2(settings.fftSize / 2048);
+    }
+
+    function renderFrame(delta, externalFrequencyData = null) {
+      elapsedTime += delta;
+      applyFftSize();
+      // A fresh export must not inherit the live image through the smoothing buffer.
+      smoothPass.damp = resetSmoothing ? 0 : settings.motionSmooth;
+      resetSmoothing = false;
+      fieldMaterial.uniforms.uTime.value = elapsedTime;
+      finishPass.uniforms.uTime.value = elapsedTime;
+
+      if (externalFrequencyData) {
+        // Derive the count from the array itself: the exporter locks fftSize for the whole
+        // run, so trusting page state would silently read the wrong range.
+        const count = Math.min(externalFrequencyData.length, frequencyData.length);
+        frequencyData.set(externalFrequencyData.subarray(0, count));
+      } else {
+        audio.pullFrequencyData();
+      }
+
+      if (audio.isPlaying || externalFrequencyData) {
+        flowAccumulator += delta * settings.speed * 60;
+        while (flowAccumulator >= 1) {
+          pushSample();
+          flowAccumulator -= 1;
+        }
+        updateTraces();
+      } else if (!audio.hasAudio) {
+        flowAccumulator += delta * settings.speed * 60;
+        while (flowAccumulator >= 1) {
+          pushDemoSample();
+          flowAccumulator -= 1;
+        }
+        updateTraces();
+      }
+
+      composer.render();
+    }
+
+    function updatePlayPauseUI() {
+      if (!audio.hasAudio) {
+        playPauseBtn.disabled = true;
+        playPauseBtn.innerHTML = '▶ <span class="action-label">Play</span>';
+        playPauseBtn.title = "Play";
+        return;
+      }
+      playPauseBtn.disabled = false;
+      if (audio.isPlaying) {
+        playPauseBtn.innerHTML = '⏸ <span class="action-label">Pause</span>';
+        playPauseBtn.title = "Pause";
+      } else {
+        playPauseBtn.innerHTML = '▶ <span class="action-label">Play</span>';
+        playPauseBtn.title = "Play";
+      }
+    }
+
+    async function pausePlayback() {
+      if (!audio.isPlaying) return;
+      await audio.pause();
+      updatePlayPauseUI();
+      setStatus("Paused · " + audio.fileName);
+    }
+
+    async function resumePlayback() {
+      if (audio.isPlaying) return;
+      await audio.resume();
+      updatePlayPauseUI();
+      setStatus("Playing · " + audio.fileName, true);
+    }
+
+    function startPlayback(preparedRecording = null) {
+      if (!audio.hasAudio || capture.isExporting) return;
+
+      if (preparedRecording && !recorder.isRecording) {
+        recorder.startAutoRecord(preparedRecording, () => capture.makeRecordingStream());
+      }
+
+      audio.play({
+        onEnded: () => {
+          updatePlayPauseUI();
+          setStatus("Playback finished · " + audio.fileName);
+          if (recorder.isRecording) recorder.stop();
+        },
+      });
+      updatePlayPauseUI();
+      setStatus("Playing · " + audio.fileName, true);
+    }
+
+    const recorder = createRecorder({
+      defaultFilename: "cardiogram",
+      videoBitsPerSecond: 32_000_000,
+      onStatus: (message) => setStatus(message),
+      onStart: () => {
+        recordBtn.classList.add("recording");
+        recordBtn.innerHTML = "■ <span class=\"action-label\">Stop</span>";
+        setStatus("Recording · " + (audio.fileName || "canvas"), true);
+      },
+      onStop: () => {
+        recordBtn.classList.remove("recording");
+        recordBtn.innerHTML = "<span class=\"record-dot\"></span><span class=\"action-label\">Record</span>";
+        capture.onRecordingStopped();
+        setStatus(audio.fileName ? "Recording saved · " + audio.fileName : "Recording saved");
+      },
+    });
+
+    async function loadAudio(file, preparedRecording, exportWritable) {
+      setStatus("Decoding · " + file.name);
+      await audio.load(file);
+      applyFftSize();
+      resetLiveField();
+      setButtonsEnabled(true);
+
+      if (exportWritable) {
+        exportBtn.pendingWritable = exportWritable;
+        exportBtn.click();
+        return;
+      }
+
+      startPlayback(preparedRecording);
+    }
+
+    function setButtonsEnabled(enabled) {
+      replayBtn.disabled = !enabled;
+      unloadBtn.disabled = !enabled;
+      recordBtn.disabled = !enabled;
+      const exportSupported = Boolean(window.showSaveFilePicker && window.VideoEncoder && window.AudioEncoder);
+      exportBtn.disabled = !enabled || !exportSupported;
+      if (enabled && !exportSupported) exportBtn.title = "Offline export requires Chromium with WebCodecs";
+      updatePlayPauseUI();
+    }
+
+    async function exportVideo() {
+      if (!audio.hasAudio || capture.isExporting || recorder.isRecording) return;
+
+      const pendingWritable = exportBtn.pendingWritable || null;
+      exportBtn.pendingWritable = null;
+
+      // The exporter locks fftSize for the whole run; moving the slider mid-export would
+      // desync the analyser from the frames already encoded.
+      fftSizeInput.disabled = true;
+      try {
+        await capture.runOfflineExport({
+          audio,
+          suggestedName: "cardiogram.mp4",
+          pendingWritable,
+          onStatus: setStatus,
+          labels: {
+            rendering: "Rendering the trace…",
+            progress: "Rendering frame {frame} of {total}",
+            complete: "Export complete",
+            cancelled: "Export cancelled",
+            saved: "Export saved · cardiogram.mp4",
+            failed: "Export failed · {message}",
+          },
+          prepare: () => {
+            const saved = {
+              historyData: new Float32Array(historyData),
+              historyBytes: new Uint8Array(historyBytes),
+              frequencyData: new Uint8Array(frequencyData),
+              fastEnvelope: new Float32Array(fastEnvelope),
+              slowEnvelope: new Float32Array(slowEnvelope),
+              historyHead,
+              flowAccumulator,
+              elapsedTime,
+            };
+
+            historyData.fill(0);
+            historyBytes.fill(128);
+            frequencyData.fill(0);
+            fastEnvelope.fill(0);
+            slowEnvelope.fill(0);
+            historyHead = 0;
+            flowAccumulator = 0;
+            elapsedTime = 0;
+            resetSmoothing = true;
+            fieldMaterial.uniforms.uHistoryHead.value = 0;
+            historyTexture.needsUpdate = true;
+            return saved;
+          },
+          restore: (saved) => {
+            if (!saved) return;
+            historyData.set(saved.historyData);
+            historyBytes.set(saved.historyBytes);
+            frequencyData.set(saved.frequencyData);
+            fastEnvelope.set(saved.fastEnvelope);
+            slowEnvelope.set(saved.slowEnvelope);
+            historyHead = saved.historyHead;
+            flowAccumulator = saved.flowAccumulator;
+            elapsedTime = saved.elapsedTime;
+            fieldMaterial.uniforms.uHistoryHead.value = historyHead;
+            historyTexture.needsUpdate = true;
+            updatePlayPauseUI();
+            updateTraces();
+          },
+          renderFrame: (fftData, delta) => renderFrame(delta, fftData),
+          readCanvas: () => renderer.domElement,
+          gpuFinish: () => renderer.getContext().finish(),
+        });
+      } finally {
+        fftSizeInput.disabled = false;
+      }
+    }
+
+    function unloadAudio() {
+      if (capture.isExporting || recorder.isRecording) return;
+      audio.unload();
+      $("fileInput").value = "";
+      fastEnvelope.fill(0);
+      slowEnvelope.fill(0);
+      flowAccumulator = 0;
+      seedDemoHistory();
+      fieldMaterial.uniforms.uHistoryHead.value = historyHead;
+      updateTraces();
+      setButtonsEnabled(false);
+      setStatus("Choose an audio file to begin");
+    }
+
+    function bindRange(id, key, decimals, onInput) {
+      const input = $(id);
+      const output = $(id + "Value");
+      input.addEventListener("input", () => {
+        settings[key] = Number(input.value);
+        output.textContent = settings[key].toFixed(decimals);
+        if (onInput) onInput(settings[key]);
+      });
+    }
+
+    const setUniform = (name) => (value) => { fieldMaterial.uniforms[name].value = value; };
+
+    bindRange("speed", "speed", 2);
+    bindRange("historyBins", "historyBins", 0, rebuildHistory);
+    bindRange("head", "head", 2, (value) => {
+      fieldMaterial.uniforms.uHead.value = value;
+      updateTraces();
+    });
+    bindRange("motionSmooth", "motionSmooth", 2, (value) => {
+      smoothPass.damp = value;
+      smoothPass.enabled = value > 0;
+    });
+    bindRange("gain", "gain", 2);
+    bindRange("height", "height", 2, (value) => {
+      fieldMaterial.uniforms.uHeight.value = value;
+      updateTraces();
+    });
+    bindRange("transient", "transient", 2);
+    bindRange("waveSmoothness", "waveSmoothness", 2, updateTraces);
+    bindRange("waveThickness", "waveThickness", 1, (value) => {
+      traceMaterial.linewidth = value;
+      glowMaterial.linewidth = value * 4.5;
+      for (let lane = 0; lane < LANES; lane++) {
+        traces[lane].visible = value > 0;
+        traceGlows[lane].visible = value > 0 && settings.waveGlow > 0;
+        headDots[lane].visible = value > 0;
+      }
+    });
+    bindRange("waveGlow", "waveGlow", 2, (value) => {
+      glowMaterial.opacity = value;
+      for (const glow of traceGlows) glow.visible = value > 0 && settings.waveThickness > 0;
+    });
+    bindRange("smoothing", "smoothing", 2, (value) => audio.setSmoothing(value));
+    bindRange("pointSize", "pointSize", 1, setUniform("uPointSize"));
+    bindRange("density", "density", 2, setUniform("uDensity"));
+    bindRange("opacity", "opacity", 3, setUniform("uOpacity"));
+    bindRange("scatter", "scatter", 2, setUniform("uScatter"));
+    bindRange("gridCell", "gridCell", 1, rebuildGrid);
+    bindRange("gridOpacity", "gridOpacity", 2, (value) => {
+      gridMaterial.opacity = value;
+      frameMaterial.opacity = Math.min(1, value * 2.2);
+      grid.visible = value > 0;
+      frames.visible = settings.frames && value > 0;
+    });
+
+    // Each fftSize write zero-fills the analyser's smoothing buffer (~10 frames to recover),
+    // so this listens on change, not input — dragging on input would strobe.
+    fftSizeInput.addEventListener("change", () => {
+      settings.fftSize = 2 ** Number(fftSizeInput.value);
+      $("fftSizeValue").textContent = String(settings.fftSize);
+      applyFftSize();
+    });
+
+    function bindBand(lane, minId, maxId) {
+      const minInput = $(minId);
+      const maxInput = $(maxId);
+      const update = (changed) => {
+        let minimum = Number(minInput.value);
+        let maximum = Number(maxInput.value);
+        if (!Number.isFinite(minimum) || !Number.isFinite(maximum)) return;
+
+        minimum = THREE.MathUtils.clamp(minimum, 20, 21990);
+        maximum = THREE.MathUtils.clamp(maximum, 30, 22000);
+        if (minimum >= maximum) {
+          if (changed === minInput) maximum = Math.min(22000, minimum + 10);
+          else minimum = Math.max(20, maximum - 10);
+        }
+
+        minInput.value = minimum;
+        maxInput.value = maximum;
+        bands[lane].min = minimum;
+        bands[lane].max = maximum;
+        drawLegend(lane);
+      };
+      minInput.addEventListener("input", () => update(minInput));
+      maxInput.addEventListener("input", () => update(maxInput));
+    }
+
+    bindBand(0, "kickMin", "kickMax");
+    bindBand(1, "snareMin", "snareMax");
+    bindBand(2, "hatsMin", "hatsMax");
+
+    $("colorParticles").addEventListener("input", (event) => {
+      fieldMaterial.uniforms.uColor.value.set(event.target.value);
+    });
+    $("colorWave").addEventListener("input", (event) => {
+      traceMaterial.color.set(event.target.value);
+      glowMaterial.color.set(event.target.value);
+      headMaterial.color.set(event.target.value);
+      for (const material of legendMaterials) material.color.set(event.target.value);
+    });
+    $("colorGrid").addEventListener("input", (event) => {
+      gridMaterial.color.set(event.target.value);
+      frameMaterial.color.set(event.target.value);
+    });
+
+    $("frames").addEventListener("change", (event) => {
+      settings.frames = event.target.checked;
+      frames.visible = settings.frames && settings.gridOpacity > 0;
+    });
+    $("legend").addEventListener("change", (event) => {
+      settings.legend = event.target.checked;
+      for (const mesh of legendMeshes) mesh.visible = settings.legend;
+    });
+    $("bloom").addEventListener("change", (event) => {
+      settings.bloom = event.target.checked;
+      bloomPass.enabled = settings.bloom;
+    });
+    $("grain").addEventListener("change", (event) => {
+      settings.grain = event.target.checked;
+      finishPass.uniforms.uGrain.value = settings.grain ? 1 : 0;
+    });
+    $("lock60").addEventListener("change", (event) => { settings.lock60 = event.target.checked; });
+
+    $("autoRecord").addEventListener("change", (event) => {
+      if (event.target.checked) $("autoExport").checked = false;
+    });
+    $("autoExport").addEventListener("change", (event) => {
+      if (event.target.checked) $("autoRecord").checked = false;
+    });
+
+    $("panelToggle").addEventListener("click", () => {
+      const hidden = $("panel").classList.toggle("hidden");
+      $("panelToggle").classList.toggle("closed", hidden);
+      $("panelToggle").textContent = hidden ? "☰" : "×";
+      $("panelToggle").title = hidden ? "Show settings" : "Hide settings";
+      $("panelToggle").setAttribute("aria-label", hidden ? "Show settings" : "Hide settings");
+    });
+
+    $("fileInput").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      let preparedRecording = null;
+      let exportWritable = null;
+
+      if ($("autoRecord").checked) {
+        preparedRecording = await recorder.prepareAutoRecord();
+        if (!preparedRecording) {
+          event.target.value = "";
+          return;
+        }
+      }
+
+      if ($("autoExport").checked) {
+        if (!window.showSaveFilePicker) {
+          setStatus("Automatic export requires Chromium");
+          event.target.value = "";
+          return;
+        }
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: "cardiogram.mp4",
+            types: [{ description: "MP4 Video", accept: { "video/mp4": [".mp4"] } }],
+          });
+          exportWritable = await handle.createWritable();
+        } catch (error) {
+          event.target.value = "";
+          return;
+        }
+      }
+
+      try {
+        await loadAudio(file, preparedRecording, exportWritable);
+      } catch (error) {
+        console.error(error);
+        setStatus("Could not load audio · " + error.message);
+        event.target.value = "";
+      }
+    });
+
+    recordBtn.addEventListener("click", () => {
+      if (!audio.hasAudio || capture.isExporting) return;
+      if (audio.isPaused) resumePlayback();
+      recorder.toggle(() => capture.makeRecordingStream());
+    });
+
+    exportBtn.addEventListener("click", exportVideo);
+
+    async function togglePlayPause() {
+      if (capture.isExporting) return;
+      if (!audio.hasAudio) {
+        $("fileInput").click();
+        return;
+      }
+      if (audio.isPlaying) {
+        await pausePlayback();
+      } else if (audio.isPaused) {
+        await resumePlayback();
+      } else {
+        await audio.resumeContext();
+        startPlayback();
+      }
+    }
+
+    async function replayTrack() {
+      if (!audio.hasAudio || capture.isExporting || recorder.isRecording) return;
+      await audio.resumeContext();
+      resetLiveField();
+      startPlayback();
+    }
+
+    playPauseBtn.addEventListener("click", togglePlayPause);
+    replayBtn.addEventListener("click", replayTrack);
+    unloadBtn.addEventListener("click", unloadAudio);
+
+    addEventListener("keydown", (event) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      const tag = event.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || event.target?.isContentEditable) return;
+
+      if (event.code === "Space") {
+        event.preventDefault();
+        togglePlayPause();
+        return;
+      }
+      if (event.key === "r" || event.key === "R") {
+        event.preventDefault();
+        replayTrack();
+      }
+    });
+
+    $("fullscreenBtn").addEventListener("click", () => {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    });
+
+    let resizeTimer;
+    addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (capture.isExporting || recorder.isRecording) return;
+        const pixelRatio = Math.min(devicePixelRatio, innerWidth < 760 ? 1 : 2);
+        renderer.setPixelRatio(pixelRatio);
+        composer.setPixelRatio(pixelRatio);
+        renderer.setSize(innerWidth, innerHeight);
+        composer.setSize(innerWidth, innerHeight);
+        applyLayout(innerWidth, innerHeight, pixelRatio);
+      }, 80);
+    });
+
+    let previousTime = performance.now();
+    let fpsFrames = 0;
+    let fpsElapsed = 0;
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      if (capture.isExporting) {
+        previousTime = now;
+        return;
+      }
+
+      if (recorder.isRecording && capture.shouldSkipRecordingFrame(now, settings.lock60)) return;
+
+      const measuredDelta = Math.min((now - previousTime) / 1000, .05);
+      previousTime = now;
+      renderFrame(recorder.isRecording && settings.lock60 ? 1 / 60 : measuredDelta);
+
+      if (recorder.isRecording) capture.requestRecordingFrame(now);
+
+      fpsFrames++;
+      fpsElapsed += measuredDelta;
+      if (fpsElapsed >= .6) {
+        $("fps").textContent = Math.round(fpsFrames / fpsElapsed) + " fps";
+        fpsFrames = 0;
+        fpsElapsed = 0;
+      }
+    }
+
+    if (initScene()) {
+      setButtonsEnabled(false);
+      requestAnimationFrame(animate);
+    }
+  </script>
+</body>
+</html>
