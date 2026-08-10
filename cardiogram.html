@@ -31,13 +31,13 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Window</span><span class="value" id="historyBinsValue">240</span></div>
-        <input id="historyBins" type="range" min="60" max="600" step="20" value="240">
+        <div class="control-head"><span>Window</span><span class="value" id="historyBinsValue">420</span></div>
+        <input id="historyBins" type="range" min="60" max="600" step="20" value="420">
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Head position</span><span class="value" id="headValue">0.86</span></div>
-        <input id="head" type="range" min="0.4" max="1" step="0.01" value="0.86">
+        <div class="control-head"><span>Head position</span><span class="value" id="headValue">0.98</span></div>
+        <input id="head" type="range" min="0.4" max="1" step="0.01" value="0.98">
       </div>
 
       <div class="control">
@@ -50,13 +50,18 @@
       <div class="section-title">Trace</div>
 
       <div class="control">
-        <div class="control-head"><span>Gain</span><span class="value" id="gainValue">1.40</span></div>
-        <input id="gain" type="range" min="0.4" max="4" step="0.05" value="1.4">
+        <div class="control-head"><span>Gain</span><span class="value" id="gainValue">1.15</span></div>
+        <input id="gain" type="range" min="0.4" max="4" step="0.05" value="1.15">
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Spike height</span><span class="value" id="heightValue">2.60</span></div>
-        <input id="height" type="range" min="0.2" max="6" step="0.05" value="2.6">
+        <div class="control-head"><span>Spike height</span><span class="value" id="heightValue">1.65</span></div>
+        <input id="height" type="range" min="0.2" max="6" step="0.05" value="1.65">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Baseline</span><span class="value" id="baselineValue">-0.20</span></div>
+        <input id="baseline" type="range" min="-0.9" max="0.9" step="0.01" value="-0.2">
       </div>
 
       <div class="control">
@@ -113,8 +118,8 @@
       </label>
 
       <div class="control">
-        <div class="control-head"><span>FFT size</span><span class="value" id="fftSizeValue">2048</span></div>
-        <input id="fftSize" type="range" min="10" max="13" step="1" value="11">
+        <div class="control-head"><span>FFT size</span><span class="value" id="fftSizeValue">8192</span></div>
+        <input id="fftSize" type="range" min="10" max="13" step="1" value="13">
       </div>
 
       <div class="control">
@@ -127,8 +132,8 @@
       <div class="section-title">Particles</div>
 
       <div class="control">
-        <div class="control-head"><span>Point size</span><span class="value" id="pointSizeValue">2.2</span></div>
-        <input id="pointSize" type="range" min="0.4" max="5" step="0.1" value="2.2">
+        <div class="control-head"><span>Point size</span><span class="value" id="pointSizeValue">1.4</span></div>
+        <input id="pointSize" type="range" min="0.4" max="5" step="0.1" value="1.4">
       </div>
 
       <div class="control">
@@ -142,8 +147,8 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Spray</span><span class="value" id="scatterValue">0.35</span></div>
-        <input id="scatter" type="range" min="0" max="2" step="0.05" value="0.35">
+        <div class="control-head"><span>Spray</span><span class="value" id="scatterValue">0.20</span></div>
+        <input id="scatter" type="range" min="0" max="2" step="0.05" value="0.2">
       </div>
 
       <div class="color-row"><span>Particle colour</span><input id="colorParticles" type="color" value="#9ff7ff"></div>
@@ -153,8 +158,13 @@
       <div class="section-title">Scene</div>
 
       <div class="control">
-        <div class="control-head"><span>Grid cell</span><span class="value" id="gridCellValue">2.5</span></div>
-        <input id="gridCell" type="range" min="1" max="10" step="0.5" value="2.5">
+        <div class="control-head"><span>Panel width</span><span class="value" id="panelWidthValue">76%</span></div>
+        <input id="panelWidth" type="range" min="50" max="100" step="1" value="76">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Grid cell</span><span class="value" id="gridCellValue">2.0</span></div>
+        <input id="gridCell" type="range" min="1" max="10" step="0.5" value="2">
       </div>
 
       <div class="control">
@@ -172,6 +182,11 @@
         <span>Band legend</span>
         <input id="legend" type="checkbox" checked>
       </label>
+
+      <div class="control">
+        <div class="control-head"><span>Legend corner</span><span class="value" id="legendCornerValue">Bottom left</span></div>
+        <input id="legendCorner" type="range" min="1" max="4" step="1" value="4">
+      </div>
       <label class="toggle-row">
         <span>Bloom</span>
         <input id="bloom" type="checkbox" checked>
@@ -265,10 +280,10 @@
     const PARTICLE_ROWS = 64;
     const WORLD_WIDTH = 100;
     // Content is inset inside the frustum on both axes so the lane boxes read as boxes —
-    // full-bleed put the frame verticals exactly on the canvas edge, half-clipped.
-    const CONTENT_WIDTH = 76;
+    // full-bleed put the frame verticals exactly on the canvas edge, half-clipped. Width is
+    // a live setting (percent of the frustum), height stays fixed.
     const CONTENT_HEIGHT_FRACTION = 0.744;
-    let HISTORY = 240;
+    let HISTORY = 420;
     const EXPORT_WIDTH = 1920;
     const EXPORT_HEIGHT = 1080;
     const EXPORT_FPS = 60;
@@ -276,25 +291,28 @@
 
     const settings = {
       speed: 1,
-      historyBins: 240,
-      head: 0.86,
+      historyBins: 420,
+      head: 0.98,
       motionSmooth: 0,
-      gain: 1.4,
-      height: 2.6,
+      gain: 1.15,
+      height: 1.65,
+      baseline: -0.2,
       transient: 0.85,
       waveSmoothness: 0.1,
       waveThickness: 1.6,
       waveGlow: 0.14,
-      fftSize: 2048,
+      fftSize: 8192,
       smoothing: 0.2,
-      pointSize: 2.2,
+      pointSize: 1.4,
       density: 0.85,
       opacity: 0.18,
-      scatter: 0.35,
-      gridCell: 2.5,
+      scatter: 0.2,
+      panelWidth: 76,
+      gridCell: 2,
       gridOpacity: 0.5,
       frames: true,
       legend: true,
+      legendCorner: 4,
       bloom: true,
       grain: false,
       lock60: false,
@@ -306,11 +324,15 @@
       { min: 6000, max: 14000 },
     ];
 
+    // Bin bandwidth halves per doubling of N, so band-average energy drops ~3 dB and the
+    // trace would shrink as the slider goes up. Compensate the ceiling.
+    const maxDecibelsFor = (fftSize) => -26 - 3 * Math.log2(fftSize / 2048);
+
     const audio = createAudioPlayback({
       fftSize: MAX_FFT_SIZE,
       smoothing: settings.smoothing,
       minDecibels: -100,
-      maxDecibels: -26,
+      maxDecibels: maxDecibelsFor(settings.fftSize),
     });
     const frequencyData = audio.frequencyData;
 
@@ -378,6 +400,10 @@
     const fastEnvelope = new Float32Array(LANES);
     const slowEnvelope = new Float32Array(LANES);
 
+    function contentWidth() {
+      return WORLD_WIDTH * settings.panelWidth / 100;
+    }
+
     function worldHeight() {
       return WORLD_WIDTH / camera.userData.aspect;
     }
@@ -397,7 +423,7 @@
     // Where the newest sample is drawn. Below 1 the trace is written at a visible point
     // inside the panel and scrolls left from it, instead of sliding in from off-frame.
     function headX() {
-      return CONTENT_WIDTH * (settings.head - .5);
+      return contentWidth() * (settings.head - .5);
     }
 
     function setStatus(message, live = false) {
@@ -620,8 +646,8 @@
       if (!grid) return;
       const cell = settings.gridCell;
       const half = laneHalf();
-      const left = -CONTENT_WIDTH / 2;
-      const right = CONTENT_WIDTH / 2;
+      const left = -contentWidth() / 2;
+      const right = contentWidth() / 2;
       const gridPoints = [];
       const framePoints = [];
 
@@ -681,13 +707,14 @@
           uHistoryHead: { value: historyHead },
           uHistorySize: { value: HISTORY },
           uHeight: { value: settings.height },
+          uBaseline: { value: settings.baseline },
           uLaneStride: { value: 1 },
           uLaneHalf: { value: 1 },
           uScatter: { value: settings.scatter },
           uPointSize: { value: settings.pointSize },
           uDensity: { value: settings.density },
           uOpacity: { value: settings.opacity },
-          uWorldWidth: { value: CONTENT_WIDTH },
+          uWorldWidth: { value: contentWidth() },
           uHead: { value: settings.head },
           uTime: { value: 0 },
           uColor: { value: new THREE.Color($("colorParticles").value) },
@@ -700,6 +727,7 @@
           uniform float uHistoryHead;
           uniform float uHistorySize;
           uniform float uHeight;
+          uniform float uBaseline;
           uniform float uLaneStride;
           uniform float uLaneHalf;
           uniform float uScatter;
@@ -733,9 +761,12 @@
             float seedB = hash21(aGrid.yx * vec2(309.4, 971.1) + aGrid.z * 5.1 + 1.7);
             float flicker = .85 + .15 * sin(uTime * 2.4 + seed * 25.0);
 
-            // Same soft clip as the trace so the dust never leaves its lane.
-            float traceY = (1.0 - aGrid.z) * uLaneStride + tanh(value * uHeight) * uLaneHalf;
-            float punch = abs(tanh(value * uHeight));
+            // Same soft clip and baseline mapping as the trace, so the dust tracks the line
+            // and never leaves its lane.
+            float shaped = tanh(value * uHeight);
+            float norm = uBaseline + shaped * (shaped >= 0.0 ? 1.0 - uBaseline : 1.0 + uBaseline);
+            float traceY = (1.0 - aGrid.z) * uLaneStride + norm * uLaneHalf;
+            float punch = abs(shaped);
 
             vec3 transformed;
             transformed.x = (age * uHead - .5) * uWorldWidth + (seed - .5) * uScatter * .6;
@@ -897,20 +928,23 @@
       }
     }
 
-    // Bottom-left inside each panel, sized off the lane so it tracks the viewport.
+    // Corners clockwise from top-left, sized off the lane so it tracks the viewport.
+    const LEGEND_CORNERS = ["Top left", "Top right", "Bottom right", "Bottom left"];
+
     function layoutLegends() {
       if (!legendMeshes.length) return;
       const height = laneHalf() * .40;
       const width = height * (LEGEND_CANVAS[0] / LEGEND_CANVAS[1]);
       const inset = laneHalf() * .12;
+      const corner = settings.legendCorner;
+      const onRight = corner === 2 || corner === 3;
+      const onTop = corner === 1 || corner === 2;
+      const x = (contentWidth() / 2 - inset - width / 2) * (onRight ? 1 : -1);
+      const offsetY = (laneHalf() - inset - height / 2) * (onTop ? 1 : -1);
 
       for (let lane = 0; lane < LANES; lane++) {
         legendMeshes[lane].scale.set(width, height, 1);
-        legendMeshes[lane].position.set(
-          -CONTENT_WIDTH / 2 + inset + width / 2,
-          laneCentre(lane) - laneHalf() + inset + height / 2,
-          0,
-        );
+        legendMeshes[lane].position.set(x, laneCentre(lane) + offsetY, 0);
       }
     }
 
@@ -930,6 +964,7 @@
       if (!traces.length) return;
       const smoothingRadius = Math.round(settings.waveSmoothness * 18);
       const half = laneHalf();
+      const width = contentWidth();
       const step = (HISTORY - 1) / (COLUMNS - 1);
 
       for (let lane = 0; lane < LANES; lane++) {
@@ -955,10 +990,15 @@
           }
 
           const i = column * 3;
-          tracePositions[i] = ((column / (COLUMNS - 1)) * settings.head - .5) * CONTENT_WIDTH;
+          tracePositions[i] = ((column / (COLUMNS - 1)) * settings.head - .5) * width;
           // tanh soft clip: a huge kick can never spill into the neighbouring lane, and
-          // there is no hard-clip artefact to tune around.
-          tracePositions[i + 1] = centre + Math.tanh(value * settings.height) * half;
+          // there is no hard-clip artefact to tune around. Baseline shifts the resting line
+          // and the signal then uses whatever headroom is left on that side, so moving it
+          // down buys taller spikes without ever breaching the panel.
+          const shaped = Math.tanh(value * settings.height);
+          const base = settings.baseline;
+          tracePositions[i + 1] =
+            centre + (base + shaped * (shaped >= 0 ? 1 - base : 1 + base)) * half;
           tracePositions[i + 2] = 0;
         }
         traceGeometries[lane].setPositions(tracePositions);
@@ -1081,11 +1121,13 @@
     // reconciling every frame is cheaper than hooking the lifecycle.
     function applyFftSize() {
       const analyser = audio.analyser;
-      if (!analyser || analyser.fftSize === settings.fftSize) return;
+      if (!analyser) return;
+      const ceiling = maxDecibelsFor(settings.fftSize);
+      // Reconcile both: at the default the analyser is already at settings.fftSize, so
+      // checking size alone would skip the dB compensation entirely.
+      if (analyser.fftSize === settings.fftSize && analyser.maxDecibels === ceiling) return;
       analyser.fftSize = settings.fftSize;
-      // Bin bandwidth halves per doubling of N, so band-average energy drops ~3 dB and the
-      // trace would visibly shrink as the slider goes up. Compensate the ceiling.
-      analyser.maxDecibels = -26 - 3 * Math.log2(settings.fftSize / 2048);
+      analyser.maxDecibels = ceiling;
     }
 
     function renderFrame(delta, externalFrequencyData = null) {
@@ -1330,6 +1372,10 @@
       fieldMaterial.uniforms.uHeight.value = value;
       updateTraces();
     });
+    bindRange("baseline", "baseline", 2, (value) => {
+      fieldMaterial.uniforms.uBaseline.value = value;
+      updateTraces();
+    });
     bindRange("transient", "transient", 2);
     bindRange("waveSmoothness", "waveSmoothness", 2, updateTraces);
     bindRange("waveThickness", "waveThickness", 1, (value) => {
@@ -1350,6 +1396,13 @@
     bindRange("density", "density", 2, setUniform("uDensity"));
     bindRange("opacity", "opacity", 3, setUniform("uOpacity"));
     bindRange("scatter", "scatter", 2, setUniform("uScatter"));
+    bindRange("panelWidth", "panelWidth", 0, (value) => {
+      $("panelWidthValue").textContent = value + "%";
+      fieldMaterial.uniforms.uWorldWidth.value = contentWidth();
+      rebuildGrid();
+      layoutLegends();
+      updateTraces();
+    });
     bindRange("gridCell", "gridCell", 1, rebuildGrid);
     bindRange("gridOpacity", "gridOpacity", 2, (value) => {
       gridMaterial.opacity = value;
@@ -1412,6 +1465,11 @@
     $("frames").addEventListener("change", (event) => {
       settings.frames = event.target.checked;
       frames.visible = settings.frames && settings.gridOpacity > 0;
+    });
+    $("legendCorner").addEventListener("input", (event) => {
+      settings.legendCorner = Number(event.target.value);
+      $("legendCornerValue").textContent = LEGEND_CORNERS[settings.legendCorner - 1];
+      layoutLegends();
     });
     $("legend").addEventListener("change", (event) => {
       settings.legend = event.target.checked;
