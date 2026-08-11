@@ -26,13 +26,13 @@
       <div class="section-title">Sweep</div>
 
       <div class="control">
-        <div class="control-head"><span>Flow speed</span><span class="value" id="speedValue">1.00</span></div>
-        <input id="speed" type="range" min="0.15" max="3" step="0.05" value="1">
+        <div class="control-head"><span>Flow speed</span><span class="value" id="speedValue">1.80</span></div>
+        <input id="speed" type="range" min="0.15" max="3" step="0.05" value="1.8">
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Window</span><span class="value" id="historyBinsValue">420</span></div>
-        <input id="historyBins" type="range" min="60" max="600" step="20" value="420">
+        <div class="control-head"><span>Window</span><span class="value" id="historyBinsValue">600</span></div>
+        <input id="historyBins" type="range" min="60" max="600" step="20" value="600">
       </div>
 
       <div class="control">
@@ -55,8 +55,8 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Spike height</span><span class="value" id="heightValue">1.65</span></div>
-        <input id="height" type="range" min="0.2" max="6" step="0.05" value="1.65">
+        <div class="control-head"><span>Spike height</span><span class="value" id="heightValue">1.90</span></div>
+        <input id="height" type="range" min="0.2" max="6" step="0.05" value="1.9">
       </div>
 
       <div class="control">
@@ -158,8 +158,8 @@
       <div class="section-title">Scene</div>
 
       <div class="control">
-        <div class="control-head"><span>Panel width</span><span class="value" id="panelWidthValue">76%</span></div>
-        <input id="panelWidth" type="range" min="50" max="100" step="1" value="76">
+        <div class="control-head"><span>Panel width</span><span class="value" id="panelWidthValue">86%</span></div>
+        <input id="panelWidth" type="range" min="50" max="100" step="1" value="86">
       </div>
 
       <div class="control">
@@ -283,19 +283,19 @@
     // full-bleed put the frame verticals exactly on the canvas edge, half-clipped. Width is
     // a live setting (percent of the frustum), height stays fixed.
     const CONTENT_HEIGHT_FRACTION = 0.744;
-    let HISTORY = 420;
+    let HISTORY = 600;
     const EXPORT_WIDTH = 1920;
     const EXPORT_HEIGHT = 1080;
     const EXPORT_FPS = 60;
     const EXPORT_SUPERSAMPLE = 2;
 
     const settings = {
-      speed: 1,
-      historyBins: 420,
+      speed: 1.8,
+      historyBins: 600,
       head: 0.98,
       motionSmooth: 0,
       gain: 1.15,
-      height: 1.65,
+      height: 1.9,
       baseline: -0.2,
       transient: 0.85,
       waveSmoothness: 0.1,
@@ -307,7 +307,7 @@
       density: 0.85,
       opacity: 0.18,
       scatter: 0.2,
-      panelWidth: 76,
+      panelWidth: 86,
       gridCell: 2,
       gridOpacity: 0.5,
       frames: true,
