@@ -83,6 +83,29 @@
         <div class="control-head"><span>Wireframe width</span><span class="value" id="wireWidthLabel">2.0</span></div>
         <input id="wireWidthSlider" type="range" min="0.5" max="10" step="0.5" value="2">
       </div>
+
+      <label class="color-row">
+        <span>Min frequency</span>
+        <input id="freqMin" class="frequency-input" type="number" min="20" max="23990" step="10" value="230">
+      </label>
+      <label class="color-row">
+        <span>Max frequency</span>
+        <input id="freqMax" class="frequency-input" type="number" min="30" max="24000" step="10" value="24000">
+      </label>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Quality</div>
+
+      <div class="control">
+        <div class="control-head"><span>FFT bins</span><span class="value" id="binsLabel">1024</span></div>
+        <input id="binsSlider" type="range" min="9" max="13" step="1" value="11">
+      </div>
+
+      <div class="control">
+        <div class="control-head"><span>Columns</span><span class="value" id="columnsLabel">1024</span></div>
+        <input id="columnsSlider" type="range" min="128" max="2048" step="64" value="1024">
+      </div>
     </section>
 
     <section class="section">
@@ -196,9 +219,23 @@ controls.update();
 // Audio
 // =====================================================
 
+// Allocate the shared frequencyData at the largest fftSize we ever offer, then move
+// analyser.fftSize at runtime — same trick as cardiogram.html. Only the first
+// activeBins entries are written by getByteFrequencyData, so audio.binCount is unusable
+// here; FFT_BINS below is the authority.
+const MAX_FFT_SIZE = 8192;
+
+// Bin bandwidth halves per doubling of N, so per-bin energy drops ~3 dB and the surface
+// would flatten as the bins slider goes up. Compensate the ceiling (-26 at 2048 = the
+// audio-playback default, so the shipped look is unchanged).
+const maxDecibelsFor = (fftSize) => -26 - 3 * Math.log2(fftSize / 2048);
+
+let fftSize = 2048;
+
 const audio = createAudioPlayback({
-  fftSize: 2048,
+  fftSize: MAX_FFT_SIZE,
   smoothing: 0.85,
+  maxDecibels: maxDecibelsFor(fftSize),
 });
 const frequencyData = audio.frequencyData;
 
@@ -206,9 +243,14 @@ const frequencyData = audio.frequencyData;
 // Settings (Restored 1:1 fidelity)
 // =====================================================
 
-const FFT_BINS = audio.binCount; // 1024
+let FFT_BINS = fftSize / 2; // 1024
+let frequencyView = frequencyData.subarray(0, FFT_BINS);
 let HISTORY = 300;
-const LOW_BIN_SKIP = 10;
+let COLUMNS = 1024;
+let freqMin = 230;
+let freqMax = 24000;
+
+const nyquist = () => (audio.context?.sampleRate || 48000) / 2;
 
 let scrollSpeed = 0.8;
 let rotationEnabled = true;
@@ -274,18 +316,10 @@ function updateShiftedColors() {
 }
 updateShiftedColors();
 
-// #1: Data Texture (Direct RedFormat for zero CPU loops)
-let dataTextureArray = new Uint8Array(FFT_BINS * HISTORY);
-let dataTexture = new THREE.DataTexture(
-  dataTextureArray,
-  FFT_BINS,
-  HISTORY,
-  THREE.RedFormat,
-  THREE.UnsignedByteType
-);
-dataTexture.minFilter = THREE.NearestFilter;
-dataTexture.magFilter = THREE.NearestFilter;
-dataTexture.needsUpdate = true;
+// #1: Data Texture (Direct RedFormat for zero CPU loops) — rebuilt by rebuildDataTexture()
+// below, once the material exists to hold the uniform.
+let dataTextureArray = null;
+let dataTexture = null;
 
 const colorLUTTexture = new THREE.DataTexture(
   colorLUTData, COLOR_LUT_SIZE, 1, THREE.RGBAFormat, THREE.UnsignedByteType
@@ -309,7 +343,7 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
   wireframe: false,
   transparent: true,
   uniforms: {
-    uDataTexture: { value: dataTexture },
+    uDataTexture: { value: null },
     uColorLUT: { value: colorLUTTexture },
     uHistoryHead: { value: 0.0 },
     uHistorySize: { value: HISTORY },
@@ -320,7 +354,8 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
     uFogFar: { value: 160.0 },
     uTime: { value: 0.0 },
     uFilmGrain: { value: 0.0 },
-    uLowBinSkip: { value: LOW_BIN_SKIP / FFT_BINS },
+    uFreqStart: { value: 0 },
+    uFreqEnd: { value: 1 },
     uGain: { value: 1.4 },
     uWireWidth: { value: 2 }
   },
@@ -333,7 +368,8 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
     uniform float uHistorySize;
     uniform float uHeightScale;
     uniform float uEmissiveGlow;
-    uniform float uLowBinSkip;
+    uniform float uFreqStart;
+    uniform float uFreqEnd;
     uniform float uGain;
     uniform vec3 uFogColor;
     uniform float uFogNear;
@@ -348,8 +384,7 @@ const spectrogramMaterial = new THREE.ShaderMaterial({
       vBary = barycentric;
       vec2 gridUV = uv;
 
-      float usableRange = 1.0 - uLowBinSkip;
-      float logX = uLowBinSkip + pow(gridUV.x, 2.2) * usableRange;
+      float logX = mix(uFreqStart, uFreqEnd, pow(gridUV.x, 2.2));
 
       float row = gridUV.y * (uHistorySize - 1.0);
       float texRow = mod(uHistoryHead - 1.0 - row + uHistorySize, uHistorySize);
@@ -428,7 +463,7 @@ function addBarycentricAttribute(geo) {
 }
 
 function createSpectrogramGeometry() {
-  let geo = new THREE.PlaneGeometry(110, 160, FFT_BINS - 1, HISTORY - 1);
+  let geo = new THREE.PlaneGeometry(110, 160, COLUMNS - 1, HISTORY - 1);
   geo.rotateX(-Math.PI / 2);
   geo = addBarycentricAttribute(geo);
   geo.computeBoundingBox();
@@ -436,16 +471,14 @@ function createSpectrogramGeometry() {
   return geo;
 }
 
-let geometry = createSpectrogramGeometry();
+let geometry = null;
+let mesh = null;
 
-let mesh = new THREE.Mesh(geometry, spectrogramMaterial);
-scene.add(mesh);
-
-function rebuildHistory(newSize) {
-  HISTORY = newSize;
+function rebuildDataTexture() {
+  frequencyView = frequencyData.subarray(0, FFT_BINS);
   historyHead = 0;
 
-  dataTexture.dispose();
+  dataTexture?.dispose();
   dataTextureArray = new Uint8Array(FFT_BINS * HISTORY);
   dataTexture = new THREE.DataTexture(
     dataTextureArray, FFT_BINS, HISTORY,
@@ -458,17 +491,41 @@ function rebuildHistory(newSize) {
   spectrogramMaterial.uniforms.uDataTexture.value = dataTexture;
   spectrogramMaterial.uniforms.uHistorySize.value = HISTORY;
   spectrogramMaterial.uniforms.uHistoryHead.value = 0;
+}
 
-  scene.remove(mesh);
-  geometry.dispose();
+function rebuildMesh() {
+  if (mesh) scene.remove(mesh);
+  geometry?.dispose();
   geometry = createSpectrogramGeometry();
   mesh = new THREE.Mesh(geometry, spectrogramMaterial);
   scene.add(mesh);
 }
 
+// Texture u is the fraction of nyquist, so the mapping is fftSize-independent.
+function applyFreqRange() {
+  const n = nyquist();
+  spectrogramMaterial.uniforms.uFreqStart.value = Math.min(freqMin / n, 1);
+  spectrogramMaterial.uniforms.uFreqEnd.value = Math.min(freqMax / n, 1);
+}
+
+// The analyser is created lazily inside audio-playback, so reconcile every frame rather
+// than hooking its lifecycle.
+function applyFftSize() {
+  const analyser = audio.analyser;
+  if (!analyser) return;
+  const ceiling = maxDecibelsFor(fftSize);
+  if (analyser.fftSize === fftSize && analyser.maxDecibels === ceiling) return;
+  analyser.fftSize = fftSize;
+  analyser.maxDecibels = ceiling;
+}
+
+rebuildDataTexture();
+rebuildMesh();
+applyFreqRange();
+
 function pushNewRow() {
   const offset = historyHead * FFT_BINS;
-  dataTextureArray.set(frequencyData, offset);
+  dataTextureArray.set(frequencyView, offset);
 
   const gl = renderer.getContext();
   const texProps = renderer.properties.get(dataTexture);
@@ -478,7 +535,7 @@ function pushNewRow() {
     gl.bindTexture(gl.TEXTURE_2D, texProps.__webglTexture);
     gl.texSubImage2D(
       gl.TEXTURE_2D, 0, 0, historyHead, FFT_BINS, 1,
-      gl.RED, gl.UNSIGNED_BYTE, frequencyData
+      gl.RED, gl.UNSIGNED_BYTE, frequencyView
     );
     gl.bindTexture(gl.TEXTURE_2D, activeTexture);
   } else {
@@ -570,7 +627,10 @@ let lastTickTime = performance.now();
 
 function tickFrame(delta) {
   spectrogramMaterial.uniforms.uTime.value += delta;
-  if (!capture.isExporting) audio.pullFrequencyData();
+  if (!capture.isExporting) {
+    applyFftSize();
+    audio.pullFrequencyData();
+  }
 
   if (hueShiftEnabled) {
     hueShiftOffset += delta * 0.03;
@@ -656,9 +716,51 @@ document.getElementById('speedSlider').addEventListener('input', (e) => {
   document.getElementById('speedLabel').textContent = scrollSpeed.toFixed(1);
 });
 document.getElementById('historySlider').addEventListener('input', (e) => {
-  rebuildHistory(parseInt(e.target.value));
+  HISTORY = parseInt(e.target.value);
+  rebuildDataTexture();
+  rebuildMesh();
   document.getElementById('historyLabel').textContent = HISTORY;
 });
+
+// Both quality sliders throw away the mesh (and bins the texture too), so they listen on
+// change, not input — dragging on input would rebuild once per pixel of travel.
+document.getElementById('binsSlider').addEventListener('change', (e) => {
+  // The exporter reads fftSize once at the start of a run; changing it mid-export would
+  // hand the shader rows of the wrong width.
+  if (capture.isExporting) {
+    e.target.value = Math.log2(fftSize);
+    return;
+  }
+  fftSize = 2 ** parseInt(e.target.value);
+  FFT_BINS = fftSize / 2;
+  document.getElementById('binsLabel').textContent = FFT_BINS;
+  applyFftSize();
+  rebuildDataTexture();
+});
+
+document.getElementById('columnsSlider').addEventListener('change', (e) => {
+  COLUMNS = parseInt(e.target.value);
+  document.getElementById('columnsLabel').textContent = COLUMNS;
+  rebuildMesh();
+});
+
+function bindFreqInput(el, other, isMin) {
+  el.addEventListener('input', () => {
+    let value = Number(el.value);
+    if (!Number.isFinite(value)) return;
+    value = THREE.MathUtils.clamp(value, 20, 24000);
+    const limit = Number(other.value);
+    if (isMin) value = Math.min(value, limit - 10);
+    else value = Math.max(value, limit + 10);
+    el.value = value;
+    if (isMin) freqMin = value; else freqMax = value;
+    applyFreqRange();
+  });
+}
+const freqMinInput = document.getElementById('freqMin');
+const freqMaxInput = document.getElementById('freqMax');
+bindFreqInput(freqMinInput, freqMaxInput, true);
+bindFreqInput(freqMaxInput, freqMinInput, false);
 
 const rotateToggle = document.getElementById('rotateToggle');
 const driftToggle = document.getElementById('driftToggle');
@@ -758,6 +860,10 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
 
   setStatus('Loading · ' + file.name);
   await audio.load(file);
+  // Auto-export clicks through synchronously, before any frame runs, so the analyser has
+  // to be reconciled here or the export would render at MAX_FFT_SIZE.
+  applyFftSize();
+  applyFreqRange();
 
   if (autoExport) {
     document.getElementById('exportBtn').pendingWritable = writable;
