@@ -138,10 +138,12 @@
   </aside>
 
   <nav id="actions">
-    <button id="replayBtn" class="action glass" title="Replay">↺ <span class="action-label">Replay</span></button>
-    <button id="unloadBtn" class="action glass" title="Unload">⊘ <span class="action-label">Unload</span></button>
-    <button id="recordBtn" class="action glass"><span class="record-dot"></span><span class="action-label">Record</span></button>
-    <button id="exportBtn" class="action glass">↓ <span class="action-label">Export</span></button>
+    <button id="playPauseBtn" class="action glass" disabled title="Play">▶ <span class="action-label">Play</span></button>
+    <button id="replayBtn" class="action glass" disabled title="Replay">↺ <span class="action-label">Replay</span></button>
+    <button id="muteBtn" class="action glass" disabled title="Mute">🔊 <span class="action-label">Mute</span></button>
+    <button id="unloadBtn" class="action glass" disabled title="Unload">⊘ <span class="action-label">Unload</span></button>
+    <button id="recordBtn" class="action glass" disabled><span class="record-dot"></span><span class="action-label">Record</span></button>
+    <button id="exportBtn" class="action glass" disabled>↓ <span class="action-label">Export</span></button>
     <button id="fullscreenBtn" class="action glass" title="Fullscreen">⛶</button>
   </nav>
 
@@ -244,6 +246,13 @@ const levelNeedle = document.getElementById('levelNeedle');
 const levelX = document.getElementById('levelX');
 const levelY = document.getElementById('levelY');
 const levelZ = document.getElementById('levelZ');
+
+const playPauseBtn = document.getElementById('playPauseBtn');
+const replayBtn = document.getElementById('replayBtn');
+const muteBtn = document.getElementById('muteBtn');
+const unloadBtn = document.getElementById('unloadBtn');
+const recordBtn = document.getElementById('recordBtn');
+const exportBtn = document.getElementById('exportBtn');
 
 // =====================================================
 // Audio
@@ -626,17 +635,15 @@ const capture = createCaptureSession({
 const recorder = createRecorder({
   defaultFilename: 'spectrogram_1080p',
   onStart: () => {
-    const btn = document.getElementById('recordBtn');
-    btn.classList.add('recording');
-    btn.innerHTML = '■ <span class="action-label">Stop</span>';
+    recordBtn.classList.add('recording');
+    recordBtn.innerHTML = '■ <span class="action-label">Stop</span>';
     setStatus('Recording', true);
   },
   onStop: () => {
-    const btn = document.getElementById('recordBtn');
-    btn.classList.remove('recording');
-    btn.innerHTML = '<span class="record-dot"></span><span class="action-label">Record</span>';
+    recordBtn.classList.remove('recording');
+    recordBtn.innerHTML = '<span class="record-dot"></span><span class="action-label">Record</span>';
     capture.onRecordingStopped();
-    setStatus(audio.hasAudio ? 'Recording saved' : 'Choose an audio file to begin');
+    setStatus(audio.hasAudio ? (audio.isPlaying ? 'Playing · ' + (audio.fileName || 'audio') : 'Recording saved') : 'Choose an audio file to begin', audio.isPlaying);
   },
 });
 
@@ -644,7 +651,11 @@ const recorder = createRecorder({
 // UI & Animation
 // =====================================================
 
-document.getElementById('recordBtn').addEventListener('click', () => {
+recordBtn.addEventListener('click', () => {
+  if (!audio.hasAudio || capture.isExporting) return;
+  if (audio.isPaused) {
+    resumePlayback();
+  }
   recorder.toggle(() => capture.makeRecordingStream());
 });
 
@@ -674,13 +685,15 @@ function tickFrame(delta) {
     }
   }
 
-  accumulator += delta * scrollSpeed * 60 * (HISTORY / 300);
-  if (accumulator >= 1) {
-    accumulator -= 1;
-    pushNewRow();
+  const audioActive = audio.isPlaying || capture.isExporting;
+  if (audioActive) {
+    accumulator += delta * scrollSpeed * 60 * (HISTORY / 300);
+    while (accumulator >= 1) {
+      accumulator -= 1;
+      pushNewRow();
+    }
   }
   spectrogramMaterial.uniforms.uHistoryHead.value = historyHead;
-  const audioActive = audio.isPlaying || capture.isExporting;
   if (rotationEnabled && audioActive) {
     mesh.rotation.y += delta * rotationSpeed;
   }
@@ -892,6 +905,122 @@ document.getElementById('lock60fpsToggle').addEventListener('change', (e) => {
   lockRecordingFps = e.target.checked;
 });
 
+function updatePlayPauseUI() {
+  if (!playPauseBtn) return;
+  if (!audio.hasAudio) {
+    playPauseBtn.disabled = true;
+    playPauseBtn.innerHTML = '▶ <span class="action-label">Play</span>';
+    playPauseBtn.title = 'Play';
+    return;
+  }
+  playPauseBtn.disabled = false;
+  if (audio.isPlaying) {
+    playPauseBtn.innerHTML = '⏸ <span class="action-label">Pause</span>';
+    playPauseBtn.title = 'Pause';
+  } else {
+    playPauseBtn.innerHTML = '▶ <span class="action-label">Play</span>';
+    playPauseBtn.title = 'Play';
+  }
+}
+
+function updateMuteUI() {
+  if (!muteBtn) return;
+  if (!audio.hasAudio) {
+    muteBtn.disabled = true;
+    muteBtn.innerHTML = '🔊 <span class="action-label">Mute</span>';
+    muteBtn.title = 'Mute';
+    return;
+  }
+  muteBtn.disabled = false;
+  if (audio.isMuted) {
+    muteBtn.innerHTML = '🔇 <span class="action-label">Unmute</span>';
+    muteBtn.title = 'Unmute';
+  } else {
+    muteBtn.innerHTML = '🔊 <span class="action-label">Mute</span>';
+    muteBtn.title = 'Mute';
+  }
+}
+
+function setButtonsEnabled(enabled) {
+  replayBtn.disabled = !enabled;
+  muteBtn.disabled = !enabled;
+  unloadBtn.disabled = !enabled;
+  recordBtn.disabled = !enabled;
+  const exportSupported = Boolean(window.showSaveFilePicker && window.VideoEncoder && window.AudioEncoder);
+  exportBtn.disabled = !enabled || !exportSupported;
+  if (enabled && !exportSupported) exportBtn.title = 'Offline export requires Chromium with WebCodecs';
+  updatePlayPauseUI();
+  updateMuteUI();
+}
+
+async function pausePlayback() {
+  if (!audio.isPlaying) return;
+  await audio.pause();
+  updatePlayPauseUI();
+  setStatus('Paused · ' + (audio.fileName || 'audio'));
+}
+
+async function resumePlayback() {
+  if (audio.isPlaying) return;
+  await audio.resume();
+  updatePlayPauseUI();
+  setStatus('Playing · ' + (audio.fileName || 'audio'), true);
+}
+
+function startPlayback(preparedRecording = null) {
+  if (!audio.hasAudio || capture.isExporting) return;
+
+  if (preparedRecording && !recorder.isRecording) {
+    recorder.startAutoRecord(preparedRecording, () => capture.makeRecordingStream());
+  }
+
+  audio.play({
+    onEnded: () => {
+      updatePlayPauseUI();
+      setStatus('Playback finished · ' + (audio.fileName || 'audio'));
+      if (recorder.isRecording) recorder.stop();
+    },
+  });
+  updatePlayPauseUI();
+  setStatus('Playing · ' + (audio.fileName || 'audio'), true);
+}
+
+async function togglePlayPause() {
+  if (capture.isExporting) return;
+  if (!audio.hasAudio) {
+    document.getElementById('fileInput').click();
+    return;
+  }
+  if (audio.isPlaying) {
+    await pausePlayback();
+  } else if (audio.isPaused) {
+    await resumePlayback();
+  } else {
+    await audio.resumeContext();
+    startPlayback();
+  }
+}
+
+async function replayTrack() {
+  if (!audio.hasAudio || capture.isExporting || recorder.isRecording) return;
+  await audio.resumeContext();
+  startPlayback();
+}
+
+function toggleMute() {
+  if (!audio.hasAudio || capture.isExporting) return;
+  audio.toggleMute();
+  updateMuteUI();
+}
+
+function unloadAudio() {
+  if (!audio.hasAudio || capture.isExporting || recorder.isRecording) return;
+  audio.unload();
+  document.getElementById('fileInput').value = '';
+  setStatus('Choose an audio file to begin');
+  setButtonsEnabled(false);
+}
+
 document.getElementById('fileInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -918,19 +1047,15 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
   // to be reconciled here or the export would render at MAX_FFT_SIZE.
   applyFftSize();
   applyFreqRange();
+  setButtonsEnabled(true);
 
   if (autoExport) {
-    document.getElementById('exportBtn').pendingWritable = writable;
-    document.getElementById('exportBtn').click();
+    exportBtn.pendingWritable = writable;
+    exportBtn.click();
     return;
   }
 
-  if (prepared && !recorder.isRecording) {
-    recorder.startAutoRecord(prepared, () => capture.makeRecordingStream());
-  }
-
-  audio.play();
-  setStatus('Playing · ' + file.name, true);
+  startPlayback(prepared);
 });
 
 window.addEventListener('resize', () => {
@@ -940,13 +1065,12 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-document.getElementById('exportBtn').addEventListener('click', async () => {
+exportBtn.addEventListener('click', async () => {
   if (!audio.hasAudio) { alert('Load an audio file first.'); return; }
   if (capture.isExporting || recorder.isRecording) return;
 
-  const btn = document.getElementById('exportBtn');
-  const pendingWritable = btn.pendingWritable || null;
-  btn.pendingWritable = null;
+  const pendingWritable = exportBtn.pendingWritable || null;
+  exportBtn.pendingWritable = null;
 
   await capture.runOfflineExport({
     audio,
@@ -1005,22 +1129,32 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   });
 });
 
-document.getElementById('replayBtn').addEventListener('click', async () => {
-  if (!audio.hasAudio) { alert('Load an audio file first.'); return; }
-  if (capture.isExporting || recorder.isRecording) return;
+playPauseBtn.addEventListener('click', togglePlayPause);
+replayBtn.addEventListener('click', replayTrack);
+muteBtn.addEventListener('click', toggleMute);
+unloadBtn.addEventListener('click', unloadAudio);
 
-  await audio.resumeContext();
-  audio.play();
-  setStatus('Playing', true);
-});
+addEventListener('keydown', (event) => {
+  if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+  const tag = event.target?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || event.target?.isContentEditable) return;
 
-document.getElementById('unloadBtn').addEventListener('click', () => {
-  if (!audio.hasAudio) return;
-  if (capture.isExporting || recorder.isRecording) return;
+  if (event.code === 'Space') {
+    event.preventDefault();
+    togglePlayPause();
+    return;
+  }
 
-  audio.unload();
-  document.getElementById('fileInput').value = '';
-  setStatus('Choose an audio file to begin');
+  if (event.key === 'm' || event.key === 'M') {
+    event.preventDefault();
+    toggleMute();
+    return;
+  }
+
+  if (event.key === 'r' || event.key === 'R') {
+    event.preventDefault();
+    replayTrack();
+  }
 });
 
 </script>

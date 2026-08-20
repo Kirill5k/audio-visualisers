@@ -10,12 +10,14 @@ export function createAudioPlayback({
 } = {}) {
   let context = null;
   let analyser = null;
+  let gainNode = null;
   let mediaStreamDestination = null;
   let buffer = null;
   let source = null;
   let fileName = "";
   let playing = false;
   let paused = false;
+  let muted = false;
   let endedHandler = null;
 
   const frequencyData = new Uint8Array(fftSize / 2);
@@ -30,8 +32,12 @@ export function createAudioPlayback({
     analyser.minDecibels = minDecibels;
     analyser.maxDecibels = maxDecibels;
 
+    gainNode = context.createGain();
+    gainNode.gain.value = muted ? 0 : 1;
+
     mediaStreamDestination = context.createMediaStreamDestination();
-    analyser.connect(context.destination);
+    analyser.connect(gainNode);
+    gainNode.connect(context.destination);
     analyser.connect(mediaStreamDestination);
   }
 
@@ -53,8 +59,21 @@ export function createAudioPlayback({
     get hasAudio() { return Boolean(buffer); },
     get isPlaying() { return playing; },
     get isPaused() { return paused; },
+    get isMuted() { return muted; },
     get fileName() { return fileName; },
     get duration() { return buffer ? buffer.duration : 0; },
+
+    setMuted(value) {
+      muted = Boolean(value);
+      if (gainNode && context) {
+        gainNode.gain.setValueAtTime(muted ? 0 : 1, context.currentTime);
+      }
+      return muted;
+    },
+
+    toggleMute() {
+      return this.setMuted(!muted);
+    },
 
     async resumeContext() {
       ensureGraph();
