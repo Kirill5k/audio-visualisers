@@ -37,7 +37,7 @@
 
       <label class="toggle-row">
         <span>Rotate</span>
-        <input id="rotateToggle" type="checkbox" checked>
+        <input id="rotateToggle" type="checkbox">
       </label>
       <label class="toggle-row">
         <span>Drift</span>
@@ -292,7 +292,7 @@ let freqMax = 24000;
 const nyquist = () => (audio.context?.sampleRate || 48000) / 2;
 
 let scrollSpeed = 0.8;
-let rotationEnabled = true;
+let rotationEnabled = false;
 let rotationSpeed = 0.02;
 let driftEnabled = false;
 let driftAngle = 0;
