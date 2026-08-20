@@ -145,6 +145,26 @@
     <button id="fullscreenBtn" class="action glass" title="Fullscreen">⛶</button>
   </nav>
 
+  <div id="levelIndicator" class="glass">
+    <div class="level-visual">
+      <svg width="32" height="32" viewBox="-16 -16 32 32" style="overflow: visible;">
+        <circle cx="0" cy="0" r="13" stroke="rgba(218, 229, 225, 0.15)" stroke-width="1" fill="none" />
+        <line x1="-15" y1="0" x2="15" y2="0" stroke="rgba(218, 229, 225, 0.08)" stroke-width="1" />
+        <line x1="0" y1="-15" x2="0" y2="15" stroke="rgba(218, 229, 225, 0.08)" stroke-width="1" />
+        <line id="levelNeedle" x1="-13" y1="0" x2="13" y2="0" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="0" cy="0" r="1.5" fill="var(--ink)" />
+      </svg>
+    </div>
+    <div class="level-info">
+      <div class="level-title">Alignment</div>
+      <div id="levelValue">
+        <span><span class="axis">X</span><span id="levelX">100%</span></span>
+        <span><span class="axis">Y</span><span id="levelY">0%</span></span>
+        <span><span class="axis">Z</span><span id="levelZ">0%</span></span>
+      </div>
+    </div>
+  </div>
+
   <div id="readout" class="glass">
     <span id="statusLight"></span>
     <span id="statusText">Choose an audio file to begin</span>
@@ -214,6 +234,16 @@ controls.minDistance = 20;
 controls.maxDistance = 300;
 controls.maxPolarAngle = Math.PI * 0.95;
 controls.update();
+
+const levelWaveVector = new THREE.Vector3(1, 0, 0);
+const cameraRight = new THREE.Vector3();
+const cameraUp = new THREE.Vector3();
+const cameraForward = new THREE.Vector3();
+
+const levelNeedle = document.getElementById('levelNeedle');
+const levelX = document.getElementById('levelX');
+const levelY = document.getElementById('levelY');
+const levelZ = document.getElementById('levelZ');
 
 // =====================================================
 // Audio
@@ -494,10 +524,12 @@ function rebuildDataTexture() {
 }
 
 function rebuildMesh() {
+  const currentRotY = mesh ? mesh.rotation.y : 0;
   if (mesh) scene.remove(mesh);
   geometry?.dispose();
   geometry = createSpectrogramGeometry();
   mesh = new THREE.Mesh(geometry, spectrogramMaterial);
+  mesh.rotation.y = currentRotY;
   scene.add(mesh);
 }
 
@@ -661,6 +693,28 @@ function tickFrame(delta) {
   }
 
   controls.update();
+
+  if (camera && levelNeedle && levelX && levelY && levelZ) {
+    levelWaveVector.set(1, 0, 0);
+    if (mesh) {
+      levelWaveVector.applyQuaternion(mesh.quaternion);
+    }
+    cameraRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    cameraForward.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    const dx = levelWaveVector.dot(cameraRight);
+    const dy = levelWaveVector.dot(cameraUp);
+    const dz = levelWaveVector.dot(cameraForward);
+
+    levelNeedle.setAttribute('x1', -dx * 13);
+    levelNeedle.setAttribute('y1', dy * 13);
+    levelNeedle.setAttribute('x2', dx * 13);
+    levelNeedle.setAttribute('y2', -dy * 13);
+
+    levelX.textContent = Math.round(Math.abs(dx) * 100) + '%';
+    levelY.textContent = Math.round(Math.abs(dy) * 100) + '%';
+    levelZ.textContent = Math.round(Math.abs(dz) * 100) + '%';
+  }
 
   // Expand fog only when zooming out; keep original range when close
   const camDist = camera.position.distanceTo(controls.target);
