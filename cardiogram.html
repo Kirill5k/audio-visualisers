@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cardiogram — Audio Visualiser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/visualiser-ui.css">
 </head>
 <body>
@@ -926,6 +929,15 @@
         scene.add(mesh);
         drawLegend(lane);
       }
+
+      if (document.fonts) {
+        document.fonts.load(`600 ${Math.round(LEGEND_CANVAS[1] * .42)}px Inter`).then(() => {
+          for (let lane = 0; lane < LANES; lane++) drawLegend(lane);
+        });
+        document.fonts.ready.then(() => {
+          for (let lane = 0; lane < LANES; lane++) drawLegend(lane);
+        });
+      }
     }
 
     // Corners clockwise from top-left, sized off the lane so it tracks the viewport.
@@ -1269,6 +1281,7 @@
       // desync the analyser from the frames already encoded.
       fftSizeInput.disabled = true;
       try {
+        if (document.fonts) await document.fonts.ready;
         await capture.runOfflineExport({
           audio,
           suggestedName: "cardiogram.mp4",
