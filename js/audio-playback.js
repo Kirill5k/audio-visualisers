@@ -19,8 +19,14 @@ export function createAudioPlayback({
   let paused = false;
   let muted = false;
   let endedHandler = null;
+  let playbackOffset = 0;
+  let startedAtContextTime = 0;
+  let offsetAtStart = 0;
 
-  const frequencyData = new Uint8Array(fftSize / 2);
+  const MAX_FFT_SIZE = 8192;
+
+  let frequencyData = new Uint8Array(MAX_FFT_SIZE / 2);
+  let timeDomainData = new Uint8Array(MAX_FFT_SIZE);
 
   function ensureGraph() {
     if (context) return;
@@ -41,8 +47,14 @@ export function createAudioPlayback({
     analyser.connect(mediaStreamDestination);
   }
 
-  function stopSource() {
+  function stopSource({ preserveOffset = false } = {}) {
     if (!source) return;
+    if (!preserveOffset && playing && context) {
+      playbackOffset = Math.min(
+        buffer?.duration || 0,
+        offsetAtStart + context.currentTime - startedAtContextTime,
+      );
+    }
     source.onended = null;
     try { source.stop(); } catch (_) {}
     try { source.disconnect(); } catch (_) {}
@@ -50,10 +62,38 @@ export function createAudioPlayback({
     playing = false;
   }
 
+  function beginPlayback(atOffset) {
+    if (!buffer) return;
+    ensureGraph();
+    stopSource({ preserveOffset: true });
+
+    offsetAtStart = Math.max(0, Math.min(buffer.duration, atOffset));
+    playbackOffset = offsetAtStart;
+    startedAtContextTime = context.currentTime;
+
+    source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(analyser);
+    source.onended = () => {
+      playing = false;
+      paused = false;
+      playbackOffset = 0;
+      source = null;
+      const handler = endedHandler;
+      endedHandler = null;
+      if (handler) handler();
+    };
+
+    source.start(0, offsetAtStart);
+    playing = true;
+    paused = false;
+  }
+
   return {
     get context() { return context; },
     get analyser() { return analyser; },
     get frequencyData() { return frequencyData; },
+    get timeDomainData() { return timeDomainData; },
     get binCount() { return frequencyData.length; },
     get buffer() { return buffer; },
     get hasAudio() { return Boolean(buffer); },
@@ -89,66 +129,89 @@ export function createAudioPlayback({
       await context.resume();
       stopSource();
       paused = false;
+      playbackOffset = 0;
       buffer = await context.decodeAudioData(await file.arrayBuffer());
       fileName = file.name || "";
       return buffer;
     },
 
-    play({ onEnded } = {}) {
+    play({ onEnded, fromStart = true } = {}) {
       if (!buffer) return;
-      ensureGraph();
-      stopSource();
-
       endedHandler = typeof onEnded === "function" ? onEnded : null;
-      source = context.createBufferSource();
-      source.buffer = buffer;
-      source.connect(analyser);
-      source.onended = () => {
-        playing = false;
-        paused = false;
-        source = null;
-        if (endedHandler) endedHandler();
-      };
-
-      source.start();
-      playing = true;
-      paused = false;
+      if (fromStart) playbackOffset = 0;
+      beginPlayback(playbackOffset);
     },
 
     async pause() {
       if (!playing) return;
-      if (context?.state === "running") await context.suspend();
-      playing = false;
+      stopSource();
       paused = true;
     },
 
     async resume() {
-      if (playing) return;
-      if (context?.state === "suspended") await context.resume();
-      if (source) {
-        playing = true;
-        paused = false;
-      }
+      if (playing || !buffer || !paused) return;
+      await this.resumeContext();
+      beginPlayback(playbackOffset);
     },
 
     stop() {
       stopSource();
+      playbackOffset = 0;
       paused = false;
+    },
+
+    seek(seconds) {
+      if (!buffer) return;
+      playbackOffset = Math.max(0, Math.min(buffer.duration, seconds));
+      if (playing) beginPlayback(playbackOffset);
     },
 
     unload() {
       stopSource();
       paused = false;
+      playbackOffset = 0;
       buffer = null;
       fileName = "";
       frequencyData.fill(0);
+      timeDomainData.fill(128);
       if (context?.state === "suspended") context.resume();
+    },
+
+    getPlaybackPosition() {
+      if (!buffer) return 0;
+      if (playing && source && context) {
+        return Math.min(
+          buffer.duration,
+          offsetAtStart + context.currentTime - startedAtContextTime,
+        );
+      }
+      return playbackOffset;
+    },
+
+    getProgress() {
+      if (!buffer || buffer.duration <= 0) return 0;
+      return this.getPlaybackPosition() / buffer.duration;
+    },
+
+    setProgress(fraction) {
+      if (!buffer) return;
+      this.seek(buffer.duration * Math.max(0, Math.min(1, fraction)));
     },
 
     pullFrequencyData() {
       if (!analyser) return false;
       analyser.getByteFrequencyData(frequencyData);
       return true;
+    },
+
+    pullTimeDomainData() {
+      if (!analyser) return false;
+      analyser.getByteTimeDomainData(timeDomainData);
+      return true;
+    },
+
+    setFftSize(size) {
+      if (analyser) analyser.fftSize = size;
     },
 
     setSmoothing(value) {
