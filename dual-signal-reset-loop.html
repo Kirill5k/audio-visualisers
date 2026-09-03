@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dual Signal — Audio Visualiser</title>
+  <link rel="stylesheet" href="css/visualiser-ui.css">
+</head>
+<body>
+  <div id="stage"></div>
+
+  <button id="panelToggle" class="glass" aria-label="Hide settings" title="Hide settings">×</button>
+
+  <aside id="panel" class="glass">
+    <div class="brand">
+      <div>
+        <div class="eyebrow">Portrait transmission study</div>
+        <h1>Dual Signal</h1>
+      </div>
+    </div>
+
+    <label class="file-picker" for="imageInput">Choose a portrait</label>
+    <input id="imageInput" type="file" accept="image/*" hidden>
+    <label class="file-picker" for="fileInput" style="margin-top: 8px;">Choose an audio file</label>
+    <input id="fileInput" type="file" accept="audio/*">
+
+    <section class="section">
+      <div class="section-title">Composition</div>
+      <div class="control">
+        <div class="control-head"><span>Signal split</span><span class="value" id="splitValue">0.50</span></div>
+        <input id="split" type="range" min="0.25" max="0.75" step="0.01" value="0.50">
+      </div>
+      <div class="control">
+        <div class="control-head"><span>Split width</span><span class="value" id="splitWidthValue">0.012</span></div>
+        <input id="splitWidth" type="range" min="0" max="0.06" step="0.002" value="0.012">
+      </div>
+      <label class="toggle-row">
+        <span>Monochrome</span>
+        <input id="monochrome" type="checkbox" checked>
+      </label>
+      <div class="color-row"><span>Signal accent</span><input id="accentColor" type="color" value="#d7e7df"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Audio response</div>
+      <div class="control">
+        <div class="control-head"><span>Response</span><span class="value" id="responseValue">1.20</span></div>
+        <input id="response" type="range" min="0" max="3" step="0.05" value="1.20">
+      </div>
+      <div class="control">
+        <div class="control-head"><span>Displacement</span><span class="value" id="displacementValue">0.020</span></div>
+        <input id="displacement" type="range" min="0" max="0.10" step="0.002" value="0.020">
+      </div>
+      <div class="control">
+        <div class="control-head"><span>Glitch strength</span><span class="value" id="glitchValue">0.035</span></div>
+        <input id="glitch" type="range" min="0" max="0.15" step="0.005" value="0.035">
+      </div>
+      <div class="control">
+        <div class="control-head"><span>FFT smoothing</span><span class="value" id="smoothingValue">0.76</span></div>
+        <input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.76">
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Effects</div>
+      <label class="toggle-row">
+        <span>Film grain</span>
+        <input id="grain" type="checkbox" checked>
+      </label>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Capture</div>
+      <label class="toggle-row">
+        <span>Record on load</span>
+        <input id="autoRecordToggle" type="checkbox">
+      </label>
+      <label class="toggle-row">
+        <span>Export on load</span>
+        <input id="autoExportToggle" type="checkbox">
+      </label>
+      <label class="toggle-row">
+        <span>Lock recording to 60 fps</span>
+        <input id="lock60fpsToggle" type="checkbox">
+      </label>
+    </section>
+  </aside>
+
+  <nav id="actions">
+    <button id="playPauseBtn" class="action glass" disabled title="Play">▶ <span class="action-label">Play</span></button>
+    <button id="replayBtn" class="action glass" disabled title="Replay">↺ <span class="action-label">Replay</span></button>
+    <button id="muteBtn" class="action glass" disabled title="Mute">🔊 <span class="action-label">Mute</span></button>
+    <button id="unloadBtn" class="action glass" disabled title="Unload audio">⊘ <span class="action-label">Unload</span></button>
+    <button id="recordBtn" class="action glass" disabled><span class="record-dot"></span><span class="action-label">Record</span></button>
+    <button id="exportBtn" class="action glass" disabled>↓ <span class="action-label">Export</span></button>
+    <button id="fullscreenBtn" class="action glass" title="Fullscreen">⛶</button>
+  </nav>
+
+  <div id="readout" class="glass">
+    <span id="statusLight"></span>
+    <span id="statusText">Choose a portrait and audio file</span>
+    <span id="fps">— fps</span>
+  </div>
+
+  <div id="exportOverlay">
+    <div class="export-card glass">
+      <div id="exportStatus">Rendering Dual Signal…</div>
+      <div class="progress"><div id="exportProgressBar"></div></div>
+      <div id="exportPercent">0%</div>
+      <button id="exportCancelBtn" class="action glass">Cancel export</button>
+    </div>
+  </div>
+
+  <div id="fatal">WebGL is unavailable in this browser.</div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.165.0/build/three.module.js"
+    }
+  }
+  </script>
+  <script src="js/recorder.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
+  <script src="js/offline-exporter.js"></script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { createAudioPlayback } from "./js/audio-playback.js";
+    import { bandEnergy, estimateOnset } from "./js/audio-analysis.js";
+    import { createCaptureSession } from "./js/capture-export.js";
+
+    const EXPORT_WIDTH = 1920;
+    const EXPORT_HEIGHT = 1080;
+    const EXPORT_FPS = 60;
+    const FFT_SIZE = 2048;
+    const $ = (id) => document.getElementById(id);
+
+    const settings = {
+      split: 0.5,
+      splitWidth: 0.012,
+      response: 1.2,
+      displacement: 0.02,
+      glitch: 0.035,
+      smoothing: 0.76,
+      monochrome: true,
+      grain: true,
+      lock60: false,
+    };
+
+    const audio = createAudioPlayback({
+      fftSize: FFT_SIZE,
+      smoothing: settings.smoothing,
+      minDecibels: -100,
+      maxDecibels: -26,
+    });
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x010204);
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 2);
+    camera.position.z = 1;
+
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    } catch (_) {
+      $("fatal").style.display = "flex";
+      throw _;
+    }
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    $("stage").appendChild(renderer.domElement);
+
+    const placeholderTexture = new THREE.DataTexture(
+      new Uint8Array([12, 14, 14, 255]),
+      1,
+      1,
+      THREE.RGBAFormat,
+    );
+    placeholderTexture.needsUpdate = true;
+    placeholderTexture.colorSpace = THREE.SRGBColorSpace;
+
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uImage: { value: placeholderTexture },
+        uImageSize: { value: new THREE.Vector2(1, 1) },
+        uResolution: { value: new THREE.Vector2(innerWidth, innerHeight) },
+        uTime: { value: 0 },
+        uBass: { value: 0 },
+        uMid: { value: 0 },
+        uHigh: { value: 0 },
+        uOnset: { value: 0 },
+        uSplit: { value: settings.split },
+        uSplitWidth: { value: settings.splitWidth },
+        uDisplacement: { value: settings.displacement },
+        uGlitch: { value: settings.glitch },
+        uMonochrome: { value: 1 },
+        uGrain: { value: 1 },
+        uAccent: { value: new THREE.Color($("accentColor").value) },
+        uHasImage: { value: 0 },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+        uniform sampler2D uImage;
+        uniform vec2 uImageSize;
+        uniform vec2 uResolution;
+        uniform vec3 uAccent;
+        uniform float uTime;
+        uniform float uBass;
+        uniform float uMid;
+        uniform float uHigh;
+        uniform float uOnset;
+        uniform float uSplit;
+        uniform float uSplitWidth;
+        uniform float uDisplacement;
+        uniform float uGlitch;
+        uniform float uMonochrome;
+        uniform float uGrain;
+        uniform float uHasImage;
+        varying vec2 vUv;
+
+        float hash(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+        }
+
+        float noise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+                     mix(hash(i + vec2(0.0, 1.0)), hash(i + 1.0), f.x), f.y);
+        }
+
+        vec2 coverUv(vec2 uv) {
+          float screenAspect = uResolution.x / max(uResolution.y, 1.0);
+          float imageAspect = uImageSize.x / max(uImageSize.y, 1.0);
+          vec2 visible = vec2(1.0);
+          if (screenAspect > imageAspect) visible.y = imageAspect / screenAspect;
+          else visible.x = screenAspect / imageAspect;
+          return (uv - 0.5) * visible + 0.5;
+        }
+
+        vec3 sampleRgb(vec2 uv, float amount) {
+          vec2 aberration = vec2(amount, amount * 0.22);
+          float r = texture2D(uImage, uv + aberration).r;
+          float g = texture2D(uImage, uv).g;
+          float b = texture2D(uImage, uv - aberration).b;
+          return vec3(r, g, b);
+        }
+
+        void main() {
+          if (uHasImage < 0.5) {
+            float pulse = 0.04 + 0.025 * sin(uTime * 0.8);
+            gl_FragColor = vec4(vec3(pulse), 1.0);
+            return;
+          }
+
+          float side = vUv.x < uSplit ? -1.0 : 1.0;
+          float lineIndex = floor(vUv.y * 90.0);
+          float lineNoise = hash(vec2(lineIndex, floor(uTime * 14.0)));
+          float glitchGate = step(0.72 - uHigh * 0.24 - uOnset * 0.22, lineNoise);
+          float glitchAmount = (uHigh * 0.6 + uOnset) * uGlitch * glitchGate;
+
+          vec2 uv = vUv;
+          uv.x += side * uBass * uDisplacement;
+          uv.x += side * uSplitWidth * 0.25;
+          uv.x += (lineNoise - 0.5) * glitchAmount;
+          uv.y += (noise(vec2(vUv.y * 7.0, uTime * 0.34)) - 0.5)
+                * uMid * uDisplacement;
+          vec2 imageUv = coverUv(uv);
+
+          float outOfBounds = step(imageUv.x, 0.0) + step(1.0, imageUv.x)
+                            + step(imageUv.y, 0.0) + step(1.0, imageUv.y);
+          float chroma = uGlitch * (uHigh * 0.55 + uOnset * 0.9);
+          vec3 color = sampleRgb(imageUv, chroma);
+
+          float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
+          vec3 mono = mix(vec3(luminance), uAccent * luminance, 0.22 + uHigh * 0.18);
+          color = mix(color, mono, uMonochrome);
+
+          float seam = 1.0 - smoothstep(
+            uSplitWidth * 0.25,
+            uSplitWidth * 0.9,
+            abs(vUv.x - uSplit)
+          );
+          color *= 1.0 - seam * 0.86;
+
+          float grain = hash(gl_FragCoord.xy + fract(uTime) * 901.7) - 0.5;
+          color += grain * uGrain * 0.055;
+          float vignette = 1.0 - smoothstep(0.28, 0.76, length(vUv - 0.5));
+          color *= 0.72 + vignette * 0.38;
+          color *= 1.0 - min(outOfBounds, 1.0);
+          gl_FragColor = vec4(color, 1.0);
+        }
+      `,
+      depthTest: false,
+      depthWrite: false,
+    });
+
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+    scene.add(screen);
+
+    let portraitTexture = null;
+    let portraitName = "";
+    let elapsed = 0;
+    let bass = 0;
+    let mid = 0;
+    let high = 0;
+    let onset = 0;
+    let previousEnergy = 0;
+    let fpsFrames = 0;
+    let fpsElapsed = 0;
+    let previousTime = performance.now();
+    const gl = renderer.getContext();
+
+    function setStatus(message, live = false) {
+      $("statusText").textContent = message;
+      $("statusLight").classList.toggle("live", live);
+    }
+
+    function readyMessage() {
+      if (!portraitName && !audio.hasAudio) return "Choose a portrait and audio file";
+      if (!portraitName) return "Choose a portrait · " + (audio.fileName || "audio ready");
+      if (!audio.hasAudio) return "Portrait ready · choose an audio file";
+      return (audio.isPlaying ? "Playing · " : "Ready · ") + (audio.fileName || "audio");
+    }
+
+    const capture = createCaptureSession({
+      width: EXPORT_WIDTH,
+      height: EXPORT_HEIGHT,
+      fps: EXPORT_FPS,
+      getCanvas: () => renderer.domElement,
+      getAudioTrack: () => audio.getRecordingAudioTrack(),
+      saveViewport: () => ({
+        width: innerWidth,
+        height: innerHeight,
+        pixelRatio: renderer.getPixelRatio(),
+      }),
+      applyViewport: (width, height) => {
+        renderer.setPixelRatio(1);
+        renderer.setSize(width, height, false);
+        material.uniforms.uResolution.value.set(width, height);
+      },
+      restoreViewport: (state) => {
+        renderer.setPixelRatio(state.pixelRatio);
+        renderer.setSize(state.width, state.height, false);
+        material.uniforms.uResolution.value.set(state.width, state.height);
+      },
+      overlay: {
+        root: $("exportOverlay"),
+        status: $("exportStatus"),
+        progress: $("exportProgressBar"),
+        percent: $("exportPercent"),
+        cancelBtn: $("exportCancelBtn"),
+      },
+    });
+
+    const recorder = createRecorder({
+      defaultFilename: "dual_signal_1080p",
+      onStart: () => {
+        $("recordBtn").classList.add("recording");
+        $("recordBtn").innerHTML = '■ <span class="action-label">Stop</span>';
+        setStatus("Recording", true);
+      },
+      onStop: () => {
+        $("recordBtn").classList.remove("recording");
+        $("recordBtn").innerHTML = '<span class="record-dot"></span><span class="action-label">Record</span>';
+        capture.onRecordingStopped();
+        setStatus(readyMessage(), audio.isPlaying);
+      },
+    });
+
+    function clearReactiveState() {
+      elapsed = 0;
+      bass = 0;
+      mid = 0;
+      high = 0;
+      onset = 0;
+      previousEnergy = 0;
+      material.uniforms.uTime.value = 0;
+      material.uniforms.uBass.value = 0;
+      material.uniforms.uMid.value = 0;
+      material.uniforms.uHigh.value = 0;
+      material.uniforms.uOnset.value = 0;
+    }
+
+    function analyse(data, delta) {
+      const sampleRate = audio.context?.sampleRate || 48000;
+      const targetBass = Math.min(1.4, bandEnergy(data, 30, 140, sampleRate, FFT_SIZE, settings.response));
+      const targetMid = Math.min(1.3, bandEnergy(data, 180, 2600, sampleRate, FFT_SIZE, settings.response));
+      const targetHigh = Math.min(1.2, bandEnergy(data, 4200, 15000, sampleRate, FFT_SIZE, settings.response * 1.2));
+      const smoothing = 1 - Math.exp(-delta * 12);
+      bass += (targetBass - bass) * smoothing;
+      mid += (targetMid - mid) * smoothing;
+      high += (targetHigh - high) * smoothing;
+      const energy = targetBass * 0.55 + targetMid * 0.3 + targetHigh * 0.15;
+      if (estimateOnset(energy, previousEnergy, 0.075)) onset = Math.min(1.5, 0.65 + energy);
+      previousEnergy = energy;
+      onset *= Math.exp(-delta * 7.5);
+    }
+
+    function renderFrame(delta, externalFrequencyData = null) {
+      elapsed += delta;
+
+      if (externalFrequencyData) {
+        analyse(externalFrequencyData, delta);
+      } else if (audio.isPlaying) {
+        audio.pullFrequencyData();
+        analyse(audio.frequencyData.subarray(0, FFT_SIZE / 2), delta);
+      } else {
+        bass *= Math.exp(-delta * 5);
+        mid *= Math.exp(-delta * 5);
+        high *= Math.exp(-delta * 5);
+        onset *= Math.exp(-delta * 8);
+      }
+
+      material.uniforms.uTime.value = elapsed;
+      material.uniforms.uBass.value = bass;
+      material.uniforms.uMid.value = mid;
+      material.uniforms.uHigh.value = high;
+      material.uniforms.uOnset.value = onset;
+      renderer.render(scene, camera);
+      if (recorder.isRecording) gl.finish();
+
+      fpsFrames++;
+      fpsElapsed += delta;
+      if (fpsElapsed >= 0.5) {
+        $("fps").textContent = Math.round(fpsFrames / fpsElapsed) + " fps";
+        fpsFrames = 0;
+        fpsElapsed = 0;
+      }
+    }
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      if (capture.isExporting) {
+        previousTime = now;
+        return;
+      }
+      if (recorder.isRecording && capture.shouldSkipRecordingFrame(now, settings.lock60)) return;
+      const measuredDelta = Math.min((now - previousTime) / 1000, 0.05);
+      previousTime = now;
+      renderFrame(recorder.isRecording && settings.lock60 ? 1 / 60 : measuredDelta);
+      if (recorder.isRecording) capture.requestRecordingFrame(now);
+    }
+    requestAnimationFrame(animate);
+
+    async function loadPortrait(file) {
+      const url = URL.createObjectURL(file);
+      try {
+        const texture = await new THREE.TextureLoader().loadAsync(url);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        portraitTexture?.dispose();
+        portraitTexture = texture;
+        portraitName = file.name || "portrait";
+        material.uniforms.uImage.value = texture;
+        material.uniforms.uImageSize.value.set(texture.image.width, texture.image.height);
+        material.uniforms.uHasImage.value = 1;
+        setStatus(readyMessage(), audio.isPlaying);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    function bindRange(id, key, decimals, suffix = "", onInput = null) {
+      const input = $(id);
+      const output = $(id + "Value");
+      input.addEventListener("input", () => {
+        settings[key] = Number(input.value);
+        output.textContent = settings[key].toFixed(decimals) + suffix;
+        onInput?.(settings[key]);
+      });
+    }
+
+    bindRange("split", "split", 2, "", (value) => material.uniforms.uSplit.value = value);
+    bindRange("splitWidth", "splitWidth", 3, "", (value) => material.uniforms.uSplitWidth.value = value);
+    bindRange("response", "response", 2);
+    bindRange("displacement", "displacement", 3, "", (value) => material.uniforms.uDisplacement.value = value);
+    bindRange("glitch", "glitch", 3, "", (value) => material.uniforms.uGlitch.value = value);
+    bindRange("smoothing", "smoothing", 2, "", (value) => audio.setSmoothing(value));
+
+    $("monochrome").addEventListener("change", (event) => {
+      settings.monochrome = event.target.checked;
+      material.uniforms.uMonochrome.value = settings.monochrome ? 1 : 0;
+    });
+    $("grain").addEventListener("change", (event) => {
+      settings.grain = event.target.checked;
+      material.uniforms.uGrain.value = settings.grain ? 1 : 0;
+    });
+    $("accentColor").addEventListener("input", (event) => material.uniforms.uAccent.value.set(event.target.value));
+    $("lock60fpsToggle").addEventListener("change", (event) => settings.lock60 = event.target.checked);
+
+    $("imageInput").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      setStatus("Loading portrait · " + file.name);
+      try {
+        await loadPortrait(file);
+      } catch (error) {
+        console.error(error);
+        setStatus("Portrait failed · " + error.message);
+      }
+    });
+
+    const playPauseBtn = $("playPauseBtn");
+    const replayBtn = $("replayBtn");
+    const muteBtn = $("muteBtn");
+    const unloadBtn = $("unloadBtn");
+    const recordBtn = $("recordBtn");
+    const exportBtn = $("exportBtn");
+
+    function updatePlayPauseUI() {
+      playPauseBtn.disabled = !audio.hasAudio;
+      playPauseBtn.innerHTML = audio.isPlaying
+        ? '⏸ <span class="action-label">Pause</span>'
+        : '▶ <span class="action-label">Play</span>';
+      playPauseBtn.title = audio.isPlaying ? "Pause" : "Play";
+    }
+
+    function updateMuteUI() {
+      muteBtn.disabled = !audio.hasAudio;
+      muteBtn.innerHTML = audio.isMuted
+        ? '🔇 <span class="action-label">Unmute</span>'
+        : '🔊 <span class="action-label">Mute</span>';
+      muteBtn.title = audio.isMuted ? "Unmute" : "Mute";
+    }
+
+    function setButtonsEnabled(enabled) {
+      replayBtn.disabled = !enabled;
+      unloadBtn.disabled = !enabled;
+      recordBtn.disabled = !enabled;
+      const exportSupported = Boolean(window.showSaveFilePicker && window.VideoEncoder && window.AudioEncoder);
+      exportBtn.disabled = !enabled || !exportSupported;
+      if (enabled && !exportSupported) exportBtn.title = "Offline export requires Chromium with WebCodecs";
+      updatePlayPauseUI();
+      updateMuteUI();
+    }
+
+    function startPlayback(preparedRecording = null) {
+      if (!audio.hasAudio || capture.isExporting) return;
+      clearReactiveState();
+      if (preparedRecording && !recorder.isRecording) {
+        recorder.startAutoRecord(preparedRecording, () => capture.makeRecordingStream());
+      }
+      audio.play({
+        onEnded: () => {
+          updatePlayPauseUI();
+          setStatus("Playback finished · " + (audio.fileName || "audio"));
+          if (recorder.isRecording) recorder.stop();
+        },
+      });
+      updatePlayPauseUI();
+      setStatus("Playing · " + (audio.fileName || "audio"), true);
+    }
+
+    async function togglePlayPause() {
+      if (capture.isExporting) return;
+      if (!audio.hasAudio) {
+        $("fileInput").click();
+      } else if (audio.isPlaying) {
+        await audio.pause();
+        updatePlayPauseUI();
+        setStatus("Paused · " + (audio.fileName || "audio"));
+      } else if (audio.isPaused) {
+        await audio.resume();
+        updatePlayPauseUI();
+        setStatus("Playing · " + (audio.fileName || "audio"), true);
+      } else {
+        await audio.resumeContext();
+        startPlayback();
+      }
+    }
+
+    async function replayTrack() {
+      if (!audio.hasAudio || capture.isExporting || recorder.isRecording) return;
+      await audio.resumeContext();
+      startPlayback();
+    }
+
+    $("fileInput").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const autoExport = $("autoExportToggle").checked;
+      const autoRecord = $("autoRecordToggle").checked;
+      let writable = null;
+      if (autoExport) {
+        writable = await capture.pickWritable("dual_signal.mp4");
+        if (!writable) return;
+      }
+      let prepared = null;
+      if (autoRecord && !autoExport) {
+        prepared = await recorder.prepareAutoRecord();
+        if (!prepared) return;
+      }
+      setStatus("Loading audio · " + file.name);
+      try {
+        await audio.load(file);
+        setButtonsEnabled(true);
+        if (autoExport) {
+          exportBtn.pendingWritable = writable;
+          exportBtn.click();
+        } else {
+          startPlayback(prepared);
+        }
+      } catch (error) {
+        console.error(error);
+        setStatus("Audio failed · " + error.message);
+      }
+    });
+
+    playPauseBtn.addEventListener("click", togglePlayPause);
+    replayBtn.addEventListener("click", replayTrack);
+    muteBtn.addEventListener("click", () => {
+      if (!audio.hasAudio || capture.isExporting) return;
+      audio.toggleMute();
+      updateMuteUI();
+    });
+    unloadBtn.addEventListener("click", () => {
+      if (!audio.hasAudio || capture.isExporting || recorder.isRecording) return;
+      audio.unload();
+      $("fileInput").value = "";
+      clearReactiveState();
+      setButtonsEnabled(false);
+      setStatus(readyMessage());
+    });
+    recordBtn.addEventListener("click", async () => {
+      if (!audio.hasAudio || capture.isExporting) return;
+      if (audio.isPaused) await audio.resume();
+      recorder.toggle(() => capture.makeRecordingStream());
+      updatePlayPauseUI();
+    });
+
+    exportBtn.addEventListener("click", async () => {
+      if (!audio.hasAudio || capture.isExporting || recorder.isRecording) return;
+      const pendingWritable = exportBtn.pendingWritable || null;
+      exportBtn.pendingWritable = null;
+      await capture.runOfflineExport({
+        audio,
+        suggestedName: "dual_signal.mp4",
+        pendingWritable,
+        onStatus: setStatus,
+        labels: {
+          rendering: "Rendering Dual Signal…",
+          progress: "Rendering frame {frame} of {total}",
+          complete: "Export complete!",
+          cancelled: "Export cancelled",
+          saved: "Export saved · dual_signal.mp4",
+          failed: "Export failed · {message}",
+        },
+        prepare: () => {
+          const saved = { elapsed, bass, mid, high, onset, previousEnergy };
+          clearReactiveState();
+          return saved;
+        },
+        restore: (saved) => {
+          if (!saved) return;
+          elapsed = saved.elapsed;
+          bass = saved.bass;
+          mid = saved.mid;
+          high = saved.high;
+          onset = saved.onset;
+          previousEnergy = saved.previousEnergy;
+        },
+        renderFrame: (fftData, delta) => renderFrame(delta, fftData),
+        readCanvas: () => renderer.domElement,
+        gpuFinish: () => gl.finish(),
+      });
+    });
+
+    $("panelToggle").addEventListener("click", () => {
+      const hidden = $("panel").classList.toggle("hidden");
+      $("panelToggle").classList.toggle("closed", hidden);
+      $("panelToggle").textContent = hidden ? "☰" : "×";
+      $("panelToggle").title = hidden ? "Show settings" : "Hide settings";
+      $("panelToggle").setAttribute("aria-label", hidden ? "Show settings" : "Hide settings");
+    });
+    $("fullscreenBtn").addEventListener("click", () => {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    });
+
+    addEventListener("resize", () => {
+      if (capture.isExporting || recorder.isRecording) return;
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight);
+      material.uniforms.uResolution.value.set(innerWidth, innerHeight);
+    });
+
+    addEventListener("keydown", (event) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      const tag = event.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || event.target?.isContentEditable) return;
+      if (event.code === "Space") {
+        event.preventDefault();
+        togglePlayPause();
+      } else if (event.key === "m" || event.key === "M") {
+        audio.toggleMute();
+        updateMuteUI();
+      } else if (event.key === "r" || event.key === "R") {
+        replayTrack();
+      }
+    });
+  </script>
+</body>
+</html>
