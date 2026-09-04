@@ -38,31 +38,77 @@
         <span>Monochrome</span>
         <input id="monochrome" type="checkbox" checked>
       </label>
-      <div class="color-row"><span>Signal accent</span><input id="accentColor" type="color" value="#d7e7df"></div>
+      <div class="color-row"><span>Monochrome base</span><input id="monoBaseColor" type="color" value="#ffffff"></div>
+      <div class="color-row"><span>Cool accent</span><input id="accentColor" type="color" value="#ecaa67"></div>
+      <div class="color-row"><span>Warm accent</span><input id="warmAccentColor" type="color" value="#ecaa67"></div>
     </section>
 
     <section class="section">
       <div class="section-title">Audio response</div>
       <div class="control">
-        <div class="control-head"><span>Response</span><span class="value" id="responseValue">1.20</span></div>
-        <input id="response" type="range" min="0" max="3" step="0.05" value="1.20">
+        <div class="control-head"><span>Response</span><span class="value" id="responseValue">1.55</span></div>
+        <input id="response" type="range" min="0" max="3" step="0.05" value="1.55">
       </div>
       <div class="control">
-        <div class="control-head"><span>Displacement</span><span class="value" id="displacementValue">0.020</span></div>
-        <input id="displacement" type="range" min="0" max="0.10" step="0.002" value="0.020">
+        <div class="control-head"><span>Displacement</span><span class="value" id="displacementValue">0.005</span></div>
+        <input id="displacement" type="range" min="0" max="0.03" step="0.001" value="0.005">
       </div>
       <div class="control">
-        <div class="control-head"><span>Glitch strength</span><span class="value" id="glitchValue">0.035</span></div>
-        <input id="glitch" type="range" min="0" max="0.15" step="0.005" value="0.035">
+        <div class="control-head"><span>Glitch strength</span><span class="value" id="glitchValue">0.005</span></div>
+        <input id="glitch" type="range" min="0" max="0.15" step="0.005" value="0.005">
       </div>
       <div class="control">
-        <div class="control-head"><span>FFT smoothing</span><span class="value" id="smoothingValue">0.76</span></div>
-        <input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.76">
+        <div class="control-head"><span>Variation</span><span class="value" id="variationValue">1.50</span></div>
+        <input id="variation" type="range" min="0" max="1.5" step="0.05" value="1.5">
+      </div>
+      <div class="control">
+        <div class="control-head"><span>Event sensitivity</span><span class="value" id="eventSensitivityValue">0.80</span></div>
+        <input id="eventSensitivity" type="range" min="0.4" max="2" step="0.05" value="0.8">
+      </div>
+      <div class="control">
+        <div class="control-head"><span>FFT smoothing</span><span class="value" id="smoothingValue">0.68</span></div>
+        <input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.68">
       </div>
     </section>
 
     <section class="section">
       <div class="section-title">Effects</div>
+      <label class="toggle-row">
+        <span>Adaptive modes</span>
+        <input id="adaptiveModes" type="checkbox" checked>
+      </label>
+      <label class="toggle-row">
+        <span>RGB event motifs</span>
+        <input id="rgbMotifs" type="checkbox" checked>
+      </label>
+      <label class="toggle-row">
+        <span>Reactive lighting</span>
+        <input id="reactiveLighting" type="checkbox" checked>
+      </label>
+      <label class="toggle-row">
+        <span>Enhanced treatment</span>
+        <input id="enhancedTreatment" type="checkbox" checked>
+      </label>
+      <div class="control">
+        <div class="control-head"><span>Treatment strength</span><span class="value" id="treatmentValue">0.85</span></div>
+        <input id="treatment" type="range" min="0" max="1.5" step="0.05" value="0.85">
+      </div>
+      <label class="toggle-row">
+        <span>Signal echoes</span>
+        <input id="signalEchoes" type="checkbox">
+      </label>
+      <label class="toggle-row">
+        <span>Edge aura</span>
+        <input id="edgeAura" type="checkbox" checked>
+      </label>
+      <label class="toggle-row">
+        <span>Glass refraction</span>
+        <input id="glassRefraction" type="checkbox" checked>
+      </label>
+      <label class="toggle-row">
+        <span>Ambient drift</span>
+        <input id="ambientDrift" type="checkbox" checked>
+      </label>
       <label class="toggle-row">
         <span>Film grain</span>
         <input id="grain" type="checkbox" checked>
@@ -139,12 +185,23 @@
     const settings = {
       split: 0.5,
       splitWidth: 0.012,
-      response: 1.2,
-      displacement: 0.02,
-      glitch: 0.035,
-      smoothing: 0.76,
+      response: 1.55,
+      displacement: 0.005,
+      glitch: 0.005,
+      variation: 1.5,
+      eventSensitivity: 0.8,
+      smoothing: 0.68,
       monochrome: true,
       grain: true,
+      adaptiveModes: true,
+      rgbMotifs: true,
+      reactiveLighting: true,
+      enhancedTreatment: true,
+      treatment: 0.85,
+      signalEchoes: false,
+      edgeAura: true,
+      glassRefraction: true,
+      ambientDrift: true,
       lock60: false,
     };
 
@@ -191,13 +248,30 @@
         uMid: { value: 0 },
         uHigh: { value: 0 },
         uOnset: { value: 0 },
+        uCentroid: { value: 0 },
+        uEvent: { value: 0 },
+        uEventPhase: { value: 1 },
+        uEventSeed: { value: 0 },
+        uMotif: { value: 0 },
+        uModeWeights: { value: new THREE.Vector4(1, 0, 0, 0) },
         uSplit: { value: settings.split },
         uSplitWidth: { value: settings.splitWidth },
         uDisplacement: { value: settings.displacement },
         uGlitch: { value: settings.glitch },
         uMonochrome: { value: 1 },
+        uMonoBase: { value: new THREE.Color($("monoBaseColor").value) },
         uGrain: { value: 1 },
         uAccent: { value: new THREE.Color($("accentColor").value) },
+        uWarmAccent: { value: new THREE.Color($("warmAccentColor").value) },
+        uEnhanced: { value: 1 },
+        uTreatment: { value: settings.treatment },
+        uVariation: { value: settings.variation },
+        uRgbMotifs: { value: 1 },
+        uReactiveLighting: { value: 1 },
+        uEchoes: { value: settings.signalEchoes ? 1 : 0 },
+        uEdgeAura: { value: 1 },
+        uGlass: { value: 1 },
+        uDrift: { value: 1 },
         uHasImage: { value: 0 },
       },
       vertexShader: `
@@ -213,17 +287,34 @@
         uniform vec2 uImageSize;
         uniform vec2 uResolution;
         uniform vec3 uAccent;
+        uniform vec3 uWarmAccent;
         uniform float uTime;
         uniform float uBass;
         uniform float uMid;
         uniform float uHigh;
         uniform float uOnset;
+        uniform float uCentroid;
+        uniform float uEvent;
+        uniform float uEventPhase;
+        uniform float uEventSeed;
+        uniform float uMotif;
+        uniform vec4 uModeWeights;
         uniform float uSplit;
         uniform float uSplitWidth;
         uniform float uDisplacement;
         uniform float uGlitch;
         uniform float uMonochrome;
+        uniform vec3 uMonoBase;
         uniform float uGrain;
+        uniform float uEnhanced;
+        uniform float uTreatment;
+        uniform float uVariation;
+        uniform float uRgbMotifs;
+        uniform float uReactiveLighting;
+        uniform float uEchoes;
+        uniform float uEdgeAura;
+        uniform float uGlass;
+        uniform float uDrift;
         uniform float uHasImage;
         varying vec2 vUv;
 
@@ -249,11 +340,25 @@
         }
 
         vec3 sampleRgb(vec2 uv, float amount) {
-          vec2 aberration = vec2(amount, amount * 0.22);
+          float motifValue = uMotif * uRgbMotifs;
+          vec2 aberration = vec2(amount, amount * 0.18);
+          if (motifValue > 0.5 && motifValue < 1.5) aberration = vec2(amount * 0.12, amount);
+          if (motifValue > 2.5 && motifValue < 3.5) {
+            float angle = uEventSeed * 6.2831853;
+            aberration = vec2(cos(angle), sin(angle)) * amount;
+          }
           float r = texture2D(uImage, uv + aberration).r;
           float g = texture2D(uImage, uv).g;
           float b = texture2D(uImage, uv - aberration).b;
-          return vec3(r, g, b);
+          vec3 rgb = vec3(r, g, b);
+          if (motifValue > 3.5) {
+            rgb = mix(rgb, rgb.gbr, smoothstep(0.2, 0.75, uEvent));
+          }
+          return rgb;
+        }
+
+        float luminanceAt(vec2 uv) {
+          return dot(texture2D(uImage, uv).rgb, vec3(0.2126, 0.7152, 0.0722));
         }
 
         void main() {
@@ -264,27 +369,93 @@
           }
 
           float side = vUv.x < uSplit ? -1.0 : 1.0;
+          float cleanMode = uModeWeights.x;
+          float pulseMode = uModeWeights.y;
+          float sliceMode = uModeWeights.z;
+          float bloomMode = uModeWeights.w;
+          float eventPower = uEvent * uVariation * uRgbMotifs;
+          float motifValue = uMotif * uRgbMotifs;
+          vec3 sideAccent = mix(uWarmAccent, uAccent, step(uSplit, vUv.x));
+          vec2 faceScale = vec2(1.0, 1.45);
+          vec2 leftFace = (vUv - vec2(0.34, 0.70)) * faceScale;
+          vec2 rightFace = (vUv - vec2(0.66, 0.70)) * faceScale;
+          float faceGuard = max(
+            exp(-dot(leftFace, leftFace) * 78.0),
+            exp(-dot(rightFace, rightFace) * 78.0)
+          );
+          float effectMask = 1.0 - faceGuard * 0.82;
+
           float lineIndex = floor(vUv.y * 90.0);
-          float lineNoise = hash(vec2(lineIndex, floor(uTime * 14.0)));
-          float glitchGate = step(0.72 - uHigh * 0.24 - uOnset * 0.22, lineNoise);
-          float glitchAmount = (uHigh * 0.6 + uOnset) * uGlitch * glitchGate;
+          float lineNoise = hash(vec2(lineIndex + uEventSeed * 41.0, floor(uTime * 14.0)));
+          float sliceNoise = hash(vec2(floor(vUv.y * (14.0 + uEventSeed * 17.0)), uEventSeed * 97.0));
+          float sliceMask = step(0.5 - sliceMode * 0.16, sliceNoise);
+          float scanPosition = mix(-0.12, 1.12, uEventPhase);
+          float scanMask = exp(-abs(vUv.y - scanPosition) * 42.0);
+          float glitchGate = step(
+            0.82 - uHigh * 0.12 - eventPower * 0.38 - sliceMode * 0.12,
+            lineNoise
+          );
+          float glitchAmount = uGlitch
+                             * (uHigh * 0.12 + eventPower * (0.65 + sliceMode * 0.7))
+                             * glitchGate;
 
           vec2 uv = vUv;
-          uv.x += side * uBass * uDisplacement;
+          float panel = floor(vUv.x * 9.0);
+          float panelOffset = (hash(vec2(panel, 17.0)) - 0.5)
+                            * (0.002 + uMid * 0.006 + eventPower * sliceMode * 0.015)
+                            * uTreatment;
+          float panelWave = sin(vUv.y * 13.0 + uTime * 0.35 + panel)
+                          * 0.0015 * (0.3 + uMid + bloomMode * 0.35);
+          uv.x += (panelOffset + panelWave) * uGlass * uEnhanced * effectMask;
+          vec2 drift = vec2(
+            sin(uTime * 0.13 + side * 0.8),
+            cos(uTime * 0.09 - side * 0.6)
+          ) * 0.0035 * uTreatment;
+          uv += drift * uDrift * uEnhanced * effectMask;
+          uv.x += side * uBass * uDisplacement * effectMask
+                * (0.18 + pulseMode * 0.3);
           uv.x += side * uSplitWidth * 0.25;
           uv.x += (lineNoise - 0.5) * glitchAmount;
+          if (motifValue > 1.5 && motifValue < 2.5) {
+            uv.x += (sliceNoise - 0.5) * sliceMask * eventPower * uGlitch * 1.8;
+          }
           uv.y += (noise(vec2(vUv.y * 7.0, uTime * 0.34)) - 0.5)
-                * uMid * uDisplacement;
+                * uMid * uDisplacement * effectMask * 0.32;
           vec2 imageUv = coverUv(uv);
 
           float outOfBounds = step(imageUv.x, 0.0) + step(1.0, imageUv.x)
                             + step(imageUv.y, 0.0) + step(1.0, imageUv.y);
-          float chroma = uGlitch * (uHigh * 0.55 + uOnset * 0.9);
+          float motifMask = 1.0;
+          if (motifValue > 1.5 && motifValue < 2.5) motifMask = mix(0.12, 1.0, sliceMask);
+          if (motifValue > 2.5 && motifValue < 3.5) motifMask = mix(0.1, 1.0, scanMask);
+          float chroma = uGlitch * (uHigh * 0.14 + eventPower * 0.95)
+                       * motifMask * (0.7 + uCentroid * 0.7);
           vec3 color = sampleRgb(imageUv, chroma);
 
           float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
-          vec3 mono = mix(vec3(luminance), uAccent * luminance, 0.22 + uHigh * 0.18);
+          vec3 mono = mix(uMonoBase * luminance, sideAccent * luminance, 0.24 + uHigh * 0.2);
           color = mix(color, mono, uMonochrome);
+
+          float echoDistance = (
+            0.004 + uBass * 0.004 + eventPower * (0.007 + pulseMode * 0.008)
+          ) * uTreatment;
+          vec2 echoUvA = coverUv(uv + vec2(side * echoDistance, 0.0));
+          vec2 echoUvB = coverUv(uv + vec2(side * echoDistance * 2.1, 0.0015));
+          float echoLight = luminanceAt(echoUvA) * 0.65 + luminanceAt(echoUvB) * 0.35;
+          float echoAmount = uEnhanced * uEchoes * effectMask
+                           * (0.045 + uBass * pulseMode * 0.18 + eventPower * 0.2)
+                           * uTreatment;
+          color += sideAccent * echoLight * echoAmount;
+
+          vec2 texel = 1.5 / max(uImageSize, vec2(1.0));
+          float edgeX = abs(luminanceAt(imageUv + vec2(texel.x, 0.0))
+                          - luminanceAt(imageUv - vec2(texel.x, 0.0)));
+          float edgeY = abs(luminanceAt(imageUv + vec2(0.0, texel.y))
+                          - luminanceAt(imageUv - vec2(0.0, texel.y)));
+          float edge = pow(clamp(edgeX + edgeY, 0.0, 1.0), 0.7);
+          color += sideAccent * edge * uEnhanced * uEdgeAura * effectMask
+                 * (0.18 + bloomMode * 0.38 + uHigh * 0.62 + eventPower * 0.32)
+                 * uTreatment;
 
           float seam = 1.0 - smoothstep(
             uSplitWidth * 0.25,
@@ -293,8 +464,31 @@
           );
           color *= 1.0 - seam * 0.86;
 
+          float columnDistance = abs(vUv.x - uSplit);
+          float columnGlow = exp(-columnDistance / max(0.003, uSplitWidth * 2.2));
+          float columnCore = exp(-columnDistance * 440.0);
+          float bassZone = 1.0 - smoothstep(0.12, 0.48, vUv.y);
+          float midZone = 1.0 - smoothstep(0.08, 0.34, abs(vUv.y - 0.52));
+          float highZone = smoothstep(0.52, 0.9, vUv.y);
+          float bandSignal = uBass * bassZone + uMid * midZone + uHigh * highZone;
+          float signalPulse = 0.3 + bandSignal * uReactiveLighting
+                            + eventPower * scanMask * 0.8;
+          vec3 columnColor = mix(uWarmAccent, uAccent, smoothstep(uSplit - 0.02, uSplit + 0.02, vUv.x));
+          color += columnColor * (columnGlow * 0.15 + columnCore * 0.52)
+                 * signalPulse * uEnhanced * uEchoes * uTreatment;
+
+          float glassBorder = 1.0 - smoothstep(0.0, 0.045, min(fract(vUv.x * 9.0), 1.0 - fract(vUv.x * 9.0)));
+          color += sideAccent * glassBorder * uGlass * uEnhanced * uTreatment
+                 * (0.012 + uHigh * 0.018 + eventPower * sliceMode * 0.05);
+          color += uWarmAccent * uBass * pow(1.0 - vUv.y, 2.0)
+                 * 0.06 * uEnhanced * uTreatment * uReactiveLighting;
+          color += uAccent * uHigh * pow(vUv.y, 2.0)
+                 * 0.065 * uEnhanced * uTreatment * uReactiveLighting;
+          color += sideAccent * scanMask * eventPower * 0.14;
+          color = (color - 0.5) * (1.0 + eventPower * 0.08) + 0.5;
+
           float grain = hash(gl_FragCoord.xy + fract(uTime) * 901.7) - 0.5;
-          color += grain * uGrain * 0.055;
+          color += grain * uGrain * (0.04 + eventPower * 0.025);
           float vignette = 1.0 - smoothstep(0.28, 0.76, length(vUv - 0.5));
           color *= 0.72 + vignette * 0.38;
           color *= 1.0 - min(outOfBounds, 1.0);
@@ -315,7 +509,28 @@
     let mid = 0;
     let high = 0;
     let onset = 0;
+    let centroid = 0;
     let previousEnergy = 0;
+    let shortEnergy = 0;
+    let longEnergy = 0;
+    let fluxMean = 0;
+    let fluxDeviation = 0.003;
+    let analysisPrimed = false;
+    let eventCount = 0;
+    let eventCooldown = 0;
+    let eventAge = 1;
+    let eventDuration = 0.4;
+    let eventPeak = 0;
+    let eventPhase = 1;
+    let eventSeed = 0;
+    let motif = 0;
+    let reactiveMode = 0;
+    let modeHold = 0;
+    const previousSpectrum = new Float32Array(FFT_SIZE / 2);
+    const bandPeaks = new Float32Array([0.14, 0.12, 0.09]);
+    const modeWeights = new THREE.Vector4(1, 0, 0, 0);
+    const targetModeWeights = new THREE.Vector4(1, 0, 0, 0);
+    const MODE_NAMES = ["Clean", "Pulse", "Slice", "Bloom"];
     let fpsFrames = 0;
     let fpsElapsed = 0;
     let previousTime = performance.now();
@@ -330,7 +545,8 @@
       if (!portraitName && !audio.hasAudio) return "Choose a portrait and audio file";
       if (!portraitName) return "Choose a portrait · " + (audio.fileName || "audio ready");
       if (!audio.hasAudio) return "Portrait ready · choose an audio file";
-      return (audio.isPlaying ? "Playing · " : "Ready · ") + (audio.fileName || "audio");
+      const mode = settings.adaptiveModes ? " · " + MODE_NAMES[reactiveMode] : "";
+      return (audio.isPlaying ? "Playing · " : "Ready · ") + (audio.fileName || "audio") + mode;
     }
 
     const capture = createCaptureSession({
@@ -384,27 +600,191 @@
       mid = 0;
       high = 0;
       onset = 0;
+      centroid = 0;
       previousEnergy = 0;
+      shortEnergy = 0;
+      longEnergy = 0;
+      fluxMean = 0;
+      fluxDeviation = 0.003;
+      analysisPrimed = false;
+      eventCount = 0;
+      eventCooldown = 0;
+      eventAge = 1;
+      eventDuration = 0.4;
+      eventPeak = 0;
+      eventPhase = 1;
+      eventSeed = 0;
+      motif = 0;
+      reactiveMode = 0;
+      modeHold = 0;
+      previousSpectrum.fill(0);
+      bandPeaks.set([0.14, 0.12, 0.09]);
+      modeWeights.set(1, 0, 0, 0);
+      targetModeWeights.set(1, 0, 0, 0);
       material.uniforms.uTime.value = 0;
       material.uniforms.uBass.value = 0;
       material.uniforms.uMid.value = 0;
       material.uniforms.uHigh.value = 0;
       material.uniforms.uOnset.value = 0;
+      material.uniforms.uCentroid.value = 0;
+      material.uniforms.uEvent.value = 0;
+      material.uniforms.uEventPhase.value = 1;
+      material.uniforms.uEventSeed.value = 0;
+      material.uniforms.uMotif.value = 0;
+      material.uniforms.uModeWeights.value.copy(modeWeights);
+    }
+
+    function clamp01(value) {
+      return Math.max(0, Math.min(1, value));
+    }
+
+    function deterministicSeed(index, brightness, energy) {
+      const value = Math.sin(index * 91.731 + brightness * 317.17 + energy * 173.13) * 43758.5453;
+      return value - Math.floor(value);
+    }
+
+    function setReactiveMode(nextMode, hold = 0) {
+      if (!settings.adaptiveModes) {
+        targetModeWeights.set(0.18, 0.3, 0.26, 0.26);
+        return;
+      }
+      nextMode = Math.max(0, Math.min(3, nextMode | 0));
+      if (reactiveMode !== nextMode) {
+        reactiveMode = nextMode;
+        if (audio.isPlaying && !capture.isExporting) setStatus(readyMessage(), true);
+      }
+      targetModeWeights.set(0, 0, 0, 0);
+      targetModeWeights.setComponent(reactiveMode, 1);
+      modeHold = Math.max(modeHold, hold);
+    }
+
+    function advanceEvent(delta) {
+      eventCooldown = Math.max(0, eventCooldown - delta);
+      eventAge += delta;
+      eventPhase = Math.min(1, eventAge / Math.max(0.001, eventDuration));
+      onset = eventPeak * Math.pow(1 - eventPhase, 2);
+    }
+
+    function triggerEvent(energy, flux, targetBass, targetMid, targetHigh) {
+      eventSeed = deterministicSeed(eventCount++, centroid, energy + flux);
+      eventAge = 0;
+      eventDuration = THREE.MathUtils.lerp(
+        0.2,
+        0.72,
+        clamp01(targetMid * 0.55 + centroid * 0.45),
+      );
+      eventPeak = Math.min(
+        1.45,
+        0.45 + energy * 0.45 + Math.max(0, flux - fluxMean) * 13,
+      );
+      eventPhase = 0;
+      onset = eventPeak;
+      eventCooldown = THREE.MathUtils.lerp(0.09, 0.2, 1 / settings.eventSensitivity - 0.5);
+
+      if (targetHigh > targetBass * 1.12 || centroid > 0.42) {
+        motif = eventSeed > 0.46 ? 2 : 1;
+        setReactiveMode(2, 1.1 + targetHigh * 1.5);
+      } else if (targetBass > targetMid * 0.88) {
+        motif = eventSeed > 0.7 ? 3 : 0;
+        setReactiveMode(1, 1.25 + targetBass * 1.7);
+      } else if (energy > 0.62) {
+        motif = eventSeed > 0.5 ? 4 : 3;
+        setReactiveMode(3, 1.5 + energy * 1.8);
+      } else {
+        motif = Math.floor(eventSeed * 5);
+        setReactiveMode(eventSeed > 0.58 ? 3 : 1, 1 + energy * 1.2);
+      }
+    }
+
+    function normalizedBand(raw, index, delta) {
+      bandPeaks[index] = Math.max(raw, bandPeaks[index] * Math.exp(-delta * 0.22));
+      const normalized = raw / Math.max(0.07, bandPeaks[index]);
+      const noiseGate = clamp01((raw - 0.012) / 0.075);
+      return clamp01(normalized * noiseGate);
     }
 
     function analyse(data, delta) {
       const sampleRate = audio.context?.sampleRate || 48000;
-      const targetBass = Math.min(1.4, bandEnergy(data, 30, 140, sampleRate, FFT_SIZE, settings.response));
-      const targetMid = Math.min(1.3, bandEnergy(data, 180, 2600, sampleRate, FFT_SIZE, settings.response));
-      const targetHigh = Math.min(1.2, bandEnergy(data, 4200, 15000, sampleRate, FFT_SIZE, settings.response * 1.2));
+      const rawBass = bandEnergy(data, 30, 140, sampleRate, FFT_SIZE, settings.response);
+      const rawMid = bandEnergy(data, 180, 2600, sampleRate, FFT_SIZE, settings.response);
+      const rawHigh = bandEnergy(data, 4200, 15000, sampleRate, FFT_SIZE, settings.response * 1.2);
+      const targetBass = normalizedBand(rawBass, 0, delta);
+      const targetMid = normalizedBand(rawMid, 1, delta);
+      const targetHigh = normalizedBand(rawHigh, 2, delta);
       const smoothing = 1 - Math.exp(-delta * 12);
       bass += (targetBass - bass) * smoothing;
       mid += (targetMid - mid) * smoothing;
       high += (targetHigh - high) * smoothing;
+
+      let flux = 0;
+      let weightedFrequency = 0;
+      let spectrumTotal = 0;
+      const bins = Math.min(data.length, previousSpectrum.length);
+      for (let bin = 1; bin < bins; bin++) {
+        const level = data[bin] / 255;
+        if (analysisPrimed) flux += Math.max(0, level - previousSpectrum[bin]);
+        previousSpectrum[bin] = level;
+        spectrumTotal += level;
+        weightedFrequency += level * bin;
+      }
+      flux /= Math.max(1, bins - 1);
+      const targetCentroid = spectrumTotal > 0
+        ? (weightedFrequency / spectrumTotal) / Math.max(1, bins - 1)
+        : 0;
+      centroid += (targetCentroid - centroid) * (1 - Math.exp(-delta * 5));
+
+      const oldFluxMean = fluxMean;
+      const fluxSmoothing = 1 - Math.exp(-delta * 2.2);
+      fluxMean += (flux - fluxMean) * fluxSmoothing;
+      fluxDeviation += (Math.abs(flux - oldFluxMean) - fluxDeviation) * fluxSmoothing;
+
       const energy = targetBass * 0.55 + targetMid * 0.3 + targetHigh * 0.15;
-      if (estimateOnset(energy, previousEnergy, 0.075)) onset = Math.min(1.5, 0.65 + energy);
+      shortEnergy += (energy - shortEnergy) * (1 - Math.exp(-delta * 9));
+      longEnergy += (energy - longEnergy) * (1 - Math.exp(-delta * 0.65));
+
+      advanceEvent(delta);
+      const fluxThreshold = fluxMean + Math.max(
+        0.0025,
+        fluxDeviation * (2.15 / settings.eventSensitivity),
+      );
+      const spectralOnset = analysisPrimed && flux > fluxThreshold;
+      const energyOnset = analysisPrimed && estimateOnset(
+        energy,
+        previousEnergy,
+        0.055 / settings.eventSensitivity,
+      );
+      if (eventCooldown <= 0 && (spectralOnset || energyOnset)) {
+        triggerEvent(energy, flux, targetBass, targetMid, targetHigh);
+      }
+
+      modeHold = Math.max(0, modeHold - delta);
+      if (settings.adaptiveModes && modeHold <= 0) {
+        const energyRatio = shortEnergy / Math.max(0.08, longEnergy);
+        if (longEnergy < 0.2) setReactiveMode(0, 0.35);
+        else if (energyRatio > 1.18 && longEnergy > 0.36) setReactiveMode(3, 0.75);
+        else if (targetHigh > 0.6 && centroid > 0.34) setReactiveMode(2, 0.65);
+        else if (targetBass > targetHigh * 1.08) setReactiveMode(1, 0.75);
+        else setReactiveMode(3, 0.6);
+      } else if (!settings.adaptiveModes) {
+        setReactiveMode(0);
+      }
+
       previousEnergy = energy;
-      onset *= Math.exp(-delta * 7.5);
+      analysisPrimed = true;
+      modeWeights.lerp(targetModeWeights, 1 - Math.exp(-delta * 2.8));
+    }
+
+    function syncReactiveUniforms() {
+      material.uniforms.uBass.value = bass;
+      material.uniforms.uMid.value = mid;
+      material.uniforms.uHigh.value = high;
+      material.uniforms.uOnset.value = onset;
+      material.uniforms.uCentroid.value = centroid;
+      material.uniforms.uEvent.value = onset;
+      material.uniforms.uEventPhase.value = eventPhase;
+      material.uniforms.uEventSeed.value = eventSeed;
+      material.uniforms.uMotif.value = motif;
+      material.uniforms.uModeWeights.value.copy(modeWeights);
     }
 
     function renderFrame(delta, externalFrequencyData = null) {
@@ -419,14 +799,14 @@
         bass *= Math.exp(-delta * 5);
         mid *= Math.exp(-delta * 5);
         high *= Math.exp(-delta * 5);
-        onset *= Math.exp(-delta * 8);
+        advanceEvent(delta);
+        modeHold = Math.max(0, modeHold - delta);
+        targetModeWeights.set(1, 0, 0, 0);
+        modeWeights.lerp(targetModeWeights, 1 - Math.exp(-delta * 2));
       }
 
       material.uniforms.uTime.value = elapsed;
-      material.uniforms.uBass.value = bass;
-      material.uniforms.uMid.value = mid;
-      material.uniforms.uHigh.value = high;
-      material.uniforms.uOnset.value = onset;
+      syncReactiveUniforms();
       renderer.render(scene, camera);
       if (recorder.isRecording) gl.finish();
 
@@ -487,17 +867,60 @@
     bindRange("response", "response", 2);
     bindRange("displacement", "displacement", 3, "", (value) => material.uniforms.uDisplacement.value = value);
     bindRange("glitch", "glitch", 3, "", (value) => material.uniforms.uGlitch.value = value);
+    bindRange("variation", "variation", 2, "", (value) => material.uniforms.uVariation.value = value);
+    bindRange("eventSensitivity", "eventSensitivity", 2);
     bindRange("smoothing", "smoothing", 2, "", (value) => audio.setSmoothing(value));
+    bindRange("treatment", "treatment", 2, "", (value) => material.uniforms.uTreatment.value = value);
 
     $("monochrome").addEventListener("change", (event) => {
       settings.monochrome = event.target.checked;
       material.uniforms.uMonochrome.value = settings.monochrome ? 1 : 0;
     });
+    $("monoBaseColor").addEventListener("input", (event) => material.uniforms.uMonoBase.value.set(event.target.value));
     $("grain").addEventListener("change", (event) => {
       settings.grain = event.target.checked;
       material.uniforms.uGrain.value = settings.grain ? 1 : 0;
     });
     $("accentColor").addEventListener("input", (event) => material.uniforms.uAccent.value.set(event.target.value));
+    $("warmAccentColor").addEventListener("input", (event) => material.uniforms.uWarmAccent.value.set(event.target.value));
+    $("adaptiveModes").addEventListener("change", (event) => {
+      settings.adaptiveModes = event.target.checked;
+      if (settings.adaptiveModes) {
+        targetModeWeights.set(0, 0, 0, 0);
+        targetModeWeights.setComponent(reactiveMode, 1);
+      } else {
+        targetModeWeights.set(0.18, 0.3, 0.26, 0.26);
+      }
+      if (audio.isPlaying) setStatus(readyMessage(), true);
+    });
+    $("rgbMotifs").addEventListener("change", (event) => {
+      settings.rgbMotifs = event.target.checked;
+      material.uniforms.uRgbMotifs.value = settings.rgbMotifs ? 1 : 0;
+    });
+    $("reactiveLighting").addEventListener("change", (event) => {
+      settings.reactiveLighting = event.target.checked;
+      material.uniforms.uReactiveLighting.value = settings.reactiveLighting ? 1 : 0;
+    });
+    $("enhancedTreatment").addEventListener("change", (event) => {
+      settings.enhancedTreatment = event.target.checked;
+      material.uniforms.uEnhanced.value = settings.enhancedTreatment ? 1 : 0;
+    });
+    $("signalEchoes").addEventListener("change", (event) => {
+      settings.signalEchoes = event.target.checked;
+      material.uniforms.uEchoes.value = settings.signalEchoes ? 1 : 0;
+    });
+    $("edgeAura").addEventListener("change", (event) => {
+      settings.edgeAura = event.target.checked;
+      material.uniforms.uEdgeAura.value = settings.edgeAura ? 1 : 0;
+    });
+    $("glassRefraction").addEventListener("change", (event) => {
+      settings.glassRefraction = event.target.checked;
+      material.uniforms.uGlass.value = settings.glassRefraction ? 1 : 0;
+    });
+    $("ambientDrift").addEventListener("change", (event) => {
+      settings.ambientDrift = event.target.checked;
+      material.uniforms.uDrift.value = settings.ambientDrift ? 1 : 0;
+    });
     $("lock60fpsToggle").addEventListener("change", (event) => settings.lock60 = event.target.checked);
 
     $("imageInput").addEventListener("change", async (event) => {
@@ -658,7 +1081,34 @@
           failed: "Export failed · {message}",
         },
         prepare: () => {
-          const saved = { elapsed, bass, mid, high, onset, previousEnergy };
+          const saved = {
+            elapsed,
+            bass,
+            mid,
+            high,
+            onset,
+            centroid,
+            previousEnergy,
+            shortEnergy,
+            longEnergy,
+            fluxMean,
+            fluxDeviation,
+            analysisPrimed,
+            eventCount,
+            eventCooldown,
+            eventAge,
+            eventDuration,
+            eventPeak,
+            eventPhase,
+            eventSeed,
+            motif,
+            reactiveMode,
+            modeHold,
+            previousSpectrum: previousSpectrum.slice(),
+            bandPeaks: bandPeaks.slice(),
+            modeWeights: modeWeights.clone(),
+            targetModeWeights: targetModeWeights.clone(),
+          };
           clearReactiveState();
           return saved;
         },
@@ -669,7 +1119,29 @@
           mid = saved.mid;
           high = saved.high;
           onset = saved.onset;
+          centroid = saved.centroid;
           previousEnergy = saved.previousEnergy;
+          shortEnergy = saved.shortEnergy;
+          longEnergy = saved.longEnergy;
+          fluxMean = saved.fluxMean;
+          fluxDeviation = saved.fluxDeviation;
+          analysisPrimed = saved.analysisPrimed;
+          eventCount = saved.eventCount;
+          eventCooldown = saved.eventCooldown;
+          eventAge = saved.eventAge;
+          eventDuration = saved.eventDuration;
+          eventPeak = saved.eventPeak;
+          eventPhase = saved.eventPhase;
+          eventSeed = saved.eventSeed;
+          motif = saved.motif;
+          reactiveMode = saved.reactiveMode;
+          modeHold = saved.modeHold;
+          previousSpectrum.set(saved.previousSpectrum);
+          bandPeaks.set(saved.bandPeaks);
+          modeWeights.copy(saved.modeWeights);
+          targetModeWeights.copy(saved.targetModeWeights);
+          material.uniforms.uTime.value = elapsed;
+          syncReactiveUniforms();
         },
         renderFrame: (fftData, delta) => renderFrame(delta, fftData),
         readCanvas: () => renderer.domElement,
