@@ -180,7 +180,14 @@
     const EXPORT_HEIGHT = 1080;
     const EXPORT_FPS = 60;
     const FFT_SIZE = 2048;
+    // Shader time is wrapped: GPU sin() returns 0 for very large arguments, which
+    // silently kills the hash-driven glitch after ~26 minutes of playback.
+    const TIME_WRAP = 512;
     const $ = (id) => document.getElementById(id);
+
+    // The portrait shader writes straight to the framebuffer with no colour-space
+    // conversion, so all colour work stays in display space.
+    THREE.ColorManagement.enabled = false;
 
     const settings = {
       split: 0.5,
@@ -236,7 +243,7 @@
       THREE.RGBAFormat,
     );
     placeholderTexture.needsUpdate = true;
-    placeholderTexture.colorSpace = THREE.SRGBColorSpace;
+    placeholderTexture.colorSpace = THREE.NoColorSpace;
 
     const material = new THREE.ShaderMaterial({
       uniforms: {
@@ -386,7 +393,9 @@
           float effectMask = 1.0 - faceGuard * 0.82;
 
           float lineIndex = floor(vUv.y * 90.0);
-          float lineNoise = hash(vec2(lineIndex + uEventSeed * 41.0, floor(uTime * 14.0)));
+          // Keep the hash input small enough for sin() to stay precise.
+          float glitchTick = mod(floor(uTime * 14.0), 128.0);
+          float lineNoise = hash(vec2(lineIndex + uEventSeed * 41.0, glitchTick));
           float sliceNoise = hash(vec2(floor(vUv.y * (14.0 + uEventSeed * 17.0)), uEventSeed * 97.0));
           float sliceMask = step(0.5 - sliceMode * 0.16, sliceNoise);
           float scanPosition = mix(-0.12, 1.12, uEventPhase);
@@ -804,7 +813,7 @@
         modeWeights.lerp(targetModeWeights, 1 - Math.exp(-delta * 2));
       }
 
-      material.uniforms.uTime.value = elapsed;
+      material.uniforms.uTime.value = elapsed % TIME_WRAP;
       syncReactiveUniforms();
       renderer.render(scene, camera);
       if (recorder.isRecording) gl.finish();
@@ -836,7 +845,7 @@
       const url = URL.createObjectURL(file);
       try {
         const texture = await new THREE.TextureLoader().loadAsync(url);
-        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.colorSpace = THREE.NoColorSpace;
         texture.minFilter = THREE.LinearFilter;
         texture.magFilter = THREE.LinearFilter;
         portraitTexture?.dispose();
@@ -1139,7 +1148,7 @@
           bandPeaks.set(saved.bandPeaks);
           modeWeights.copy(saved.modeWeights);
           targetModeWeights.copy(saved.targetModeWeights);
-          material.uniforms.uTime.value = elapsed;
+          material.uniforms.uTime.value = elapsed % TIME_WRAP;
           syncReactiveUniforms();
         },
         renderFrame: (fftData, delta) => renderFrame(delta, fftData),
