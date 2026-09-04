@@ -484,7 +484,6 @@
                  * 0.06 * uEnhanced * uTreatment * uReactiveLighting;
           color += uAccent * uHigh * pow(vUv.y, 2.0)
                  * 0.065 * uEnhanced * uTreatment * uReactiveLighting;
-          color += sideAccent * scanMask * eventPower * 0.14;
           color = (color - 0.5) * (1.0 + eventPower * 0.08) + 0.5;
 
           float grain = hash(gl_FragCoord.xy + fract(uTime) * 901.7) - 0.5;
