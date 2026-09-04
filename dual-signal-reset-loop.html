@@ -36,11 +36,11 @@
       </div>
       <label class="toggle-row">
         <span>Monochrome</span>
-        <input id="monochrome" type="checkbox" checked>
+        <input id="monochrome" type="checkbox">
       </label>
       <div class="color-row"><span>Monochrome base</span><input id="monoBaseColor" type="color" value="#ffffff"></div>
-      <div class="color-row"><span>Cool accent</span><input id="accentColor" type="color" value="#ecaa67"></div>
-      <div class="color-row"><span>Warm accent</span><input id="warmAccentColor" type="color" value="#ecaa67"></div>
+      <div class="color-row"><span>Cool accent</span><input id="accentColor" type="color" value="#ffffff"></div>
+      <div class="color-row"><span>Warm accent</span><input id="warmAccentColor" type="color" value="#ffffff"></div>
     </section>
 
     <section class="section">
@@ -50,8 +50,8 @@
         <input id="response" type="range" min="0" max="3" step="0.05" value="1.55">
       </div>
       <div class="control">
-        <div class="control-head"><span>Displacement</span><span class="value" id="displacementValue">0.005</span></div>
-        <input id="displacement" type="range" min="0" max="0.03" step="0.001" value="0.005">
+        <div class="control-head"><span>Displacement</span><span class="value" id="displacementValue">0.014</span></div>
+        <input id="displacement" type="range" min="0" max="0.03" step="0.001" value="0.014">
       </div>
       <div class="control">
         <div class="control-head"><span>Glitch strength</span><span class="value" id="glitchValue">0.005</span></div>
@@ -62,8 +62,8 @@
         <input id="variation" type="range" min="0" max="1.5" step="0.05" value="1.5">
       </div>
       <div class="control">
-        <div class="control-head"><span>Event sensitivity</span><span class="value" id="eventSensitivityValue">0.80</span></div>
-        <input id="eventSensitivity" type="range" min="0.4" max="2" step="0.05" value="0.8">
+        <div class="control-head"><span>Event sensitivity</span><span class="value" id="eventSensitivityValue">0.85</span></div>
+        <input id="eventSensitivity" type="range" min="0.4" max="2" step="0.05" value="0.85">
       </div>
       <div class="control">
         <div class="control-head"><span>FFT smoothing</span><span class="value" id="smoothingValue">0.68</span></div>
@@ -90,8 +90,8 @@
         <input id="enhancedTreatment" type="checkbox" checked>
       </label>
       <div class="control">
-        <div class="control-head"><span>Treatment strength</span><span class="value" id="treatmentValue">0.85</span></div>
-        <input id="treatment" type="range" min="0" max="1.5" step="0.05" value="0.85">
+        <div class="control-head"><span>Treatment strength</span><span class="value" id="treatmentValue">0.90</span></div>
+        <input id="treatment" type="range" min="0" max="1.5" step="0.05" value="0.9">
       </div>
       <label class="toggle-row">
         <span>Signal echoes</span>
@@ -103,7 +103,7 @@
       </label>
       <label class="toggle-row">
         <span>Glass refraction</span>
-        <input id="glassRefraction" type="checkbox" checked>
+        <input id="glassRefraction" type="checkbox">
       </label>
       <label class="toggle-row">
         <span>Ambient drift</span>
@@ -186,21 +186,21 @@
       split: 0.5,
       splitWidth: 0.012,
       response: 1.55,
-      displacement: 0.005,
+      displacement: 0.014,
       glitch: 0.005,
       variation: 1.5,
-      eventSensitivity: 0.8,
+      eventSensitivity: 0.85,
       smoothing: 0.68,
-      monochrome: true,
+      monochrome: false,
       grain: true,
       adaptiveModes: true,
       rgbMotifs: true,
       reactiveLighting: true,
       enhancedTreatment: true,
-      treatment: 0.85,
+      treatment: 0.9,
       signalEchoes: false,
       edgeAura: true,
-      glassRefraction: true,
+      glassRefraction: false,
       ambientDrift: true,
       lock60: false,
     };
@@ -258,7 +258,7 @@
         uSplitWidth: { value: settings.splitWidth },
         uDisplacement: { value: settings.displacement },
         uGlitch: { value: settings.glitch },
-        uMonochrome: { value: 1 },
+        uMonochrome: { value: settings.monochrome ? 1 : 0 },
         uMonoBase: { value: new THREE.Color($("monoBaseColor").value) },
         uGrain: { value: 1 },
         uAccent: { value: new THREE.Color($("accentColor").value) },
@@ -270,7 +270,7 @@
         uReactiveLighting: { value: 1 },
         uEchoes: { value: settings.signalEchoes ? 1 : 0 },
         uEdgeAura: { value: 1 },
-        uGlass: { value: 1 },
+        uGlass: { value: settings.glassRefraction ? 1 : 0 },
         uDrift: { value: 1 },
         uHasImage: { value: 0 },
       },
