@@ -1,6 +1,8 @@
 /**
  * Shared canvas capture + offline export session for the visualisers.
- * Owns 1080p viewport swap, MediaRecorder stream, export overlay, and offlineExport orchestration.
+ * Owns 1080p viewport swaps, MediaRecorder stream, export overlay, and offlineExport orchestration.
+ * Recording and offline export may use different raster scales: recording should normally
+ * render at the encoded size, while export can supersample before its encoder downscale.
  * Page-specific viewport/scene logic is supplied via callbacks.
  */
 export function createCaptureSession({
@@ -11,6 +13,7 @@ export function createCaptureSession({
   getAudioTrack,
   saveViewport,
   applyViewport,
+  applyRecordingViewport,
   restoreViewport,
   overlay = {},
 } = {}) {
@@ -56,9 +59,9 @@ export function createCaptureSession({
     if (overlayStatus && statusMessage) overlayStatus.textContent = statusMessage;
   }
 
-  function beginViewportCapture() {
+  function beginViewportCapture(viewportApplier = applyViewport) {
     if (!preCapture && saveViewport) preCapture = saveViewport();
-    if (applyViewport) applyViewport(width, height);
+    if (viewportApplier) viewportApplier(width, height);
   }
 
   function endViewportCapture() {
@@ -96,8 +99,10 @@ export function createCaptureSession({
       const canvas = getCanvas?.();
       if (!canvas) return null;
 
-      beginViewportCapture();
-      const stream = canvas.captureStream(0);
+      beginViewportCapture(applyRecordingViewport || applyViewport);
+      // A positive rate asks the browser for a real-time stream capped at the target
+      // cadence. Animation locking remains a separate concern in the page render loop.
+      const stream = canvas.captureStream(fps);
       videoTrack = stream.getVideoTracks()[0] || null;
       lastCaptureMs = 0;
 
@@ -107,6 +112,7 @@ export function createCaptureSession({
     },
 
     onRecordingStopped() {
+      videoTrack?.stop();
       videoTrack = null;
       endViewportCapture();
     },
@@ -117,7 +123,8 @@ export function createCaptureSession({
 
     requestRecordingFrame(now = performance.now()) {
       if (!videoTrack) return;
-      videoTrack.requestFrame();
+      // captureStream(fps) captures changed frames automatically. Calling requestFrame()
+      // here could bypass that cap on high-refresh displays, so only track render timing.
       lastCaptureMs = now;
     },
 
@@ -134,6 +141,7 @@ export function createCaptureSession({
       renderFrame,
       readCanvas,
       gpuFinish,
+      analysisProvider,
     }) {
       if (exporting) return { ok: false, reason: "busy" };
       if (!audio?.hasAudio) return { ok: false, reason: "no-audio" };
@@ -176,6 +184,7 @@ export function createCaptureSession({
           renderFrame,
           readCanvas,
           gpuFinish,
+          analysisProvider,
           onProgress: (fraction) => {
             const totalFrames = Math.ceil(audio.duration * fps);
             const frame = Math.round(fraction * totalFrames);

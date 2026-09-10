@@ -7,7 +7,14 @@ export function createAudioPlayback({
   smoothing = 0.75,
   minDecibels = -100,
   maxDecibels = -26,
+  maxFftSize = 8192,
 } = {}) {
+  if (!Number.isInteger(maxFftSize) || maxFftSize < 32 || maxFftSize > 32768 || (maxFftSize & (maxFftSize - 1))) {
+    throw new RangeError("maxFftSize must be a power of two between 32 and 32768");
+  }
+  if (!Number.isInteger(fftSize) || fftSize < 32 || fftSize > maxFftSize || (fftSize & (fftSize - 1))) {
+    throw new RangeError("fftSize must be a power of two within the allocated capacity");
+  }
   let context = null;
   let analyser = null;
   let gainNode = null;
@@ -23,7 +30,7 @@ export function createAudioPlayback({
   let startedAtContextTime = 0;
   let offsetAtStart = 0;
 
-  const MAX_FFT_SIZE = 8192;
+  const MAX_FFT_SIZE = maxFftSize;
 
   let frequencyData = new Uint8Array(MAX_FFT_SIZE / 2);
   let timeDomainData = new Uint8Array(MAX_FFT_SIZE);
@@ -95,6 +102,7 @@ export function createAudioPlayback({
     get frequencyData() { return frequencyData; },
     get timeDomainData() { return timeDomainData; },
     get binCount() { return frequencyData.length; },
+    get activeBinCount() { return analyser ? analyser.frequencyBinCount : fftSize / 2; },
     get buffer() { return buffer; },
     get hasAudio() { return Boolean(buffer); },
     get isPlaying() { return playing; },
@@ -211,6 +219,10 @@ export function createAudioPlayback({
     },
 
     setFftSize(size) {
+      if (!Number.isInteger(size) || size < 32 || size > MAX_FFT_SIZE || (size & (size - 1))) {
+        throw new RangeError("FFT size exceeds allocated capacity or is not a power of two");
+      }
+      fftSize = size;
       if (analyser) analyser.fftSize = size;
     },
 

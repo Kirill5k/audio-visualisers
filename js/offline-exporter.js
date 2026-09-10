@@ -86,6 +86,7 @@ async function offlineExport(opts) {
     onDone,             // () => void
     writable,           // FileSystemWritableFileStream from showSaveFilePicker
     isCancelled,        // () => boolean — check if export was cancelled
+    analysisProvider,   // optional async (frame, delta) => { spectrum, features, ... }
   } = opts;
 
   const sampleRate = audioBuffer.sampleRate;
@@ -93,7 +94,7 @@ async function offlineExport(opts) {
   const duration = audioBuffer.duration;
   const totalFrames = Math.ceil(duration * fps);
   const samplesPerFrame = sampleRate / fps;
-  const fft = createFFT(fftSize);
+  const fft = analysisProvider ? null : createFFT(fftSize);
   const freqBins = fftSize / 2;
   const frequencyData = new Uint8Array(freqBins);
   const prevSpectrum = new Float64Array(freqBins).fill(-100);
@@ -117,156 +118,223 @@ async function offlineExport(opts) {
     for (let i = count; i < fftSize; i++) fftWindow[i] = 0;
   }
 
-  // Set up mp4-muxer first so encoders can feed it directly
-  const muxer = new Mp4Muxer.Muxer({
-    target: new Mp4Muxer.StreamTarget({
-      onData: (data, position) => {
-        writable.write({ type: 'write', position, data });
+  let videoEncoder = null;
+  let audioEncoder = null;
+  let encoderFailure = null;
+  let writeFailure = null;
+  let rejectEncoderWait = null;
+  let writeChain = Promise.resolve();
+  let pendingWrites = 0;
+  let completed = false;
+  let encodersClosed = false;
+  const cancelled = () => Boolean(isCancelled && isCancelled());
+  const checkFailures = () => {
+    if (encoderFailure) throw encoderFailure;
+    if (writeFailure) throw writeFailure;
+  };
+  function onEncoderError(error) {
+    encoderFailure ||= error;
+    rejectEncoderWait?.(error);
+  }
+  function closeEncoders() {
+    if (encodersClosed) return;
+    encodersClosed = true;
+    for (const encoder of [videoEncoder, audioEncoder]) {
+      if (encoder && encoder.state !== 'closed') {
+        try { encoder.close(); } catch (_) {}
+      }
+    }
+  }
+
+  try {
+    // Set up mp4-muxer first so encoders can feed it directly
+    const muxer = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.StreamTarget({
+        onData: (data, position) => {
+          // Muxer callbacks cannot await a filesystem write. Copy and serialize
+          // chunks, retain write failures, and drain the queue before completion.
+          const chunk = data.slice();
+          pendingWrites++;
+          writeChain = writeChain.then(async () => {
+            if (!writeFailure) await writable.write({ type: 'write', position, data: chunk });
+          }).catch(error => { writeFailure ||= error; })
+            .finally(() => { pendingWrites--; });
+        },
+      }),
+      video: {
+        codec: 'avc',
+        width,
+        height,
       },
-    }),
-    video: {
-      codec: 'avc',
+      audio: {
+        codec: 'aac',
+        sampleRate,
+        numberOfChannels: numChannels,
+      },
+      fastStart: false,
+    });
+
+    // Set up VideoEncoder
+    videoEncoder = new VideoEncoder({
+      output: (chunk, meta) => {
+        muxer.addVideoChunk(chunk, meta);
+      },
+      error: onEncoderError,
+    });
+
+    videoEncoder.configure({
+      codec: 'avc1.640033',
       width,
       height,
-    },
-    audio: {
-      codec: 'aac',
+      bitrate: 40_000_000,
+      framerate: fps,
+      avc: { format: 'avc' },
+    });
+
+    // Set up AudioEncoder
+    audioEncoder = new AudioEncoder({
+      output: (chunk, meta) => {
+        muxer.addAudioChunk(chunk, meta);
+      },
+      error: onEncoderError,
+    });
+
+    audioEncoder.configure({
+      codec: 'mp4a.40.2',
       sampleRate,
       numberOfChannels: numChannels,
-    },
-    fastStart: false,
-  });
+      bitrate: 192_000,
+    });
 
-  // Set up VideoEncoder
-  const videoEncoder = new VideoEncoder({
-    output: (chunk, meta) => {
-      muxer.addVideoChunk(chunk, meta);
-    },
-    error: (e) => console.error('VideoEncoder error:', e),
-  });
+    const delta = 1 / fps;
+    const canvas = readCanvas();
+    // Pages may render supersampled (pixelRatio > 1) so the 1:1 rasterisation of fine
+    // detail doesn't alias. Downscale to the target size before encoding.
+    const scaler = canvas.width > width ? new OffscreenCanvas(width, height) : null;
+    const scalerCtx = scaler ? scaler.getContext('2d', { alpha: false }) : null;
+    if (scalerCtx) scalerCtx.imageSmoothingQuality = 'high';
+    const maxSamplesPerFrame = Math.ceil(samplesPerFrame) + 1;
+    const planarData = new Float32Array(maxSamplesPerFrame * numChannels);
 
-  videoEncoder.configure({
-    codec: 'avc1.640033',
-    width,
-    height,
-    bitrate: 40_000_000,
-    framerate: fps,
-    avc: { format: 'avc' },
-  });
-
-  // Set up AudioEncoder
-  const audioEncoder = new AudioEncoder({
-    output: (chunk, meta) => {
-      muxer.addAudioChunk(chunk, meta);
-    },
-    error: (e) => console.error('AudioEncoder error:', e),
-  });
-
-  audioEncoder.configure({
-    codec: 'mp4a.40.2',
-    sampleRate,
-    numberOfChannels: numChannels,
-    bitrate: 192_000,
-  });
-
-  const delta = 1 / fps;
-  const canvas = readCanvas();
-  // Pages may render supersampled (pixelRatio > 1) so the 1:1 rasterisation of fine
-  // detail doesn't alias. Downscale to the target size before encoding.
-  const scaler = canvas.width > width ? new OffscreenCanvas(width, height) : null;
-  const scalerCtx = scaler ? scaler.getContext('2d', { alpha: false }) : null;
-  if (scalerCtx) scalerCtx.imageSmoothingQuality = 'high';
-  const maxSamplesPerFrame = Math.ceil(samplesPerFrame) + 1;
-  const planarData = new Float32Array(maxSamplesPerFrame * numChannels);
-
-  // Pre-compute FFT for first frame
-  const firstOffset = Math.min(0, audioBuffer.length - fftSize);
-  if (firstOffset >= 0) {
-    fillFftWindow(firstOffset);
-    fft.getByteFrequencyData(fftWindow, 0, frequencyData, minDecibels, maxDecibels, smoothingTimeConstant, prevSpectrum);
-  } else {
-    frequencyData.fill(0);
-  }
-
-  for (let frame = 0; frame < totalFrames; frame++) {
-    if (isCancelled && isCancelled()) {
-      videoEncoder.close();
-      audioEncoder.close();
-      await writable.abort();
-      return;
+    // Pre-compute FFT for first frame
+    const firstOffset = Math.min(0, audioBuffer.length - fftSize);
+    if (!analysisProvider && firstOffset >= 0) {
+      fillFftWindow(firstOffset);
+      fft.getByteFrequencyData(fftWindow, 0, frequencyData, minDecibels, maxDecibels, smoothingTimeConstant, prevSpectrum);
+    } else {
+      frequencyData.fill(0);
     }
 
-    // Render using pre-computed FFT data (submits GL commands to GPU)
-    renderFrame(frequencyData, delta);
+    for (let frame = 0; frame < totalFrames; frame++) {
+      checkFailures();
+      if (cancelled()) return;
 
-    // Pipeline: do CPU work while GPU executes the render
-    // 1. Compute FFT for the NEXT frame
-    if (frame + 1 < totalFrames) {
-      const nextSampleOffset = Math.round((frame + 1) * samplesPerFrame);
-      const nextSafeOffset = Math.min(nextSampleOffset, audioBuffer.length - fftSize);
-      if (nextSafeOffset >= 0) {
-        fillFftWindow(nextSafeOffset);
-        fft.getByteFrequencyData(fftWindow, 0, frequencyData, minDecibels, maxDecibels, smoothingTimeConstant, prevSpectrum);
+      // Render using pre-computed FFT data (submits GL commands to GPU)
+      if (analysisProvider) {
+        const analysisFrame = await analysisProvider(frame, delta);
+        checkFailures();
+        if (cancelled()) return;
+        await renderFrame(analysisFrame.spectrum, delta, analysisFrame);
       } else {
-        frequencyData.fill(0);
+        renderFrame(frequencyData, delta);
       }
-    }
 
-    // 2. Encode audio for the current frame
-    const audioStart = Math.round(frame * samplesPerFrame);
-    const audioEnd = Math.min(Math.round((frame + 1) * samplesPerFrame), audioBuffer.length);
-    const frameSamples = audioEnd - audioStart;
-    if (frameSamples > 0) {
-      for (let ch = 0; ch < numChannels; ch++) {
-        const chOffset = ch * frameSamples;
-        for (let i = 0; i < frameSamples; i++) {
-          planarData[chOffset + i] = channels[ch][audioStart + i] || 0;
+      // Pipeline: do CPU work while GPU executes the render
+      // 1. Compute FFT for the NEXT frame
+      if (!analysisProvider && frame + 1 < totalFrames) {
+        const nextSampleOffset = Math.round((frame + 1) * samplesPerFrame);
+        const nextSafeOffset = Math.min(nextSampleOffset, audioBuffer.length - fftSize);
+        if (nextSafeOffset >= 0) {
+          fillFftWindow(nextSafeOffset);
+          fft.getByteFrequencyData(fftWindow, 0, frequencyData, minDecibels, maxDecibels, smoothingTimeConstant, prevSpectrum);
+        } else {
+          frequencyData.fill(0);
         }
       }
-      const audioData = new AudioData({
-        format: 'f32-planar',
-        sampleRate,
-        numberOfFrames: frameSamples,
-        numberOfChannels: numChannels,
-        timestamp: audioStart / sampleRate * 1_000_000,
-        data: planarData.subarray(0, frameSamples * numChannels),
+
+      // 2. Encode audio for the current frame
+      const audioStart = Math.round(frame * samplesPerFrame);
+      const audioEnd = Math.min(Math.round((frame + 1) * samplesPerFrame), audioBuffer.length);
+      const frameSamples = audioEnd - audioStart;
+      if (frameSamples > 0) {
+        for (let ch = 0; ch < numChannels; ch++) {
+          const chOffset = ch * frameSamples;
+          for (let i = 0; i < frameSamples; i++) {
+            planarData[chOffset + i] = channels[ch][audioStart + i] || 0;
+          }
+        }
+        const audioData = new AudioData({
+          format: 'f32-planar',
+          sampleRate,
+          numberOfFrames: frameSamples,
+          numberOfChannels: numChannels,
+          timestamp: audioStart / sampleRate * 1_000_000,
+          data: planarData.subarray(0, frameSamples * numChannels),
+        });
+        try { audioEncoder.encode(audioData); } finally { audioData.close(); }
+      }
+
+      // Flush GPU pipeline and capture the rendered frame
+      if (gpuFinish) gpuFinish();
+      if (scalerCtx) scalerCtx.drawImage(canvas, 0, 0, width, height);
+      const vf = new VideoFrame(scaler || canvas, {
+        timestamp: Math.round(frame * 1_000_000 / fps),
+        duration: Math.round(1_000_000 / fps),
       });
-      audioEncoder.encode(audioData);
-      audioData.close();
+      const keyFrame = frame % (fps * 2) === 0;
+      try { videoEncoder.encode(vf, { keyFrame }); } finally { vf.close(); }
+
+      if (onProgress && frame % 60 === 0) onProgress(frame / totalFrames);
+
+      checkFailures();
+      // Bound retained chunks when storage is slower than GPU rendering.
+      if (pendingWrites > 16) { await writeChain; checkFailures(); }
+
+      // Backpressure: wait for encoder to catch up if queue grows too large
+      if (videoEncoder.encodeQueueSize > 3) {
+        try {
+          await new Promise((resolve, reject) => {
+            rejectEncoderWait = reject;
+            videoEncoder.ondequeue = () => resolve();
+          });
+        } finally {
+          rejectEncoderWait = null;
+          videoEncoder.ondequeue = null;
+        }
+      }
+      // Yield to browser periodically to keep UI responsive
+      if (frame % 60 === 0) {
+        await new Promise(r => setTimeout(r, 0));
+      }
     }
 
-    // Flush GPU pipeline and capture the rendered frame
-    if (gpuFinish) gpuFinish();
-    if (scalerCtx) scalerCtx.drawImage(canvas, 0, 0, width, height);
-    const vf = new VideoFrame(scaler || canvas, {
-      timestamp: Math.round(frame * 1_000_000 / fps),
-      duration: Math.round(1_000_000 / fps),
-    });
-    const keyFrame = frame % (fps * 2) === 0;
-    videoEncoder.encode(vf, { keyFrame });
-    vf.close();
+    await videoEncoder.flush();
+    checkFailures();
+    if (cancelled()) return;
+    await audioEncoder.flush();
+    checkFailures();
+    if (cancelled()) return;
+    closeEncoders();
 
-    if (onProgress && frame % 60 === 0) onProgress(frame / totalFrames);
+    await writeChain;
+    checkFailures();
+    if (cancelled()) return;
+    muxer.finalize();
+    await writeChain;
+    checkFailures();
+    if (cancelled()) return;
+    await writable.close();
+    completed = true;
 
-    // Backpressure: wait for encoder to catch up if queue grows too large
-    if (videoEncoder.encodeQueueSize > 3) {
-      await new Promise(r => { videoEncoder.ondequeue = () => { videoEncoder.ondequeue = null; r(); }; });
-    }
-    // Yield to browser periodically to keep UI responsive
-    if (frame % 60 === 0) {
-      await new Promise(r => setTimeout(r, 0));
+    if (onProgress) onProgress(1);
+    if (onDone) onDone();
+  } finally {
+    closeEncoders();
+    // Encoder callbacks may have queued writes before a provider, render, or
+    // codec failure. Settle those before aborting the unfinished output.
+    await writeChain;
+    if (!completed) {
+      try { await writable.abort(); } catch (_) {}
     }
   }
-
-  await videoEncoder.flush();
-  await audioEncoder.flush();
-  videoEncoder.close();
-  audioEncoder.close();
-
-  if (onProgress) onProgress(1);
-
-  muxer.finalize();
-  await writable.close();
-
-  if (onDone) onDone();
 }
