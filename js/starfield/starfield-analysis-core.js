@@ -195,7 +195,11 @@ export function readFeatures(timeline, frame) {
 export class SpectrumCache {
   constructor(capacity = 120) { this.capacity = Math.max(1, capacity); this.entries = new Map(); }
   get size() { return this.entries.size; }
-  get bytes() { return this.entries.size * FFT_BINS; }
+  get bytes() {
+    let bytes = 0;
+    for (const spectrum of this.entries.values()) bytes += spectrum.byteLength;
+    return bytes;
+  }
   get(frame) { return this.entries.get(frame); }
   set(frame, spectrum) {
     this.entries.set(frame, spectrum);
