@@ -1,0 +1,37 @@
+#stage::after { display: none; }
+#actions { top: auto; bottom: 22px; right: 22px; }
+#panel { width: 284px; padding: 18px; }
+#panelToggle { left: 320px; }
+#panelToggle.closed { left: 18px; }
+.brand h1 { font-size: 25px; }
+.tagline { color: #8e9fa9; font-size: 11px; line-height: 1.55; margin: 8px 0 16px; }
+.secondary-button { width: 100%; border: 1px solid var(--edge); border-radius: 7px; padding: 8px; margin-top: 8px; color: #bbcdd7; background: #19232b88; font-size: 11px; cursor: pointer; }
+.secondary-button:hover { background: #293a4688; }
+.view-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 4px; margin: 8px 0; }
+.view-grid button { border: 1px solid var(--edge); border-radius: 5px; background: #15202a; color: #b9c9d5; padding: 6px 2px; font-size: 10px; cursor: pointer; }
+.view-grid button[aria-pressed="true"] { background: #384853; color: #fff; }
+.quality-note { color: #83939d; font-size: 10px; line-height: 1.8; font-variant-numeric: tabular-nums; }
+.shortcut-note { color: #687882; font-size: 10px; line-height: 1.8; margin: 12px 0 2px; }
+#timeline { position: fixed; bottom: 92px; left: max(330px, 25%); right: 22%; display: flex; align-items: center; gap: 12px; z-index: 8; color: #a6b8c5; font: 10px ui-monospace,monospace; }
+#timeline input { flex: 1; }
+#timeline .time { min-width: 34px; }
+#spectrumMeter { display: flex; align-items: end; gap: 3px; height: 27px; }
+#spectrumMeter i { width: 3px; height: 2px; background: #b3cad8; opacity: .7; border-radius: 2px; }
+#musicReadout { position: fixed; right: 24px; top: 22px; padding: 11px 13px; border-radius: 9px; z-index: 8; display: flex; align-items: center; gap: 15px; }
+#sceneStats { font: 10px/1.8 ui-monospace,monospace; color: #94a9b8; min-width: 82px; text-align: right; }
+#readout { max-width: calc(100vw - 36px); }
+#statusText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#seekSeconds { width: 77px; }
+.immersive .hud { visibility: hidden; pointer-events: none; }
+#revealHint { display: none; }
+button:focus-visible, input:focus-visible { outline: 2px solid #dbe9ef; outline-offset: 4px; }
+#exportOverlay { z-index: 30; }
+#fatal { z-index: 40; }
+body[data-visualiser="living-constellations"] { --accent: #e8d2a0; }
+@media(max-width:800px) {
+  #panel { width: 264px; max-height: calc(100vh - 130px); }
+  #panelToggle { left: 300px; }
+  #timeline { left: 22px; right: 22px; bottom: 100px; }
+  #musicReadout { top: 72px; right: 14px; }
+}
+@media(prefers-reduced-motion:reduce) { #panel { transition: none; } }

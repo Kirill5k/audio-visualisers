@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deep Drift — Audio Visualiser</title>
+  <link rel="stylesheet" href="css/visualiser-ui.css">
+  <link rel="stylesheet" href="css/starfield-ui.css">
+  <script type="importmap">
+    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"}}
+  </script>
+</head>
+<body data-visualiser="deep-drift">
+  <div id="stage"></div>
+  <div id="fatal" role="alert" style="display:none">This visualiser needs WebGL 2. Try opening it in a recent browser.</div>
+  <noscript>This visualiser requires JavaScript.</noscript>
+  <script src="js/recorder.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
+  <script src="js/offline-exporter.js"></script>
+  <script type="module" src="js/starfield/starfield-app.js"></script>
+</body>
+</html>
