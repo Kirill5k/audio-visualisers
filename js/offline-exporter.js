@@ -212,7 +212,12 @@ async function offlineExport(opts) {
     // detail doesn't alias. Downscale to the target size before encoding.
     const scaler = canvas.width > width ? new OffscreenCanvas(width, height) : null;
     const scalerCtx = scaler ? scaler.getContext('2d', { alpha: false }) : null;
-    if (scalerCtx) scalerCtx.imageSmoothingQuality = 'high';
+    if (scalerCtx) {
+      scalerCtx.imageSmoothingQuality = 'high';
+      // Every movie frame replaces the previous one, including pixels whose
+      // WebGL alpha is below one after transparent postprocessing.
+      scalerCtx.globalCompositeOperation = 'copy';
+    }
     const maxSamplesPerFrame = Math.ceil(samplesPerFrame) + 1;
     const planarData = new Float32Array(maxSamplesPerFrame * numChannels);
 

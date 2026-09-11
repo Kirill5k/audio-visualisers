@@ -124,6 +124,12 @@ function createRecorder(opts) {
     getCodec,
     begin,
     stop,
+    pause() {
+      if (state.mediaRecorder?.state === 'recording') state.mediaRecorder.pause();
+    },
+    resume() {
+      if (state.mediaRecorder?.state === 'paused') state.mediaRecorder.resume();
+    },
     toggle,
     prepareAutoRecord,
     startAutoRecord,

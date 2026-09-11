@@ -8,6 +8,7 @@ export function createAudioPlayback({
   minDecibels = -100,
   maxDecibels = -26,
   maxFftSize = 8192,
+  sampleRate,
 } = {}) {
   if (!Number.isInteger(maxFftSize) || maxFftSize < 32 || maxFftSize > 32768 || (maxFftSize & (maxFftSize - 1))) {
     throw new RangeError("maxFftSize must be a power of two between 32 and 32768");
@@ -38,7 +39,7 @@ export function createAudioPlayback({
   function ensureGraph() {
     if (context) return;
 
-    context = new AudioContext();
+    context = new AudioContext(sampleRate === undefined ? undefined : { sampleRate });
     analyser = context.createAnalyser();
     analyser.fftSize = fftSize;
     analyser.smoothingTimeConstant = smoothing;
