@@ -3,9 +3,11 @@ import { createCaptureSession } from '../capture-export.js';
 import { createLEDAnalysis } from './led-analysis.js';
 import { createLEDGridScene } from './led-grid-scene.js';
 import { createRecordingDestination } from './led-recording.js';
+import { createLEDPresentationClock } from './led-presentation-clock.js';
 
 const $ = id => document.getElementById(id);
 const FPS = 60;
+const presentationClock = createLEDPresentationClock();
 const MODES = ['loom', 'calligraphy', 'choreography'];
 const settings = { mode: 'loom', gain: 1.3, persistence: 1, glow: .65,
   violet: '#7446FF', blue: '#2F5BFF', amber: '#FFA53D', white: '#FFF1D0', motion: false };
@@ -29,6 +31,7 @@ let busy = '', generation = 0, position = 0, finished = false, disposed = false;
 let viewport = { width: 1920, height: 1080, pixelRatio: 2 };
 let fetchController = null, cancelRequested = false, currentData = null, dataFrame = -1;
 let raf = 0, latestFps = 0, fpsStart = performance.now(), fpsCount = 0;
+let cadenceSamples = null;
 let recordingStopWaiter = null;
 let bufferSerial = 0;
 let resizePending = false, recordingSource = false, recordingDestination = null;
@@ -135,7 +138,7 @@ function ended() {
   if (recorder.isRecording) { busy = 'saving'; recorder.stop(); }
   renderPosition(position, true); setStatus('Track complete · replay to begin again', false); updateButtons();
 }
-function resetFrameRate() { fpsStart = performance.now(); fpsCount = 0; }
+function resetFrameRate() { presentationClock.reset(); fpsStart = performance.now(); fpsCount = 0; }
 async function play() {
   if (!audio.hasAudio || busy || recorder.isRecording) return false;
   const serial = ++bufferSerial;
@@ -169,11 +172,11 @@ async function prepareFrame(time) {
   try { await analysis.ensureRange(Math.max(0, time - 6), time + .5); }
   finally { if (serial === bufferSerial && busy === 'buffering') busy = ''; if (resizePending && !busy) resizePreview(); updateButtons(); }
 }
-async function bufferPlayback() {
+async function bufferPlayback(requiredTime) {
   const token = generation, serial = ++bufferSerial, wasRecording = recorder.isRecording;
   if (wasRecording) recorder.pause();
   await audio.pause(); position = audio.getPlaybackPosition();
-  try { await prepareFrame(position); }
+  try { await prepareFrame(Math.max(position, requiredTime)); }
   catch (error) { if (wasRecording) recorder.stop(); throw error; }
   if (serial !== bufferSerial || token !== generation || disposed || !audio.hasAudio || (wasRecording && !recorder.isRecording)) return;
   renderPosition(position, true); analysis.prefetch(position);
@@ -247,6 +250,7 @@ function setMode(mode) {
   if (!MODES.includes(mode)) throw new RangeError('Unknown LED mode');
   if (busy || recorder.isRecording) return false;
   settings.mode = mode;
+  presentationClock.reset();
   $('perspectiveControls').hidden = mode !== 'loom';
   $('cameraHint').textContent = mode !== 'loom' ? 'Flat 2D view · scroll to zoom' : 'Drag to orbit · scroll to zoom';
   $('resetCameraBtn').textContent = mode !== 'loom' ? 'Reset zoom' : 'Reset camera';
@@ -413,16 +417,24 @@ window.addEventListener('pagehide', () => { disposed = true; cancelAnimationFram
 function animate(now) {
   if (disposed) return;
   raf = requestAnimationFrame(animate);
-  if (capture.isExporting || busy || !audio.isPlaying) return;
+  if (capture.isExporting || busy || !audio.isPlaying || audio.context?.state !== 'running') { presentationClock.reset(); return; }
   const audioTime = audio.getPlaybackPosition();
-  analysis.prefetch(audioTime);
-  if (!analysis.isReady(audioTime)) { bufferPlayback().catch(reportError); return; }
+  const started = performance.now();
+  const sample = cadenceSamples && { now, audioTime, visualTime: currentData?.time || 0, rendered: false, cpuMs: 0 };
+  if (sample && cadenceSamples.length < 3600) cadenceSamples.push(sample);
+  // AudioContext.currentTime advances in device-sized blocks. Use smooth RAF
+  // elapsed time for live Loom motion, with bounded correction back to audio.
+  // Exact seeks and offline frames still enter renderPosition/scene directly.
+  const displayTime = settings.mode === 'loom' ? presentationClock.sample(audioTime, now, audio.duration) : audioTime;
+  analysis.prefetch(Math.max(audioTime, displayTime));
+  if (!analysis.isReady(displayTime)) { presentationClock.reset(); bufferPlayback(displayTime).catch(reportError); return; }
   // Loom interpolates historical light at display time, even between two
   // 60 Hz analysis frames. Skipping those RAFs causes uneven scrolling.
-  if (settings.mode === 'loom' ? audioTime === currentData?.time : Math.floor(audioTime * FPS + 1e-7) === dataFrame) return;
+  if (settings.mode === 'loom' ? displayTime === currentData?.time : Math.floor(audioTime * FPS + 1e-7) === dataFrame) return;
   try {
-    position = audioTime;
+    position = displayTime;
     renderPosition(position);
+    if (sample) { sample.visualTime = currentData?.time || 0; sample.rendered = true; sample.cpuMs = performance.now() - started; }
     if (recorder.isRecording) capture.requestRecordingFrame(now);
     fpsCount++;
     if (now - fpsStart >= 1000) { latestFps = fpsCount * 1000 / (now - fpsStart); $('fps').textContent = `${Math.round(latestFps)} fps`; fpsCount = 0; fpsStart = now; }
@@ -432,11 +444,14 @@ resizePreview(); updateButtons(); renderPosition(0); raf = requestAnimationFrame
 
 if (new URLSearchParams(location.search).has('review')) {
   window.ledGrid = {
+    beginCadence() { cadenceSamples = []; },
+    endCadence() { const samples = cadenceSamples || []; cadenceSamples = null; return samples; },
     loadReference, loadTrack, play, pause, unload, cancelLoad, setMode, setView, setSettings,
     async renderAt(time) { await seek(time, { resume: false }); renderPosition(position, true); return this.getState(); },
     getState() { return { position, playing: audio.isPlaying, busy, finished, recording: recorder.isRecording, exporting: capture.isExporting,
       mode: settings.mode, settings: { ...settings }, analysis: analysis.getInfo(), scene: scene.getInfo(),
-      viewport: { ...viewport, canvasWidth: scene.canvas.width, canvasHeight: scene.canvas.height }, fps: latestFps, errors: [...errors] }; },
+      viewport: { ...viewport, canvasWidth: scene.canvas.width, canvasHeight: scene.canvas.height }, fps: latestFps,
+      presentationClock: 'display-synchronised-v1', errors: [...errors] }; },
     getPassages: () => analysis.getReviewPassages(),
     async reviewFrame(time) { await analysis.ensureRange(Math.max(0, time - 6), time + .5); const data = analysis.getFrame(time); scene.render(data); dataFrame = -1;
       return { time: data.time, frame: data.frame, features: { ...data.features, onsets: Array.from(data.features.onsets) }, bands: Array.from(data.bands), events: data.events, scene: scene.getInfo() }; },

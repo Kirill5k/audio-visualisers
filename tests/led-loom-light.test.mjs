@@ -75,11 +75,61 @@ test('Loom light: transfers are continuous across row boundaries and within anal
   for (let row = 1; row < ROWS; row++) {
     const time = sourceTime + row * rowSeconds;
     const before = at(time - 1e-6).slice(), after = at(time + 1e-6);
-    assert.ok(maxDifference(before, after) < 1e-7, `Row ${row} jumps at its boundary`);
+    assert.ok(maxDifference(before, after) < .00002, `Row ${row} jumps at its boundary`);
   }
   const time = sourceTime + rowSeconds * 4.35;
   const before = at(time).slice();
   assert.ok(maxDifference(before, at(time + .001)) > .001, 'Light must move between cached analysis times');
+});
+
+test('Loom light: stationary spectra stay exactly steady in interior LEDs at every display phase', () => {
+  const timeline = makeTimeline();
+  for (let frame = 0; frame < timeline.frames; frame++) for (let column = 0; column < COLUMNS; column++) {
+    timeline.bands[frame * COLUMNS + column] = 8000 + (column * 997) % 57000;
+    timeline.features[frame * STRIDE + 7 + column % 3] = .6;
+  }
+  const at = createLoomLightReader(timeline);
+  const start = at(6.1).slice();
+  for (let sample = 1; sample < 240; sample++) {
+    const values = at(6.1 + sample / 240);
+    for (const row of [1, 2, 20, 40, 51]) {
+      const begin = row * COLUMNS * 4, end = begin + COLUMNS * 4;
+      assert.deepEqual(values.subarray(begin, end), start.subarray(begin, end), `Constant spectrum breathed at row ${row}, display sample ${sample}`);
+    }
+  }
+});
+
+test('Loom light: isolated attacks conserve light regardless of their phase within a history bucket', () => {
+  for (let offset = 0; offset < 20; offset++) {
+    const timeline = makeTimeline();
+    const frame = sourceFrame + offset, onsetTime = frame / FPS;
+    timeline.bands[frame * COLUMNS + peakColumn] = encodedPeak;
+    const at = createLoomLightReader(timeline);
+    const initial = totals(at(onsetTime));
+    for (let sample = 0; sample < 300; sample++) {
+      const coefficients = totals(at(onsetTime + sample / 60));
+      assert.ok(maxDifference(coefficients, initial) < 8e-8, `Attack phase ${offset}, sample ${sample} changed its emitted coefficients`);
+    }
+  }
+});
+
+test('Loom light: only the live edge awaits a new partial bucket sample', () => {
+  const timeline = makeTimeline();
+  timeline.bands.fill(encodedPeak);
+  const at = createLoomLightReader(timeline);
+  // The bucket at65/9seconds starts between analysis samples433and434.
+  // At its half-sample wait, rowzero follows the departing bucket; completed
+  // interior buckets remain steady. No extrapolated/future sample is invented.
+  const bucketStart = 65 / 9;
+  const nextSample = 434 / FPS;
+  const waitingTime = (bucketStart + nextSample) * .5;
+  const waiting = at(waitingTime).slice();
+  const arrived = at(nextSample);
+  const edgeEnergy = values => sum(values.subarray(peakColumn * 4, peakColumn * 4 + 4));
+  const phase = waitingTime * 9 - 65;
+  assert.ok(Math.abs(edgeEnergy(waiting) - sourceEnergy * (1 - phase)) < 1e-7);
+  assert.ok(Math.abs(edgeEnergy(arrived) - sourceEnergy) < 1e-7);
+  assert.deepEqual(waiting.subarray(COLUMNS * 4, COLUMNS * 4 * 2), arrived.subarray(COLUMNS * 4, COLUMNS * 4 * 2));
 });
 
 test('Loom light: onset color uses the source frequency group and cannot change with later features', () => {

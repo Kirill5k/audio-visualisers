@@ -146,6 +146,7 @@ if (new URLSearchParams(location.search).has('review')) {
   async function playPassage() {
     const passage = selectedPassage();
     await renderSelection(passage.start);
+    api().beginCadence();
     await api().play();
     const started = performance.now();
     let frames = 0, previous = started, maxGap = 0;
@@ -163,10 +164,30 @@ if (new URLSearchParams(location.search).has('review')) {
       const elapsed = (performance.now() - started) / 1000;
       report({ passage, mode: state().mode, elapsedSeconds: elapsed, browserAnimationFrames: frames,
         browserFramesPerSecond: frames / elapsed, maximumAnimationFrameGapMs: maxGap,
+        playbackCadence: summarizeCadence(api().endCadence()),
         note: 'Browser animation cadence measures responsiveness; renderer timing is reported in scene telemetry.', state: state() });
     }, passage.duration * 1000);
     requestAnimationFrame(countFrames);
     report({ playing: true, passage, mode: state().mode, settings: state().settings });
+  }
+  function summarizeCadence(samples) {
+    const raf = [], audio = [], visual = [], audioError = [], visualError = [], cpu = [];
+    for (let i = 1; i < samples.length; i++) {
+      const a = samples[i - 1], b = samples[i], gap = b.now - a.now;
+      raf.push(gap); audio.push((b.audioTime - a.audioTime) * 1000); visual.push((b.visualTime - a.visualTime) * 1000);
+      audioError.push(Math.abs(audio.at(-1) - gap)); visualError.push(Math.abs(visual.at(-1) - gap)); cpu.push(b.cpuMs);
+    }
+    const stats = values => {
+      const ordered = values.slice().sort((a, b) => a - b);
+      return { mean: values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length),
+        p50: ordered[Math.floor(ordered.length * .5)] || 0, p95: ordered[Math.floor(ordered.length * .95)] || 0, max: ordered.at(-1) || 0 };
+    };
+    return { samples: samples.length, rendered: samples.filter(sample => sample.rendered).length,
+      repeatedAudioTimes: audio.filter(value => value === 0).length, repeatedVisualTimes: visual.filter(value => value === 0).length,
+      displayGapMs: stats(raf), audioAdvanceMs: stats(audio), visualAdvanceMs: stats(visual),
+      audioCadenceErrorMs: stats(audioError), visualCadenceErrorMs: stats(visualError), frameCpuMs: stats(cpu),
+      audioVisualOffsetMs: stats(samples.map(sample => Math.abs(sample.visualTime - sample.audioTime) * 1000)),
+      note: 'Measures submitted animation times and main-thread frame cost, not GPU completion or display presentation.' };
   }
   function download(url, name) {
     const link = document.createElement('a');
