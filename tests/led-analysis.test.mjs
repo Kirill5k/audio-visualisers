@@ -12,7 +12,7 @@ function analyse(channels) {
   while (!builder.done) builder.step(12);
   return { timeline: builder.timeline, at: createLEDFrameReader(builder.timeline) };
 }
-const clone = frame => ({ ...frame, bands: frame.bands.slice(), history: frame.history.slice(), features: { ...frame.features, onsets: frame.features.onsets.slice() }, events: frame.events.map(event => ({ ...event })),
+const clone = frame => ({ ...frame, bands: frame.bands.slice(), history: frame.history.slice(), loomLight: frame.loomLight?.slice(), features: { ...frame.features, onsets: frame.features.onsets.slice() }, events: frame.events.map(event => ({ ...event })),
   ...(frame.waveform ? { waveform: { ...frame.waveform, frames: frame.waveform.frames.map(snapshot => ({ ...snapshot, left: snapshot.left.slice(), right: snapshot.right.slice() })) } } : {}),
   flowFrames: frame.flowFrames.map(snapshot => ({ ...snapshot, bands: snapshot.bands.slice(), features: { ...snapshot.features } })) });
 

@@ -26,16 +26,32 @@ export function evaluateLEDPattern(data = {}, settings = {}, output = new Float3
         let intensity = 0, cool = .4, warm = 0, peak = 0;
         // The newest history row is physically at the bottom of the panel.
         const age = row / (LED_ROWS - 1);
-        const value = feature(history[index]);
-        const previous = feature(history[Math.min(LED_ROWS - 1, row + 1) * LED_COLUMNS + column]);
-        const onset = Math.max(0, value - previous);
-        const weight = Math.pow(Math.max(0, value - .11), 1.45);
-        intensity = weight * 2.5 * Math.exp(-age / (3.25 * persistence)) * gain;
-        // Discrete spectral filaments remain colourful even in dense passages.
-        cool = clamp(.16 + (column / LED_COLUMNS) * .72 + age * .24);
-        warm = clamp((value - .40) * 2.05 + onset * 1.2);
-        peak = clamp((value - .81) * 4 + onset * .45) * (1 - age * .3);
         const offset = index * 4;
+        if (data.loomLight) {
+          // These are already-emitted palette contributions. Reconstruct the
+          // shader's nested colour mixes without applying spectral thresholds
+          // again: a handover must not turn a white/amber peak violet midway.
+          const violet = data.loomLight[offset], blue = data.loomLight[offset + 1];
+          const amber = data.loomLight[offset + 2], white = data.loomLight[offset + 3];
+          const coolLight = violet + blue, colouredLight = coolLight + amber;
+          const light = colouredLight + white;
+          intensity = light * 2.5 * Math.exp(-age / (3.25 * persistence)) * gain;
+          cool = coolLight > 0 ? blue / coolLight : 0;
+          warm = colouredLight > 0 ? amber / colouredLight : 0;
+          peak = light > 0 ? white / light / .82 : 0;
+        } else {
+          // History-only callers retain the original mapping. Live playback and
+          // export supply pre-mapped light so their colour fades stay continuous.
+          const value = feature(history[index]);
+          const previous = feature(history[Math.min(LED_ROWS - 1, row + 1) * LED_COLUMNS + column]);
+          const onset = Math.max(0, value - previous);
+          const weight = Math.pow(Math.max(0, value - .11), 1.45);
+          intensity = weight * 2.5 * Math.exp(-age / (3.25 * persistence)) * gain;
+          // Discrete spectral filaments remain colourful even in dense passages.
+          cool = clamp(.16 + (column / LED_COLUMNS) * .72 + age * .24);
+          warm = clamp((value - .40) * 2.05 + onset * 1.2);
+          peak = clamp((value - .81) * 4 + onset * .45) * (1 - age * .3);
+        }
         output[offset] = clamp(intensity, 0, 5);
         output[offset + 1] = cool;
         output[offset + 2] = clamp(warm);

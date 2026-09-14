@@ -1,5 +1,6 @@
 import { createFFT } from '../starfield/starfield-analysis-core.js';
 import { createStereoSpectrum } from '../atlas/signal-atlas-analysis-core.js';
+import { createLoomLightReader } from './led-loom-light.js';
 
 export const FFT_SIZE = 32768;
 export const FFT_BINS = FFT_SIZE / 2;
@@ -203,6 +204,7 @@ export function createLEDTimelineBuilder(channels, sampleRate) {
 /** Returned frame, typed arrays, and events array are reused. Copy values before
  * retaining them. Reads only immutable timeline data; call order is irrelevant. */
 export function createLEDFrameReader(timeline) {
+  const readLoomLight = createLoomLightReader(timeline);
   // Fixed source times keep historical musical gestures identical when seeking,
   // replaying or exporting. These are reads of cached analysis, not new FFTs.
   const flowPool = Array.from({ length: HISTORY_SECONDS * 5 + 1 }, () => ({
@@ -276,6 +278,7 @@ export function createLEDFrameReader(timeline) {
     const earliest = bounded - HISTORY_SECONDS;
     while (low < high) { const middle = (low + high) >>> 1; if (timeline.events[middle].time < earliest) low = middle + 1; else high = middle; }
     for (let index = low; index < timeline.events.length && timeline.events[index].time <= bounded + 1e-7; index++) output.events.push(timeline.events[index]);
+    output.loomLight = readLoomLight(bounded);
     return output;
   };
 }
