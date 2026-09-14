@@ -88,7 +88,8 @@ function resizePreview() {
 function renderPosition(time, force = false) {
   position = Math.max(0, Math.min(audio.duration || 0, time));
   const frame = Math.floor(position * FPS + 1e-7);
-  if (audio.hasAudio && analysis.isReady(position) && (force || frame !== dataFrame)) {
+  const fractionalHistory = settings.mode === 'loom' && position !== currentData?.time;
+  if (audio.hasAudio && analysis.isReady(position) && (force || frame !== dataFrame || fractionalHistory)) {
     currentData = analysis.getFrame(position);
     dataFrame = frame;
   }
@@ -416,7 +417,9 @@ function animate(now) {
   const audioTime = audio.getPlaybackPosition();
   analysis.prefetch(audioTime);
   if (!analysis.isReady(audioTime)) { bufferPlayback().catch(reportError); return; }
-  if (Math.floor(audioTime * FPS + 1e-7) === dataFrame) return;
+  // Loom interpolates historical light at display time, even between two
+  // 60 Hz analysis frames. Skipping those RAFs causes uneven scrolling.
+  if (settings.mode === 'loom' ? audioTime === currentData?.time : Math.floor(audioTime * FPS + 1e-7) === dataFrame) return;
   try {
     position = audioTime;
     renderPosition(position);

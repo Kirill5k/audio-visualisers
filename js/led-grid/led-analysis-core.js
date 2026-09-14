@@ -235,14 +235,40 @@ export function createLEDFrameReader(timeline) {
       output.flowFrames.push(snapshot);
     }
     output.history.fill(0);
-    const framesPerRow = HISTORY_SECONDS * ANALYSIS_FPS / GRID_ROWS;
-    for (let row = 0; row < GRID_ROWS; row++) {
-      const end = frame - Math.floor(row * framesPerRow);
-      const start = Math.max(0, frame - Math.floor((row + 1) * framesPerRow) + 1);
-      const target = row * BAND_COUNT;
-      for (let historical = start; historical <= end; historical++) {
-        const source = historical * BAND_COUNT;
-        for (let band = 0; band < BAND_COUNT; band++) output.history[target + band] = Math.max(output.history[target + band], timeline.bands[source + band] / 65535);
+    const rowsPerSecond = GRID_ROWS / HISTORY_SECONDS;
+    const firstHistorical = Math.max(0, Math.ceil((bounded - HISTORY_SECONDS) * ANALYSIS_FPS));
+    for (let historical = firstHistorical; historical <= frame; historical++) {
+      const age = (bounded - historical / ANALYSIS_FPS) * rowsPerSecond;
+      if (age < 0 || age >= GRID_ROWS) continue;
+      const row = Math.floor(age), phase = age - row;
+      let firstRow = row, secondRow = -1, firstWeight = 1, secondWeight = 0;
+      // Transfer light across a boundary over half a row (55.6 ms). The LED
+      // positions stay fixed. Equal-power weights keep brief peaks visible;
+      // smoothstep gives the transfer a gentle start and finish.
+      if (phase < .25 && row > 0) {
+        const u = (phase + .25) * 2, blend = u * u * (3 - 2 * u);
+        firstRow = row - 1; secondRow = row;
+        firstWeight = Math.cos(blend * Math.PI * .5);
+        secondWeight = Math.sin(blend * Math.PI * .5);
+      } else if (phase > .75 && row < GRID_ROWS - 1) {
+        const u = (phase - .75) * 2, blend = u * u * (3 - 2 * u);
+        secondRow = row + 1;
+        firstWeight = Math.cos(blend * Math.PI * .5);
+        secondWeight = Math.sin(blend * Math.PI * .5);
+      }
+      // New attacks enter row zero immediately. Old light fades before the
+      // six-second cache boundary, so removing it cannot cause a final pop.
+      if (age > GRID_ROWS - .5) {
+        const u = (age - GRID_ROWS + .5) * 2, blend = u * u * (3 - 2 * u);
+        firstWeight *= Math.cos(blend * Math.PI * .5);
+      }
+      const source = historical * BAND_COUNT, firstTarget = firstRow * BAND_COUNT, secondTarget = secondRow * BAND_COUNT;
+      for (let band = 0; band < BAND_COUNT; band++) {
+        const value = timeline.bands[source + band] / 65535;
+        // Max aggregation still visits every analysis sample in the complete
+        // interval; a one-frame transient is never diluted by averaging.
+        output.history[firstTarget + band] = Math.max(output.history[firstTarget + band], value * firstWeight);
+        if (secondRow >= 0) output.history[secondTarget + band] = Math.max(output.history[secondTarget + band], value * secondWeight);
       }
     }
     output.events.length = 0;
