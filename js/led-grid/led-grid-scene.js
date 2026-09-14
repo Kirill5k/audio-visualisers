@@ -66,6 +66,7 @@ export function createLEDGridScene(stage, settings) {
     uBlue: { value: new THREE.Color('#2F5BFF') },
     uAmber: { value: new THREE.Color('#FFA53D') },
     uWhite: { value: new THREE.Color('#FFF1D0') },
+    uBrightness: { value: 1 },
     uGlow: { value: .65 },
     uHalo: { value: .045 },
     uFlat: { value: 0 },
@@ -88,6 +89,7 @@ export function createLEDGridScene(stage, settings) {
       uniform vec3 uBlue;
       uniform vec3 uAmber;
       uniform vec3 uWhite;
+      uniform float uBrightness;
       uniform float uGlow;
       uniform float uHalo;
       uniform float uFlat;
@@ -116,7 +118,8 @@ export function createLEDGridScene(stage, settings) {
         // Narrow per-diode halo preserves the 30% black gap between emitters.
         float halo = exp(-max(faceDistance, 0.) * 30.) * (1. - face);
         vec3 localGlow = color * intensity * halo * uGlow * uHalo;
-        gl_FragColor = vec4(package + emission + localGlow, 1.);
+        // Master light level, after audio response and before HDR bloom.
+        gl_FragColor = vec4((package + emission + localGlow) * uBrightness, 1.);
       }
     `,
   });
@@ -182,6 +185,8 @@ export function createLEDGridScene(stage, settings) {
     stats = metrics;
     stateAttribute.needsUpdate = true;
     syncColors();
+    const brightness = Number(settings.brightness ?? 1);
+    uniforms.uBrightness.value = Number.isFinite(brightness) ? Math.max(0, Math.min(2, brightness)) : 1;
     uniforms.uGlow.value = Math.max(0, Number(settings.glow) || 0);
     uniforms.uFlat.value = isFlat() ? 1 : 0;
     uniforms.uHalo.value = isFlat() ? .035 : .045;

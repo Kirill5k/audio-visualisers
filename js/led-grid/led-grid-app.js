@@ -9,7 +9,7 @@ const $ = id => document.getElementById(id);
 const FPS = 60;
 const presentationClock = createLEDPresentationClock();
 const MODES = ['loom', 'calligraphy', 'choreography'];
-const settings = { mode: 'loom', gain: 1.3, persistence: 1, glow: .65,
+const settings = { mode: 'loom', gain: 1.3, persistence: 1, brightness: 1, glow: .65,
   violet: '#7446FF', blue: '#2F5BFF', amber: '#FFA53D', white: '#FFF1D0', motion: false };
 // Device defaults can be 16 kHz (for example a headset communication mode).
 // Decode at a full-bandwidth rate supported by the AAC movie encoder.
@@ -274,13 +274,14 @@ function setSettings(values) {
     else if (['violet', 'blue', 'amber', 'white'].includes(key)) {
       if (!/^#[0-9a-f]{6}$/i.test(value)) throw new RangeError('A six-digit hex colour is required');
       settings[key] = value;
-    } else if (['gain', 'persistence', 'glow'].includes(key)) {
+    } else if (['gain', 'persistence', 'brightness', 'glow'].includes(key)) {
       const input = $(key), number = Number(value);
       if (!Number.isFinite(number)) throw new RangeError('Control value must be finite');
       settings[key] = Math.min(Number(input.max), Math.max(Number(input.min), number));
     }
     if ($(key)) { if (key === 'motion') $(key).checked = settings[key]; else $(key).value = settings[key]; }
-    if ($(key + 'Value')) $(key + 'Value').textContent = settings[key].toFixed(2);
+    if ($(key + 'Value')) $(key + 'Value').textContent = key === 'brightness' ? `${Math.round(settings[key] * 100)}%` : settings[key].toFixed(2);
+    if (key === 'brightness') $(key).setAttribute('aria-valuetext', `${Math.round(settings[key] * 100)}%`);
   }
   renderPosition(position); return true;
 }
@@ -403,7 +404,7 @@ $('resetCameraBtn').onclick = () => setView('front');
 document.querySelectorAll('[data-mode]').forEach(button => { button.onclick = () => setMode(button.dataset.mode); });
 $('modeSelect').onchange = event => setMode(event.target.value);
 document.querySelectorAll('[data-view]').forEach(button => { button.onclick = () => setView(button.dataset.view); });
-for (const key of ['gain', 'persistence', 'glow', 'violet', 'blue', 'amber', 'white', 'motion']) $(key).oninput = () => setSettings({ [key]: key === 'motion' ? $(key).checked : $(key).value });
+for (const key of ['gain', 'persistence', 'brightness', 'glow', 'violet', 'blue', 'amber', 'white', 'motion']) $(key).oninput = () => setSettings({ [key]: key === 'motion' ? $(key).checked : $(key).value });
 document.addEventListener('keydown', action(event => {
   if (event.defaultPrevented || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName) || event.target.isContentEditable) return;
   if (event.code === 'Space') { event.preventDefault(); return audio.isPlaying ? pause() : play(); }

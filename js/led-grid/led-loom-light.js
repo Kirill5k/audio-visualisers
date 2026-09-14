@@ -14,12 +14,15 @@ const intensityByValue = Float64Array.from({ length: 65536 }, (_, value) =>
 
 /** Returns a reused array of four nonnegative linear-light palette coefficients
  * per LED: violet, blue, amber, white. Gain and persistence belong to the caller.
- * Source colors are fixed before deposition, so crossing a row never changes a
- * musical peak's color or energy. Only immutable, causal six-second data is read.
+ * Source colors are fixed before deposition. The entrance is calibrated for
+ * steady tones; mature traveling peaks conserve their energy through the wider
+ * handover. Only immutable, causal six-second data is read.
  */
 export function createLoomLightReader(timeline) {
   const output = new Float32Array(COLUMNS * ROWS * 4);
   const buckets = new Float64Array(COLUMNS * (ROWS + 1) * 4);
+  const accumulated = new Float64Array(output.length);
+  const rowWeights = new Float64Array(ROWS);
   const coolByColumn = Float64Array.from({ length: COLUMNS }, (_, column) =>
     clamp(.16 + column / COLUMNS * .72));
   const groupByColumn = Uint8Array.from({ length: COLUMNS }, (_, column) => {
@@ -83,15 +86,41 @@ export function createLoomLightReader(timeline) {
       }
     }
     const rowStride = COLUMNS * 4;
+    const t2 = phase * phase, t3 = t2 * phase;
+    // A positive cubic reconstruction keeps both fade speed and acceleration
+    // continuous at row boundaries. Two-row fades conserve linear light but
+    // still pulse visibly after the display tone curve, especially for white.
+    const cubic = [(1 - phase) ** 3 / 6, (3 * t3 - 6 * t2 + 4) / 6,
+      (-3 * t3 + 3 * t2 + 3 * phase + 1) / 6, t3 / 6];
+    accumulated.fill(0);
+    rowWeights.fill(0);
+    for (let depth = 1; depth <= ROWS; depth++) {
+      const sourceOffset = depth * rowStride;
+      const centre = depth - 1 + phase;
+      const ramp = Math.min(1, centre / 2);
+      const blend = ramp * ramp * (3 - 2 * ramp);
+      // Blend per source before calibrating the entrance. Fold out-of-board
+      // support into the edge; the existing six-second fade bounds its lifetime.
+      for (let tap = 0; tap < 4; tap++) {
+        const linear = tap === 1 ? 1 - phase : tap === 2 ? phase : 0;
+        const weight = linear * (1 - blend) + cubic[tap] * blend;
+        if (weight === 0) continue;
+        const row = Math.max(0, Math.min(ROWS - 1, depth - 2 + tap));
+        const target = row * rowStride;
+        rowWeights[row] += weight;
+        for (let component = 0; component < rowStride; component++) accumulated[target + component] += buckets[sourceOffset + component] * weight;
+      }
+    }
     for (let row = 0; row < ROWS; row++) for (let component = 0; component < rowStride; component++) {
       const target = row * rowStride + component;
-      const older = buckets[target + rowStride] * (1 - phase);
-      // Current partial-bucket peaks light row zero immediately. At rollover
-      // they become the completed bucket, with no discontinuity or color reset.
-      // This live edge still receives discrete 60 Hz attacks: before a new
-      // bucket's first sample, only the departing bucket supplies its light.
-      // Interior rows always interpolate completed buckets.
-      output[target] = row === 0 ? Math.max(buckets[target], older) : older + buckets[target] * phase;
+      // At the entrance only, the changing kernel support otherwise makes a
+      // constant tone breathe. This is a geometric weight, independent of the
+      // audio level: quiet music is never normalized to full brightness.
+      const weight = row > 0 && row < 4 ? rowWeights[row] : 1;
+      const light = accumulated[target] / weight;
+      // Keep the causal input row's attack and release independent of the
+      // wider history support. Older pulses must not make this row re-flash.
+      output[target] = row === 0 ? Math.max(buckets[component], buckets[rowStride + component] * (1 - phase)) : light;
     }
     return output;
   };
