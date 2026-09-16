@@ -10,7 +10,7 @@ const FPS = 60;
 const presentationClock = createLEDPresentationClock();
 const MODES = ['loom', 'calligraphy', 'choreography'];
 const settings = { mode: 'loom', gain: 1.3, persistence: 1, brightness: 1, glow: .65,
-  violet: '#7446FF', blue: '#2F5BFF', amber: '#FFA53D', white: '#FFF1D0', motion: false };
+  violet: '#7446FF', blue: '#2F5BFF', amber: '#FFA53D', white: '#FFF1D0', motion: false, loomHorizontal: false };
 // Device defaults can be 16 kHz (for example a headset communication mode).
 // Decode at a full-bandwidth rate supported by the AAC movie encoder.
 const audio = createAudioPlayback({ fftSize: 32768, maxFftSize: 32768, smoothing: 0, sampleRate: 48000 });
@@ -252,6 +252,7 @@ function setMode(mode) {
   settings.mode = mode;
   presentationClock.reset();
   $('perspectiveControls').hidden = mode !== 'loom';
+  $('loomControls').hidden = mode !== 'loom';
   $('cameraHint').textContent = mode !== 'loom' ? 'Flat 2D view · scroll to zoom' : 'Drag to orbit · scroll to zoom';
   $('resetCameraBtn').textContent = mode !== 'loom' ? 'Reset zoom' : 'Reset camera';
   $('modeSelect').value = mode;
@@ -270,7 +271,7 @@ function setSettings(values) {
   if (busy || recorder.isRecording) return false;
   for (const [key, value] of Object.entries(values)) {
     if (key === 'mode') { setMode(value); continue; }
-    if (key === 'motion') settings.motion = Boolean(value);
+    if (key === 'motion' || key === 'loomHorizontal') settings[key] = Boolean(value);
     else if (['violet', 'blue', 'amber', 'white'].includes(key)) {
       if (!/^#[0-9a-f]{6}$/i.test(value)) throw new RangeError('A six-digit hex colour is required');
       settings[key] = value;
@@ -279,7 +280,7 @@ function setSettings(values) {
       if (!Number.isFinite(number)) throw new RangeError('Control value must be finite');
       settings[key] = Math.min(Number(input.max), Math.max(Number(input.min), number));
     }
-    if ($(key)) { if (key === 'motion') $(key).checked = settings[key]; else $(key).value = settings[key]; }
+    if ($(key)) { if ($(key).type === 'checkbox') $(key).checked = settings[key]; else $(key).value = settings[key]; }
     if ($(key + 'Value')) $(key + 'Value').textContent = key === 'brightness' ? `${Math.round(settings[key] * 100)}%` : settings[key].toFixed(2);
     if (key === 'brightness') $(key).setAttribute('aria-valuetext', `${Math.round(settings[key] * 100)}%`);
   }
@@ -404,7 +405,7 @@ $('resetCameraBtn').onclick = () => setView('front');
 document.querySelectorAll('[data-mode]').forEach(button => { button.onclick = () => setMode(button.dataset.mode); });
 $('modeSelect').onchange = event => setMode(event.target.value);
 document.querySelectorAll('[data-view]').forEach(button => { button.onclick = () => setView(button.dataset.view); });
-for (const key of ['gain', 'persistence', 'brightness', 'glow', 'violet', 'blue', 'amber', 'white', 'motion']) $(key).oninput = () => setSettings({ [key]: key === 'motion' ? $(key).checked : $(key).value });
+for (const key of ['gain', 'persistence', 'brightness', 'glow', 'violet', 'blue', 'amber', 'white', 'motion', 'loomHorizontal']) $(key).oninput = () => setSettings({ [key]: $(key).type === 'checkbox' ? $(key).checked : $(key).value });
 document.addEventListener('keydown', action(event => {
   if (event.defaultPrevented || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName) || event.target.isContentEditable) return;
   if (event.code === 'Space') { event.preventDefault(); return audio.isPlaying ? pause() : play(); }
