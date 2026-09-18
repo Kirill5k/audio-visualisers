@@ -14,7 +14,7 @@ if (new URLSearchParams(location.search).has('review')) {
     <button id="reviewCancelBtn" class="action glass">Review: export cancellation</button>
     <button id="reviewRecordBtn" class="action glass">Review: recording</button>
     <button id="reviewStabilityBtn" class="action glass">Review: 30-second export stability</button>
-    <pre id="reviewStatus" style="white-space:pre-wrap;font-size:10px;color:#9dc6bf"></pre>`;
+    <pre id="reviewStatus" style="white-space:pre-wrap;font-size:10px;color:var(--atlas-silver)"></pre>`;
   const output = document.getElementById('reviewOutput');
   const status = document.getElementById('reviewStatus');
   let videoURL = null;

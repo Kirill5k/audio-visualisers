@@ -4,11 +4,12 @@ import { buildPeakTree } from './signal-atlas-peak-tree.js';
 import { formatTrackTime } from './signal-atlas-setlist.js';
 import { createSpectrogramPalette } from './signal-atlas-color.js';
 import { createAtlasInstruments, INSTRUMENT_RECTS, INSTRUMENT_VISIBLE_EDGES } from './signal-atlas-instruments.js';
+import { ATLAS_COLORS as C, paletteRgba } from './signal-atlas-palette.js';
 
 const BINS = 16384;
 const ROWS = 1442;
 const FPS = 60;
-const BLACK = new THREE.Color(0x000000);
+const BLACK = new THREE.Color(C.black);
 const RECTS = {
   // Split the .1176 height released by the first row equally between these rows.
   curtain: { x: .06, y: .4014, w: .88, h: .1518 },
@@ -150,7 +151,9 @@ export function createSignalAtlasScene(stage, settings) {
   const curtain = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), curtainMaterial);
   scene.add(curtain);
 
-  const minimap = createWaveformMinimap(scene, RECTS.overview, { color: '#dce0d4', playedColor: '#353b3c', barWidth: 2.3, barGap: .32 });
+  const minimap = createWaveformMinimap(scene, RECTS.overview, { color: C.ivory,
+    playedColor: C.copper, playheadColor: C.ivory,
+    barWidth: 2.3, barGap: .32 });
   const instruments = createAtlasInstruments(scene, settings);
 
   const labelsCanvas = document.createElement('canvas');
@@ -228,7 +231,7 @@ export function createSignalAtlasScene(stage, settings) {
     ctx.save();
     ctx.scale(w / 1920, h / 1080);
     const rule = (x1, y1, x2, y2, alpha = settings.gridOpacity) => {
-      ctx.strokeStyle = `rgba(153,184,183,${alpha})`; ctx.lineWidth = .75;
+      ctx.strokeStyle = paletteRgba(C.silver, alpha); ctx.lineWidth = .75;
       ctx.beginPath(); ctx.moveTo(x1 * 1920, y1 * 1080); ctx.lineTo(x2 * 1920, y2 * 1080); ctx.stroke();
     };
     rule(.06,.073,.94,.073);
@@ -238,27 +241,27 @@ export function createSignalAtlasScene(stage, settings) {
     rule(.06,.3704,.94,.3704);
     rule(.06,.5662,.94,.5662);
     if (settings.labels) {
-      const label = (text, x, y, color = '#a4bdbd', size = 13, align = 'left') => {
+      const label = (text, x, y, color = C.pearl, size = 13, align = 'left') => {
         ctx.fillStyle = color;
         ctx.font = `500 ${size}px "Inter", sans-serif`;
         ctx.textAlign = align;
         ctx.fillText(text, x * 1920, y * 1080);
       };
-      label('S I G N A L   A T L A S', .06, .052, '#dde2d8', 18);
-      label(hasAudio ? `STEREO STUDY  /  ${(analysis.sampleRate / 1000).toFixed(1)} kHz` : 'AN AUDIOVISUAL INSTRUMENT', .94, .051, '#638282', 10, 'right');
+      label('S I G N A L   A T L A S', .06, .052, C.pearl, 18);
+      label(hasAudio ? `STEREO STUDY  /  ${(analysis.sampleRate / 1000).toFixed(1)} kHz` : 'AN AUDIOVISUAL INSTRUMENT', .94, .051, C.silver, 10, 'right');
       label('01   PHASE SCOPE', .06, .096);
       label('02   SPECTRUM ANALYZER', INSTRUMENT_RECTS.analyzer.x, .096);
       label('03   PEAK dBFS', INSTRUMENT_RECTS.meters.x, .096);
       label('04   SPECTROGRAM', .06, .3924);
       label('05   TRACK OVERVIEW', .06, .5862);
-      label(hasAudio ? `${(time / analysis.duration * 100).toFixed(1)}%` : '—', .94, .5862, '#638282', 10, 'right');
-      label(elapsedText, .06, .737, '#d5dfd8', 18);
+      label(hasAudio ? `${(time / analysis.duration * 100).toFixed(1)}%` : '—', .94, .5862, C.silver, 10, 'right');
+      label(elapsedText, .06, .737, C.pearl, 18);
       const elapsedCaptionX = Math.max(.107, .06 + (ctx.measureText(elapsedText).width + 24) / 1920);
-      label('ELAPSED', elapsedCaptionX, .737, '#809895', 11);
-      label(remainingText, .94, .737, '#d5dfd8', 18, 'right');
+      label('ELAPSED', elapsedCaptionX, .737, C.silver, 11);
+      label(remainingText, .94, .737, C.pearl, 18, 'right');
       const remainingCaptionX = Math.min(.876, .94 - (ctx.measureText(remainingText).width + 24) / 1920);
-      label('REMAINING', remainingCaptionX, .737, '#809895', 11, 'right');
-      if (!hasAudio) label('LOAD A TRACK TO REVEAL ITS STRUCTURE', INSTRUMENT_RECTS.analyzer.x + INSTRUMENT_RECTS.analyzer.w / 2, .2248, '#75928f', 11, 'center');
+      label('REMAINING', remainingCaptionX, .737, C.silver, 11, 'right');
+      if (!hasAudio) label('LOAD A TRACK TO REVEAL ITS STRUCTURE', INSTRUMENT_RECTS.analyzer.x + INSTRUMENT_RECTS.analyzer.w / 2, .2248, C.silver, 11, 'center');
     }
     // Track-start carets belong to the overview even when text labels are off.
     // Their tips sit beneath the waveform, with room above the time captions.
@@ -273,7 +276,7 @@ export function createSignalAtlasScene(stage, settings) {
         const marker = markerEntries[i];
         if (marker.time < 0 || marker.time >= duration) continue;
         const x = (RECTS.overview.x + marker.time / duration * RECTS.overview.w) * 1920;
-        ctx.strokeStyle = i === active ? '#dce0d4' : marker.time < time ? '#657475' : '#87adaf';
+        ctx.strokeStyle = i === active ? C.ivory : paletteRgba(C.copper, marker.time < time ? .45 : .8);
         ctx.beginPath();
         ctx.moveTo(x - 3, tipY + 5);
         ctx.lineTo(x, tipY);
