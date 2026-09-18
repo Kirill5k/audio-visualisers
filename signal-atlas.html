@@ -20,17 +20,21 @@
     <input id="fileInput" type="file" accept="audio/*">
     <button id="referenceBtn" class="action reference-button">Load reference track</button>
     <section class="section">
-      <div class="section-title">Composition</div>
-      <div class="control"><label class="control-head" for="gain"><span>Signal gain</span><span id="gainValue" class="value">1.30</span></label><input id="gain" type="range" min="0.5" max="3" step="0.05" value="1.3"></div>
-      <div class="control"><label class="control-head" for="height"><span>Relief height</span><span id="heightValue" class="value">1.70</span></label><input id="height" type="range" min="0.5" max="3" step="0.05" value="1.7"></div>
-      <div class="control"><label class="control-head" for="lineWidth"><span>Stroke weight</span><span id="lineWidthValue" class="value">1.00</span></label><input id="lineWidth" type="range" min="0.5" max="2" step="0.05" value="1"></div>
-      <div class="control"><label class="control-head" for="historySeconds"><span>Waterfall history</span><span id="historySecondsValue" class="value">6.0</span></label><input id="historySeconds" type="range" min="2" max="12" step="0.5" value="6"></div>
+      <div class="section-title">Spectrum analyzer</div>
+      <label class="color-row" for="rtaPreset"><span>Frequency preset</span><select id="rtaPreset"><option value="full">Full range</option><option value="bass">Bass · 20–500 Hz</option><option value="mids">Mids · 500 Hz–4 kHz</option><option value="highs">Highs · 4–20 kHz</option><option value="custom" disabled>Custom range</option></select></label>
+      <div class="rta-range">
+        <label for="rtaMin">Minimum Hz<input id="rtaMin" type="number" min="1" max="24000" step="1" value="20" aria-describedby="rtaStatus"></label>
+        <label for="rtaMax">Maximum Hz<input id="rtaMax" type="number" min="1" max="24000" step="1" value="20000" aria-describedby="rtaStatus"></label>
+      </div>
+      <label class="color-row" for="rtaBoost"><span>Display boost</span><select id="rtaBoost"><option value="0">0 dB</option><option value="6">+6 dB</option><option value="12" selected>+12 dB</option><option value="18">+18 dB</option></select></label>
+      <p id="rtaStatus" class="hint" role="status" aria-live="polite">20 Hz–20 kHz · boost affects the curves only.</p>
+      <p class="hint">Original L/R channels · mute affects listening only.<br>Smooth instrument response · 750 ms peak hold.</p>
+    </section>
+    <section class="section">
+      <div class="section-title">Appearance</div>
+      <div class="control"><label class="control-head" for="gain"><span>History intensity</span><span id="gainValue" class="value">1.30</span></label><input id="gain" type="range" min="0.5" max="3" step="0.05" value="1.3"></div>
       <div class="control"><label class="control-head" for="gridOpacity"><span>Guide opacity</span><span id="gridOpacityValue" class="value">0.12</span></label><input id="gridOpacity" type="range" min="0" max="0.3" step="0.01" value="0.12"></div>
-      <label class="color-row" for="viewAngle"><span>Waterfall view</span><select id="viewAngle"><option value="hero">Oblique</option><option value="front">Front</option><option value="side">Side</option></select></label>
-      <label class="color-row" for="terrainNear"><span>Newest ridge</span><input id="terrainNear" type="color" value="#e3e6d6"></label>
-      <label class="color-row" for="terrainFar"><span>History color</span><input id="terrainFar" type="color" value="#5e9196"></label>
-      <label class="toggle-row" for="energyHue"><span>Shift hue with track energy</span><input id="energyHue" type="checkbox"></label>
-      <label class="toggle-row"><span>Minimal labels</span><input id="labels" type="checkbox" checked></label>
+      <label class="toggle-row" for="labels"><span>Show labels</span><input id="labels" type="checkbox" checked></label>
     </section>
     <section class="section">
       <div class="section-title">Playback position</div>
@@ -44,7 +48,7 @@
     </section>
     <section class="section quality-details">
       <div class="section-title">Master quality</div>
-      <p>32,768 FFT · 16,384 columns<br>1080p / 60 fps · rendered at 4K<br>Bottom 25% reserved for your titles</p>
+      <p>History: 32,768 FFT · 16,384 bins<br>Analyzer: 2,048 FFT · stereo<br>1080p / 60 fps · rendered at 4K<br>Bottom 25% reserved for your titles</p>
       <p class="hint">Space · play/pause<br>R · replay &nbsp; M · mute &nbsp; H · clean view</p>
     </section>
     <section id="reviewTools" class="section" hidden></section>
@@ -61,6 +65,7 @@
   </nav>
   <div id="timeline" class="glass"><span id="currentTime">0:00</span><input id="seek" aria-label="Track position" type="range" min="0" max="1000" step="1" value="0" disabled><span id="durationText">0:00</span></div>
   <div id="readout" class="glass" role="status"><span id="statusLight"></span><span id="statusText">Choose an audio file or load the reference track</span><span id="fps">— fps</span></div>
+  <div id="spectrumHover" hidden aria-hidden="true"><div class="spectrum-crosshair"></div><div class="spectrum-tooltip"></div></div>
   <div id="exportOverlay"><div class="export-card glass"><div id="exportStatus">Rendering Signal Atlas…</div><div class="progress"><div id="exportProgressBar"></div></div><div id="exportPercent">0%</div><button id="exportCancelBtn" class="action glass">Cancel export</button></div></div>
   <div id="fatal" role="alert"></div>
   <div id="reviewOutput" hidden></div>

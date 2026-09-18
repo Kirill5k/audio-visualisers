@@ -27,7 +27,7 @@ function makeFixture(kind) {
   return new File([bytes], `signal-atlas-${kind}.wav`, { type: 'audio/wav' });
 }
 
-function readCanvas() {
+function readCanvas(api) {
   const canvas = document.querySelector('#stage canvas');
   const gl = canvas?.getContext('webgl2');
   if (!gl) throw new Error('The production WebGL2 canvas is unavailable');
@@ -45,8 +45,11 @@ function readCanvas() {
   // Crop the production stereo-meter panel, including a small antialias margin.
   // Its empty reference includes static grid/ticks, so bars cannot hide behind
   // the presence of labels or a non-black background.
-  const left = Math.floor(canvas.width * 0.900), right = Math.ceil(canvas.width * 0.937);
-  const bottom = Math.floor(canvas.height * (1 - 0.469)), top = Math.ceil(canvas.height * (1 - 0.122));
+  const rect = api.getState().scene.instruments.rects.meters;
+  const left = Math.max(0, Math.floor(canvas.width * rect.x));
+  const right = Math.min(canvas.width, Math.ceil(canvas.width * (rect.x + rect.w)));
+  const bottom = Math.max(0, Math.floor(canvas.height * (1 - rect.y - rect.h)));
+  const top = Math.min(canvas.height, Math.ceil(canvas.height * (1 - rect.y)));
   let meterHash = 2166136261;
   for (let y = bottom; y < top; y++) {
     for (let x = left; x < right; x++) {
@@ -77,7 +80,7 @@ export async function runFixtureChecks(api) {
     await api.renderAt(0.5);
     await api.unload();
     const emptyState = api.getState();
-    const emptyCanvas = readCanvas();
+    const emptyCanvas = readCanvas(api);
     results.emptyBaseline = emptyCanvas;
     for (const kind of ['mono', 'right-only', 'opposite-phase', 'silence']) {
       const result = { fixture: kind, checks: {}, passed: false };
@@ -94,15 +97,27 @@ export async function runFixtureChecks(api) {
         result.checks.boundedCache = initial.analysis.cacheCapacity <= 1500;
 
         await api.renderAt(0.5);
-        const first = readCanvas();
+        const first = readCanvas(api);
         const stateAtHalf = api.getState();
+        const instruments = stateAtHalf.scene.instruments;
+        const expectedCorrelation = { mono: 1, 'right-only': 0, 'opposite-phase': -1, silence: 0 }[kind];
+        result.checks.phaseMatchesSignal = Number.isFinite(instruments.correlation)
+          && Math.abs(instruments.correlation - expectedCorrelation) < .001;
+        const silentMeter = meter => meter.sampleDb === -Infinity && meter.heldDb === -Infinity;
+        const toneMeter = meter => Math.abs(meter.sampleDb - 20 * Math.log10(19660 / 32768)) < .15
+          && meter.heldDb >= meter.sampleDb - .001;
+        result.checks.peakMeterMatchesSignal = kind === 'silence'
+          ? silentMeter(instruments.meters.left) && silentMeter(instruments.meters.right)
+          : kind === 'right-only' ? silentMeter(instruments.meters.left) && toneMeter(instruments.meters.right)
+            : toneMeter(instruments.meters.left) && toneMeter(instruments.meters.right);
+        result.instruments = instruments;
         result.checks.pausedExactFrame = !stateAtHalf.playing && !stateAtHalf.busy && stateAtHalf.position === 0.5;
         result.checks.drawsVisibleContent = first.upperNonBlackPixels > 100;
         await api.renderAt(0.5);
-        const repeated = readCanvas();
+        const repeated = readCanvas(api);
         await api.renderAt(0.12);
         await api.renderAt(0.5);
-        const afterSeek = readCanvas();
+        const afterSeek = readCanvas(api);
         const sameSize = frame => frame.width === first.width && frame.height === first.height;
         result.checks.identicalRepeatedFrame = sameSize(repeated) && first.hash === repeated.hash;
         result.checks.identicalAfterSeek = sameSize(afterSeek) && first.hash === afterSeek.hash;
@@ -140,7 +155,7 @@ export async function runFixtureChecks(api) {
         result.endProgressPercent = progressPercent();
         result.checks.completeAtTrackEnd = ended.finished && !ended.playing && !ended.busy && ended.position === ended.duration
           && result.endProgressPercent === 100;
-        result.checks.endBottomQuarterBlack = readCanvas().bottomQuarterNonBlackPixels === 0;
+        result.checks.endBottomQuarterBlack = readCanvas(api).bottomQuarterNonBlackPixels === 0;
         await api.renderAt(0);
         const replay = api.getState();
         result.checks.replayFromZero = replay.ready && !replay.playing && !replay.busy && replay.position === 0 && !replay.finished
@@ -169,10 +184,10 @@ export async function runFixtureChecks(api) {
           && (unloadWhilePlaying ? beforeUnload.playing : beforeUnload.paused && !beforeUnload.playing);
         await api.unload();
         const unloaded = api.getState();
-        const unloadedCanvas = readCanvas();
+        const unloadedCanvas = readCanvas(api);
         const baselineSizeMatches = unloadedCanvas.width === emptyCanvas.width && unloadedCanvas.height === emptyCanvas.height;
-        const emptyLabelsMatch = unloaded.scene.labelState?.key === emptyState.scene.labelState?.key
-          && unloaded.scene.labelState?.hasAudio === false && emptyState.scene.labelState?.hasAudio === false;
+        const emptyLabelsMatch = unloaded.scene.labelState?.hasAudio === false && emptyState.scene.labelState?.hasAudio === false
+          && ['elapsedText', 'remainingText', 'markerCount'].every(key => unloaded.scene.labelState?.[key] === emptyState.scene.labelState?.[key]);
         result.checks.unloadClearsTrack = !unloaded.ready && !unloaded.playing && !unloaded.paused && !unloaded.finished
           && !unloaded.busy && unloaded.position === 0 && unloaded.duration === 0 && unloaded.uploadedFrame === -1;
         result.checks.unloadedMeterMatchesEmpty = baselineSizeMatches && unloadedCanvas.meterHash === emptyCanvas.meterHash;

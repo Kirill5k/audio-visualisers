@@ -10,7 +10,7 @@ if (new URLSearchParams(location.search).has('review')) {
     <button id="reviewClipBtn" class="action glass">Review: export 2 seconds</button>
     <button id="reviewChecksBtn" class="action glass">Review: inspect quality</button>
     <button id="reviewFixturesBtn" class="action glass">Review: audio fixtures</button>
-    <button id="reviewMixControlsBtn" class="action glass">Review: mix controls</button>
+    <button id="reviewMixControlsBtn" class="action glass">Review: analysis controls</button>
     <button id="reviewCancelBtn" class="action glass">Review: export cancellation</button>
     <button id="reviewRecordBtn" class="action glass">Review: recording</button>
     <button id="reviewStabilityBtn" class="action glass">Review: 30-second export stability</button>

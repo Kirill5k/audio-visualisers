@@ -1,27 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { terrainEnergy } from '../js/atlas/signal-atlas-color.js';
+import { spectrogramColor, createSpectrogramPalette } from '../js/atlas/signal-atlas-color.js';
 
-test('energy hue remains neutral in silence and saturates at a bounded loudness', () => {
-  assert.equal(terrainEnergy(null), 0);
-  assert.equal(terrainEnergy({ lRms: 0, rRms: 0 }), 0);
-  assert.equal(terrainEnergy({ lRms: NaN, rRms: -1 }), 0);
-  assert.equal(terrainEnergy({ lRms: 1, rRms: 1 }), 1);
-  const midpoint = 10 ** (-26 / 20);
-  assert.ok(Math.abs(terrainEnergy({ lRms: midpoint, rRms: midpoint }) - .5) < 1e-12);
+test('spectrogram palette matches reference colors and interpolates in display RGB', () => {
+  for (const [level, expected] of [[0, [4, 3, 12]], [.15, [14, 10, 42]], [.30, [45, 12, 95]],
+    [.45, [110, 20, 130]], [.60, [185, 30, 85]], [.75, [230, 80, 25]],
+    [.88, [255, 175, 20]], [.96, [255, 235, 80]], [1, [255, 255, 240]]]) {
+    assert.deepEqual(spectrogramColor(level), expected);
+  }
+  assert.deepEqual(spectrogramColor(.075), [9, 7, 27]);
+  assert.deepEqual(spectrogramColor(-1), [4, 3, 12]);
+  assert.deepEqual(spectrogramColor(2), [255, 255, 240]);
+  assert.deepEqual(spectrogramColor(NaN), [4, 3, 12]);
 });
 
-test('energy hue combines both channels without cancellation or a left-channel bias', () => {
-  const left = terrainEnergy({ lRms: .1, rRms: 0 });
-  const right = terrainEnergy({ lRms: 0, rRms: .1 });
-  assert.equal(left, right);
-  assert.ok(terrainEnergy({ lRms: .1, rRms: .1 }) > left);
-});
-
-test('energy hue depends only on the current analysed track time', () => {
-  const levels = { lRms: .085, rRms: .092 };
-  const atTime = terrainEnergy(levels);
-  terrainEnergy({ lRms: 1, rRms: 1 });
-  terrainEnergy({ lRms: 0, rRms: 0 });
-  assert.equal(terrainEnergy(levels), atTime);
+test('palette texture contains 1024 opaque colors including both endpoints', () => {
+  const palette = createSpectrogramPalette();
+  assert.equal(palette.length, 4096);
+  assert.deepEqual([...palette.subarray(0, 4)], [4, 3, 12, 255]);
+  assert.deepEqual([...palette.subarray(-4)], [255, 255, 240, 255]);
+  assert.ok(palette.every((value, index) => index % 4 !== 3 || value === 255));
 });

@@ -14,6 +14,17 @@
 .signal-atlas select { color: var(--ink); background: #151b1d; border: 1px solid var(--edge); border-radius: 5px; padding: 5px; font: inherit; font-size: 11px; }
 .signal-atlas .quality-details p { font: 10px/1.9 "Inter", sans-serif; color: #8b9b9b; }
 .signal-atlas .seek-entry { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: #b5bfbb; }
+.signal-atlas .rta-range { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+.signal-atlas .rta-range label { display: grid; gap: 6px; font-size: 11px; color: #b5bfbb; }
+.signal-atlas .rta-range input { width: 100%; min-width: 0; padding: 7px; border: 1px solid var(--edge); border-radius: 5px; background: #101619; color: var(--ink); font: inherit; }
+.signal-atlas .rta-range input[aria-invalid="true"] { border-color: #d96680; }
+.signal-atlas #rtaStatus[data-invalid="true"] { color: #ee91a5; }
+.signal-atlas #panel .hint { font-size: 10px; line-height: 1.6; }
+#spectrumHover { position: fixed; z-index: 4; pointer-events: none; }
+#spectrumHover[hidden] { display: none; }
+#spectrumHover .spectrum-crosshair { position: absolute; height: 100%; border-left: 1px dashed #a5a0b9; opacity: .6; }
+#spectrumHover .spectrum-tooltip { position: absolute; top: 8px; padding: 7px 10px; border: 1px solid #39324d; border-radius: 5px; background: rgba(12, 9, 22, .95); color: #e9e5f5; font: 10px/1.6 "Inter", sans-serif; white-space: pre; }
+.signal-atlas.clean #spectrumHover { visibility: hidden; }
 .signal-atlas .setlist-section .section-title { display: block; margin-bottom: 9px; }
 .signal-atlas #setlistInput { width: 100%; min-height: 112px; resize: vertical; padding: 9px; border: 1px solid var(--edge); border-radius: 5px; background: #101619; color: var(--ink); font: 11px/1.6 "Inter", sans-serif; }
 .signal-atlas #setlistInput::placeholder { color: #687777; }

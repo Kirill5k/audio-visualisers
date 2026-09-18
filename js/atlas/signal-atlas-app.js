@@ -1,29 +1,27 @@
 import { createAudioPlayback } from '../audio-playback.js';
 import { createCaptureSession } from '../capture-export.js';
 import { createSignalAnalysis, createSignalFrame } from './signal-atlas-analysis.js';
+import { signalFrameIndex } from './signal-atlas-analysis-core.js';
 import { createSignalAtlasScene } from './signal-atlas-scene.js';
 import { formatTrackTime, parseSetlist } from './signal-atlas-setlist.js';
+import { validateRange, clampRange, RTA_PRESETS } from './signal-atlas-instrument-math.js';
 
 const $ = id => document.getElementById(id);
 const FPS = 60;
 const HISTORY_FRAMES = 24 * FPS;
 const settings = {
   gain: 1.3,
-  height: 1.7,
-  lineWidth: 1,
-  historySeconds: 6,
   gridOpacity: .12,
   labels: true,
-  viewAngle: 'hero',
-  terrainNear: '#e3e6d6',
-  terrainFar: '#5e9196',
-  energyHue: false,
+  rtaMin: 20,
+  rtaMax: 20000,
+  rtaBoost: 12,
   setlist: [],
 };
 
 const audio = createAudioPlayback({ fftSize: 32768, maxFftSize: 32768, smoothing: 0 });
 let analysis = createSignalAnalysis({ cacheFrames: 1500, prefetchFrames: 30 });
-const sampleFrame = createSignalFrame(8192);
+const sampleFrame = createSignalFrame(16384);
 const stage = $('stage');
 // Canvas text is rasterized once per label update. Load the bundled variable
 // font before scene creation so preview and capture never cache fallback text.
@@ -57,6 +55,7 @@ let finished = false;
 let disposed = false;
 let displayedTime = 0;
 let uploadedFrame = -1;
+let displayedSpectrum = null;
 let dirty = true;
 let bufferingTask = null;
 let nextPrefetchAt = 0;
@@ -69,6 +68,7 @@ let viewport = { width: 1920, height: 1080, pixelRatio: 1 };
 let lastError = null;
 let recordingStopWaiter = null;
 let setlistResult = parseSetlist('');
+let hoverPosition = null;
 
 function setStatus(message, live = audio.isPlaying) {
   if ($('statusText')) $('statusText').textContent = message;
@@ -104,7 +104,7 @@ function updateSetlist({ clear = false } = {}) {
 }
 
 function frameAt(time) {
-  return Math.max(0, Math.min(Math.ceil(analysis.duration * FPS) - 1, Math.floor(time * FPS + 1e-7)));
+  return signalFrameIndex(time, analysis.duration);
 }
 
 function updateTimeline() {
@@ -171,6 +171,7 @@ const recorder = globalThis.createRecorder({
 });
 
 function updateButtons() {
+  if (busy || recorder.isRecording) hideSpectrumHover();
   const ready = audio.hasAudio && !busy;
   const locked = Boolean(busy || recorder.isRecording);
   for (const id of ['playPauseBtn', 'replayBtn', 'unloadBtn', 'seek', 'seekSeconds', 'seekBtn']) {
@@ -203,17 +204,31 @@ function updateButtons() {
   $('statusLight')?.classList.toggle('busy', Boolean(busy));
 }
 
+// Keep the displayed spectrum independently of the bounded history cache. A
+// backward seek can evict its end frame while reconstructing earlier history.
+function setSceneHistoryFrames(rows) {
+  scene.setHistoryFrames(rows);
+  if (rows.length) displayedSpectrum = rows[rows.length - 1];
+}
+
+function resetSceneHistory() {
+  displayedSpectrum = null;
+  scene.resetHistory();
+}
+
 function renderPosition(time) {
   displayedTime = Math.max(0, Math.min(analysis.duration || 0, time));
-  analysis.sampleAt(displayedTime, sampleFrame);
+  analysis.sampleAt(displayedTime, sampleFrame, { trailing: true });
   scene.render({
     time: displayedTime,
     analysis,
     frame: sampleFrame,
+    spectralFrame: analysis.buffer ? displayedSpectrum : null,
     levels: analysis.buffer ? analysis.getLevels(displayedTime) : null,
   });
   dirty = false;
   updateTimeline();
+  updateSpectrumHover();
 }
 
 async function rebuildHistory(time, token = generation, onProgress) {
@@ -221,8 +236,8 @@ async function rebuildHistory(time, token = generation, onProgress) {
   const start = Math.max(0, end - HISTORY_FRAMES + 1);
   const rows = await analysis.getRange(start, end, { onProgress });
   if (token !== generation || disposed) return false;
-  scene.resetHistory();
-  scene.setHistoryFrames(rows);
+  resetSceneHistory();
+  setSceneHistoryFrames(rows);
   uploadedFrame = end;
   nextPrefetchAt = end;
   renderPosition(time);
@@ -264,7 +279,7 @@ async function recoverHistory() {
     } else {
       const rows = await analysis.getRange(Math.max(0, uploadedFrame + 1), end);
       if (token !== generation || disposed) return;
-      scene.setHistoryFrames(rows);
+      setSceneHistoryFrames(rows);
       uploadedFrame = end;
       renderPosition(position);
     }
@@ -369,7 +384,7 @@ async function loadTrack(file, { autoplay = true } = {}) {
   try {
     const buffer = await audio.load(file);
     if (token !== generation) return false;
-    scene.resetHistory();
+    resetSceneHistory();
     uploadedFrame = -1;
     displayedTime = 0;
     await analysis.load(buffer, { onProgress: fraction => {
@@ -378,11 +393,12 @@ async function loadTrack(file, { autoplay = true } = {}) {
     if (token !== generation) return false;
     // Keep a setlist pasted before the first load, but never carry track starts
     // from a previous mix into its replacement.
+    syncAnalyzerRange();
     updateSetlist({ clear: replacingTrack });
     scene.setOverview(analysis.peaks, analysis.rmsPeaks);
     const rows = await analysis.getRange(0, Math.min(29, frameAt(audio.duration)));
     if (token !== generation) return false;
-    scene.setHistoryFrames(rows.filter(row => row.frame === 0));
+    setSceneHistoryFrames(rows.filter(row => row.frame === 0));
     uploadedFrame = 0;
     nextPrefetchAt = 0;
     renderPosition(0);
@@ -391,7 +407,7 @@ async function loadTrack(file, { autoplay = true } = {}) {
     audio.unload();
     analysis.dispose();
     analysis = createSignalAnalysis({ cacheFrames: 1500, prefetchFrames: 30 });
-    scene.resetHistory();
+    resetSceneHistory();
     scene.setOverview(new Float32Array(0));
     uploadedFrame = -1;
     displayedTime = 0;
@@ -434,7 +450,7 @@ function unload() {
   audio.unload();
   analysis.dispose();
   analysis = createSignalAnalysis({ cacheFrames: 1500, prefetchFrames: 30 });
-  scene.resetHistory();
+  resetSceneHistory();
   scene.setOverview(new Float32Array(0));
   uploadedFrame = -1;
   nextPrefetchAt = 0;
@@ -504,7 +520,7 @@ async function exportVideo({ start = 0, duration = audio.duration, writable = nu
         const end = frameAt(data.time);
         if (end !== uploadedFrame) {
           const rows = await analysis.getRange(Math.max(0, uploadedFrame + 1), end);
-          scene.setHistoryFrames(rows);
+          setSceneHistoryFrames(rows);
           uploadedFrame = end;
         }
         renderPosition(data.time);
@@ -661,16 +677,81 @@ async function recordClip({ duration = 1, writable } = {}) {
   }
 }
 
-function setView(name) {
-  if (!['hero', 'front', 'side'].includes(name)) throw new RangeError('View must be hero, front, or side.');
-  if (busy || recorder.isRecording) return false;
-  settings.viewAngle = name;
-  if ($('viewAngle')) $('viewAngle').value = name;
-  dirty = true;
-  return true;
+function formatFrequency(hz) {
+  return hz >= 1000 ? `${Number((hz / 1000).toFixed(2))} kHz` : `${Number(hz.toFixed(1))} Hz`;
 }
 
+function setAnalyzerRange(min, max) {
+  const range = validateRange(min, max, analysis.sampleRate || 48000);
+  settings.rtaMin = range.min;
+  settings.rtaMax = range.max;
+  $('rtaMin').value = String(range.min);
+  $('rtaMax').value = String(range.max);
+  for (const id of ['rtaMin', 'rtaMax']) $(id).removeAttribute('aria-invalid');
+  $('rtaStatus').dataset.invalid = 'false';
+  $('rtaStatus').textContent = `${formatFrequency(range.min)}–${formatFrequency(range.max)} · boost affects the curves only.`;
+  const preset = Object.entries(RTA_PRESETS).find(([, value]) => value.min === range.min && Math.min(value.max, (analysis.sampleRate || 48000) / 2) === range.max);
+  $('rtaPreset').value = preset?.[0] || 'custom';
+  dirty = true;
+}
+
+function syncAnalyzerRange() {
+  const sampleRate = analysis.sampleRate || 48000;
+  const range = clampRange(settings.rtaMin, settings.rtaMax, sampleRate);
+  setAnalyzerRange(range.min, range.max);
+  for (const id of ['rtaMin', 'rtaMax']) $(id).max = String(sampleRate / 2);
+  for (const option of $('rtaPreset').options) {
+    if (option.value !== 'custom') option.disabled = RTA_PRESETS[option.value].min >= sampleRate / 2;
+  }
+}
+
+function editAnalyzerRange() {
+  if (busy || recorder.isRecording) return;
+  try { setAnalyzerRange($('rtaMin').value, $('rtaMax').value); }
+  catch (error) {
+    for (const id of ['rtaMin', 'rtaMax']) $(id).setAttribute('aria-invalid', 'true');
+    $('rtaStatus').dataset.invalid = 'true';
+    $('rtaStatus').textContent = error.message;
+  }
+}
+
+function hideSpectrumHover() {
+  hoverPosition = null;
+  $('spectrumHover').hidden = true;
+}
+
+function updateSpectrumHover() {
+  const overlay = $('spectrumHover');
+  if (!hoverPosition || busy || recorder.isRecording || capture.isExporting || document.body.classList.contains('clean')) {
+    overlay.hidden = true;
+    return;
+  }
+  const hit = scene.hitTest(hoverPosition.x, hoverPosition.y);
+  if (!hit) { overlay.hidden = true; return; }
+  const bounds = scene.canvas.getBoundingClientRect();
+  const rect = scene.getInfo().instruments.rects.analyzer;
+  overlay.style.left = `${bounds.left + rect.x * bounds.width}px`;
+  overlay.style.top = `${bounds.top + rect.y * bounds.height}px`;
+  overlay.style.width = `${rect.w * bounds.width}px`;
+  overlay.style.height = `${rect.h * bounds.height}px`;
+  const localX = (hoverPosition.x - rect.x) * bounds.width;
+  overlay.querySelector('.spectrum-crosshair').style.left = `${localX}px`;
+  const tooltip = overlay.querySelector('.spectrum-tooltip');
+  const db = value => Number.isFinite(value) ? value.toFixed(1) : '−∞';
+  tooltip.textContent = `${formatFrequency(hit.frequency)}\nL ${db(hit.leftDb)} dBFS   R ${db(hit.rightDb)} dBFS\nSmoothed · before display boost`;
+  overlay.hidden = false;
+  tooltip.style.left = `${Math.max(0, Math.min(rect.w * bounds.width - tooltip.offsetWidth, localX + 12))}px`;
+}
+
+scene.canvas.addEventListener('pointermove', event => {
+  const bounds = scene.canvas.getBoundingClientRect();
+  hoverPosition = { x: (event.clientX - bounds.left) / bounds.width, y: (event.clientY - bounds.top) / bounds.height };
+  updateSpectrumHover();
+});
+scene.canvas.addEventListener('pointerleave', hideSpectrumHover);
+
 function toggleClean(force) {
+  hideSpectrumHover();
   const hidden = force ?? !document.body.classList.contains('clean');
   document.body.classList.toggle('clean', hidden);
   $('cleanBtn')?.setAttribute('aria-pressed', String(hidden));
@@ -730,7 +811,18 @@ bind('cleanBtn', 'click', () => toggleClean());
 bind('fullscreenBtn', 'click', () => document.fullscreenElement
   ? document.exitFullscreen()
   : document.documentElement.requestFullscreen());
-bind('viewAngle', 'change', event => setView(event.target.value));
+bind('rtaMin', 'input', editAnalyzerRange);
+bind('rtaMax', 'input', editAnalyzerRange);
+bind('rtaPreset', 'change', event => {
+  if (busy || recorder.isRecording) return;
+  const preset = RTA_PRESETS[event.target.value];
+  if (preset) setAnalyzerRange(preset.min, preset.max);
+});
+bind('rtaBoost', 'input', event => {
+  if (busy || recorder.isRecording) return;
+  const value = Number(event.target.value);
+  if ([0, 6, 12, 18].includes(value)) { settings.rtaBoost = value; dirty = true; }
+});
 bind('setlistInput', 'input', () => {
   if (!busy && !recorder.isRecording) updateSetlist();
 });
@@ -741,8 +833,7 @@ document.querySelector('label[for="fileInput"]')?.addEventListener('keydown', ev
   if (!$('fileInput').disabled) $('fileInput').click();
 });
 
-for (const key of Object.keys(settings)) {
-  if (key === 'viewAngle' || key === 'setlist') continue;
+for (const key of ['gain', 'gridOpacity', 'labels']) {
   bind(key, 'input', event => {
     if (busy || recorder.isRecording) return;
     settings[key] = event.target.type === 'checkbox' ? event.target.checked
@@ -794,7 +885,7 @@ function animate(now) {
       if (!rows) {
         recoverHistory();
       } else if ((rows.length || dirty) && (!recorder.isRecording || !capture.shouldSkipRecordingFrame(now, true))) {
-        if (rows.length) scene.setHistoryFrames(rows);
+        if (rows.length) setSceneHistoryFrames(rows);
         uploadedFrame = end;
         // The same 60 Hz track clock drives preview and deterministic export.
         renderPosition(Math.min(audio.duration, end / FPS));
@@ -845,7 +936,6 @@ window.signalAtlas = Object.freeze({
   },
   exportClip: ({ start = displayedTime, duration = 2, writable = null } = {}) => exportVideo({ start, duration, writable, clip: true }),
   recordClip,
-  setView,
   getState: () => ({
     ready: Boolean(analysis.buffer),
     busy,
@@ -861,7 +951,7 @@ window.signalAtlas = Object.freeze({
     fileName: audio.fileName,
     fps: latestFps,
     viewport: { ...viewport, canvasWidth: scene.canvas.width, canvasHeight: scene.canvas.height },
-    quality: { fftSize: 32768, frequencyBins: 16384, columns: 16384, analysisFps: FPS, exportWidth: 1920, exportHeight: 1080, exportScale: 2 },
+    quality: { fftSize: 32768, frequencyBins: 16384, rtaFftSize: 2048, analysisFps: FPS, exportWidth: 1920, exportHeight: 1080, exportScale: 2 },
     settings: { ...settings, setlist: settings.setlist.map(entry => ({ ...entry })) },
     setlist: {
       entries: setlistResult.entries.map(entry => ({ ...entry })),
@@ -874,6 +964,7 @@ window.signalAtlas = Object.freeze({
   }),
 });
 
+syncAnalyzerRange();
 togglePanel(false);
 resizePreview();
 updateButtons();

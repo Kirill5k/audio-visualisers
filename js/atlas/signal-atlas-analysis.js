@@ -1,18 +1,39 @@
-import { ANALYSIS_FPS, FFT_SIZE, FFT_BINS, LEVEL_STRIDE, createSignalFrame, fillSignalFrame } from './signal-atlas-analysis-core.js';
-import { SpectrumCache } from '../starfield/starfield-analysis-core.js';
+import { ANALYSIS_FPS, FFT_SIZE, FFT_BINS, RTA_FFT_SIZE, RTA_BINS, LEVEL_STRIDE, createSignalFrame, fillSignalFrame, signalFrameIndex } from './signal-atlas-analysis-core.js';
 
 export { createSignalFrame };
 const MAX_RANGE_FRAMES = 1450;
-const emptyLevels = () => ({ lRms: 0, rRms: 0, lPeak: 0, rPeak: 0, correlation: 0 });
+const emptyLevels = () => ({ lRms: 0, rRms: 0, lPeak: 0, rPeak: 0, correlation: 0,
+  lSamplePeak: 0, rSamplePeak: 0, lDisplayPeak: 0, rDisplayPeak: 0 });
 const abortError = () => new DOMException('Audio analysis was replaced or reset', 'AbortError');
+
+/** A single FIFO owns complete frame payloads so history and stereo curves
+ * always evict together. Reads do not change retention or request order. */
+class SignalFrameCache {
+  constructor(capacity) { this.capacity = capacity; this.entries = new Map(); }
+  get size() { return this.entries.size; }
+  get bytes() {
+    let bytes = 0;
+    for (const frame of this.entries.values()) {
+      bytes += frame.spectrum.byteLength + frame.rtaLeft.byteLength + frame.rtaRight.byteLength;
+    }
+    return bytes;
+  }
+  get(frame) { return this.entries.get(frame); }
+  set(frame, data) {
+    this.entries.set(frame, data);
+    while (this.entries.size > this.capacity) this.entries.delete(this.entries.keys().next().value);
+  }
+  clear() { this.entries.clear(); }
+}
 
 /** Worker-owned full-resolution FFTs plus a bounded main-thread cache.
  * Histories are requested by absolute 60 Hz frame number, so playback, seeking
  * and offline export receive identical data regardless of request order. */
 export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 } = {}) {
-  const cache = new SpectrumCache(Math.max(1, Math.min(1500, Math.floor(cacheFrames))));
+  const cache = new SignalFrameCache(Math.max(1, Math.min(1500, Math.floor(cacheFrames))));
   let worker = null, generation = 0, epoch = 0, requestId = 0;
   let audioBuffer = null, channels = null, summary = null, loadRequest = null, disposed = false;
+  let workerRtaCacheBytes = 0;
   const pendingFrames = new Map();
   const batches = new Map();
 
@@ -30,6 +51,7 @@ export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 }
     summary = null;
     audioBuffer = null;
     channels = null;
+    workerRtaCacheBytes = 0;
     cache.clear();
     generation++;
     epoch++;
@@ -39,6 +61,7 @@ export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 }
     worker = new Worker(new URL('./signal-atlas-analysis-worker.js', import.meta.url), { type: 'module' });
     worker.onmessage = ({ data: message }) => {
       if (message.generation !== generation || disposed) return;
+      if (Number.isFinite(message.workerRtaCacheBytes)) workerRtaCacheBytes = message.workerRtaCacheBytes;
       if (message.type === 'progress') {
         if (loadRequest?.id === message.id) loadRequest.onProgress?.(message.progress);
       } else if (message.type === 'loaded') {
@@ -55,8 +78,9 @@ export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 }
           if (!request || request.id !== message.id) continue;
           pendingFrames.delete(item.frame);
           batch.delete(item.frame);
-          cache.set(item.frame, item.spectrum);
-          request.resolve(packFrame(item.frame, item.spectrum));
+          const frame = packFrame(item);
+          cache.set(item.frame, frame);
+          request.resolve(frame);
         }
         if (!batch.size) batches.delete(message.id);
       } else if (message.type === 'error') {
@@ -79,7 +103,9 @@ export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 }
     return Math.floor(frame);
   }
 
-  function packFrame(frame, spectrum) { return { frame, time: frame / ANALYSIS_FPS, spectrum }; }
+  function packFrame({ frame, spectrum, rtaLeft, rtaRight }) {
+    return { frame, time: frame / ANALYSIS_FPS, spectrum, rtaLeft, rtaRight };
+  }
 
   async function load(input, { onProgress } = {}) {
     if (disposed) throw new Error('Audio analysis has been disposed');
@@ -92,6 +118,7 @@ export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 }
     worker?.terminate();
     worker = null;
     summary = null;
+    workerRtaCacheBytes = 0;
     cache.clear();
     audioBuffer = input;
     channels = Array.from({ length: input.numberOfChannels }, (_, channel) => input.getChannelData(channel));
@@ -122,7 +149,7 @@ export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 }
     for (let frame = start; frame <= end; frame++) {
       const cached = cache.get(frame);
       let promise;
-      if (cached) promise = Promise.resolve(packFrame(frame, cached));
+      if (cached) promise = Promise.resolve(cached);
       else if (pendingFrames.has(frame)) promise = pendingFrames.get(frame).promise;
       else {
         const request = { id };
@@ -150,8 +177,7 @@ export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 }
   function getCachedFrame(frameIndex) {
     if (!summary || disposed) return null;
     const frame = normalizedFrame(frameIndex);
-    const spectrum = cache.get(frame);
-    return spectrum ? packFrame(frame, spectrum) : null;
+    return cache.get(frame) || null;
   }
 
   function prefetch(frameIndex) {
@@ -162,23 +188,26 @@ export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 }
     return getRange(frame + 1, end).then(() => {}, () => {});
   }
 
-  function sampleAt(time, frame = createSignalFrame()) {
+  function sampleAt(time, frame = createSignalFrame(), options = {}) {
     if (!channels || disposed) {
       frame.left.fill(0);
       frame.right.fill(0);
+      frame.startSample = 0;
       Object.assign(frame, emptyLevels());
       return frame;
     }
-    return fillSignalFrame(channels, audioBuffer.sampleRate, time, frame);
+    return fillSignalFrame(channels, audioBuffer.sampleRate, time, frame, options);
   }
 
   function getLevels(time) {
     if (!summary || disposed || time < 0) return emptyLevels();
     if (!Number.isFinite(time)) throw new Error('Meter time must be finite');
-    const index = Math.max(0, Math.min(summary.frames - 1, Math.floor(time * ANALYSIS_FPS)));
+    const index = Math.min(summary.frames - 1, signalFrameIndex(time, summary.duration));
     const base = index * LEVEL_STRIDE;
     return { lRms: summary.levels[base], rRms: summary.levels[base + 1],
-      lPeak: summary.levels[base + 2], rPeak: summary.levels[base + 3], correlation: summary.levels[base + 4] };
+      lPeak: summary.levels[base + 2], rPeak: summary.levels[base + 3], correlation: summary.levels[base + 4],
+      lSamplePeak: summary.levels[base + 5], rSamplePeak: summary.levels[base + 6],
+      lDisplayPeak: summary.levels[base + 7], rDisplayPeak: summary.levels[base + 8] };
   }
 
   function reset() {
@@ -200,9 +229,11 @@ export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 }
   }
 
   function getInfo() {
-    return { fftSize: FFT_SIZE, frequencyBinCount: FFT_BINS, fps: ANALYSIS_FPS,
+    return { fftSize: FFT_SIZE, frequencyBinCount: FFT_BINS, rtaFftSize: RTA_FFT_SIZE,
+      rtaFrequencyBinCount: RTA_BINS, fps: ANALYSIS_FPS,
       frameCount: summary?.frames || 0, duration: summary?.duration || 0, sampleRate: summary?.sampleRate || 0,
       cachedFrames: cache.size, cacheCapacity: cache.capacity, cacheBytes: cache.bytes,
+      workerRtaCacheBytes,
       featureBytes: summary?.levels.byteLength || 0, loaded: !!summary, spectrumBits: 16 };
   }
 
