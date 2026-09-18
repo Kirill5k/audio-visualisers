@@ -11,11 +11,11 @@ const FPS = 60;
 const HISTORY_FRAMES = 24 * FPS;
 const settings = {
   gain: 1.3,
-  gridOpacity: .12,
+  gridOpacity: .3,
   labels: true,
   rtaMin: 20,
   rtaMax: 20000,
-  rtaBoost: 12,
+  rtaBoost: 6,
   setlist: [],
 };
 

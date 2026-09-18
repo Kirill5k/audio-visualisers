@@ -4,18 +4,29 @@ import { amplitudeToDb, clampRange, dbToUnit, fillPhaseTrail, frequencyAt, RTA_F
 // Compress the instrument row around its heading without shrinking typography.
 const rowY = y => .096 + (y - .096) * .7;
 const labelY = y => rowY(y) * 1080;
+const scopeRect = Object.freeze({ x: .06, y: rowY(.12), w: .17175, h: .35 * .7 });
+const meterRect = Object.freeze({ x: .86, y: rowY(.14), w: .08, h: .30 * .7 });
+const SCOPE_CENTER_X = .155, CORRELATION_WIDTH = .1584, METER_BAR_WIDTH = .22;
+// Preserve bar width and halve the clear gap: .24 → .12 of the meter column.
+const meterCenter = index => index ? .67 : .33;
+export const INSTRUMENT_VISIBLE_EDGES = Object.freeze({
+  scopeRight: SCOPE_CENTER_X + CORRELATION_WIDTH / 2,
+  meterLeft: meterRect.x + meterRect.w * (meterCenter(0) - METER_BAR_WIDTH / 2),
+});
+const analyzerWidth = .57475;
+// Balance against the drawn correlation bar and first peak bar, excluding
+// invisible container padding and the meter's labels inside the right gap.
+const analyzerX = (INSTRUMENT_VISIBLE_EDGES.scopeRight + INSTRUMENT_VISIBLE_EDGES.meterLeft - analyzerWidth) / 2;
 export const INSTRUMENT_RECTS = Object.freeze({
-  scope: Object.freeze({ x: .06, y: rowY(.12), w: .17175, h: .35 * .7 }),
-  analyzer: Object.freeze({ x: .24425, y: rowY(.14), w: .57475, h: .30 * .7 }),
-  meters: Object.freeze({ x: .86, y: rowY(.14), w: .08, h: .30 * .7 }),
+  scope: scopeRect,
+  analyzer: Object.freeze({ x: analyzerX, y: rowY(.14), w: analyzerWidth, h: .30 * .7 }),
+  meters: meterRect,
 });
 
 const CYAN = '#00f3ff', PINK = '#ff007f', PURPLE = '#9d72ff', GREEN = '#22c55e';
 const CURVE_POINTS = 1280, SCOPE_POINTS = 8192;
-const SCOPE = { cx: .155 * 1920, cy: labelY(.262), scale: 108 * .7,
+const SCOPE = { cx: SCOPE_CENTER_X * 1920, cy: labelY(.262), scale: 108 * .7,
   left: .064, right: .23175, top: rowY(.132), bottom: rowY(.394) };
-// Preserve bar width and halve the clear gap: .24 → .12 of the meter column.
-const meterCenter = index => index ? .67 : .33;
 const DB_STEPS = [0, -6, -12, -18, -24, -30, -36, -42, -48, -54, -60, -66, -72, -78, -84, -90];
 const FREQUENCIES = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 const planeVertex = `varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`;
@@ -47,7 +58,7 @@ export function createAtlasInstruments(scene, settings) {
   scene.add(group);
   let aspect = 16 / 9, width = 1920, height = 1080, ratio = 1;
   let latest = { frame: null, spectralFrame: null, levels: null, sampleRate: 48000, hasAudio: false };
-  let range = clampRange(settings.rtaMin, settings.rtaMax), boost = 12, correlation = 0;
+  let range = clampRange(settings.rtaMin, settings.rtaMax), boost = 6, correlation = 0;
   const meterState = { left: { sampleDb: -Infinity, displayDb: -Infinity, heldDb: -Infinity }, right: { sampleDb: -Infinity, displayDb: -Infinity, heldDb: -Infinity } };
   let scopeState = { count: 0, correlation: 0, duration: 0, stride: 1 };
   const curveLeft = makeCurve(CYAN), curveRight = makeCurve(PINK);
@@ -124,7 +135,7 @@ export function createAtlasInstruments(scene, settings) {
   function update({ frame = null, spectralFrame = null, levels = null, sampleRate = 48000, hasAudio = false } = {}) {
     latest = { frame, spectralFrame, levels, sampleRate, hasAudio };
     range = clampRange(settings.rtaMin, settings.rtaMax, sampleRate);
-    boost = [0, 6, 12, 18].includes(Number(settings.rtaBoost)) ? Number(settings.rtaBoost) : 12;
+    boost = [0, 6, 12, 18].includes(Number(settings.rtaBoost)) ? Number(settings.rtaBoost) : 6;
     scopeState = fillPhaseTrail(hasAudio ? frame : null, sampleRate, scopePositions, scopeWeights);
     correlation = scopeState.correlation;
     const count = scopeState.count;
@@ -146,7 +157,7 @@ export function createAtlasInstruments(scene, settings) {
       state.heldDb = amplitudeToDb(hasAudio ? levels?.[channel + 'Peak'] : 0);
       const level = dbToUnit(state.displayDb), hold = dbToUnit(state.heldDb);
       const x = rect.x + rect.w * meterCenter(meter.index);
-      const barWidth = rect.w * .22 * 100, barHeight = rect.h * 100 / aspect * level;
+      const barWidth = rect.w * METER_BAR_WIDTH * 100, barHeight = rect.h * 100 / aspect * level;
       meter.bar.material.uniforms.uLevel.value = level;
       meter.bar.scale.set(barWidth, barHeight, 1);
       meter.bar.position.set(worldX(x), worldY(rect.y + rect.h) + barHeight / 2, 0);
@@ -166,7 +177,7 @@ export function createAtlasInstruments(scene, settings) {
 
   function drawLabels(ctx) {
     const labels = settings.labels !== false;
-    const opacity = Number.isFinite(settings.gridOpacity) ? settings.gridOpacity : .2;
+    const opacity = Number.isFinite(settings.gridOpacity) ? settings.gridOpacity : .3;
     const line = (x1, y1, x2, y2, color = '#788899', alpha = Math.min(1, opacity * 1.6)) => {
       ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = .8;
       ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.globalAlpha = 1;
@@ -197,7 +208,7 @@ export function createAtlasInstruments(scene, settings) {
     text('R', cx + scale + 10, cy - scale - 8, PINK, 12, 'center');
     text(`Φ  ${correlation >= 0 ? '+' : '−'}${Math.abs(correlation).toFixed(3)}`, cx, labelY(.429),
       correlation < 0 ? '#ef4444' : correlation > 0 ? GREEN : '#b3b5c4', 14, 'center');
-    const barW = .1584 * 1920, barX = cx - barW / 2, barY = labelY(.45);
+    const barW = CORRELATION_WIDTH * 1920, barX = cx - barW / 2, barY = labelY(.45);
     const gradient = ctx.createLinearGradient(barX, 0, barX + barW, 0);
     gradient.addColorStop(0, '#7f202b'); gradient.addColorStop(.5, '#666476'); gradient.addColorStop(1, '#22c55e');
     ctx.fillStyle = gradient; ctx.globalAlpha = .7; ctx.fillRect(barX, barY, barW, 4); ctx.globalAlpha = 1;
@@ -209,8 +220,8 @@ export function createAtlasInstruments(scene, settings) {
 
     const analyzer = INSTRUMENT_RECTS.analyzer, meterRect = INSTRUMENT_RECTS.meters;
     const leftX = analyzer.x * 1920, rightX = (analyzer.x + analyzer.w) * 1920;
-    const meterLeftX = (meterRect.x + meterRect.w * (meterCenter(0) - .11)) * 1920;
-    const meterRightX = (meterRect.x + meterRect.w * (meterCenter(1) + .11)) * 1920;
+    const meterLeftX = INSTRUMENT_VISIBLE_EDGES.meterLeft * 1920;
+    const meterRightX = (meterRect.x + meterRect.w * (meterCenter(1) + METER_BAR_WIDTH / 2)) * 1920;
     const meterLabelX = meterLeftX - 10;
     for (const db of DB_STEPS) {
       const y = (analyzer.y + analyzer.h * (1 - dbToUnit(db))) * 1080;

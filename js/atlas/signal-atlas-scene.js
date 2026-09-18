@@ -3,7 +3,7 @@ import { createWaveformMinimap, rectToWorld } from '../monitor-charts.js';
 import { buildPeakTree } from './signal-atlas-peak-tree.js';
 import { formatTrackTime } from './signal-atlas-setlist.js';
 import { createSpectrogramPalette } from './signal-atlas-color.js';
-import { createAtlasInstruments, INSTRUMENT_RECTS } from './signal-atlas-instruments.js';
+import { createAtlasInstruments, INSTRUMENT_RECTS, INSTRUMENT_VISIBLE_EDGES } from './signal-atlas-instruments.js';
 
 const BINS = 16384;
 const ROWS = 1442;
@@ -232,7 +232,8 @@ export function createSignalAtlasScene(stage, settings) {
       ctx.beginPath(); ctx.moveTo(x1 * 1920, y1 * 1080); ctx.lineTo(x2 * 1920, y2 * 1080); ctx.stroke();
     };
     rule(.06,.073,.94,.073);
-    rule(.238,.097,.238,.3592,settings.gridOpacity*.7);
+    const scopeDividerX = (INSTRUMENT_VISIBLE_EDGES.scopeRight + INSTRUMENT_RECTS.analyzer.x) / 2;
+    rule(scopeDividerX,.097,scopeDividerX,.3592,settings.gridOpacity*.7);
 
     rule(.06,.3704,.94,.3704);
     rule(.06,.5662,.94,.5662);
@@ -246,12 +247,7 @@ export function createSignalAtlasScene(stage, settings) {
       label('S I G N A L   A T L A S', .06, .052, '#dde2d8', 18);
       label(hasAudio ? `STEREO STUDY  /  ${(analysis.sampleRate / 1000).toFixed(1)} kHz` : 'AN AUDIOVISUAL INSTRUMENT', .94, .051, '#638282', 10, 'right');
       label('01   PHASE SCOPE', .06, .096);
-      const spectrumHeading = '02   SPECTRUM ANALYZER';
-      const scopeHeadingRight = .06 + ctx.measureText('01   PHASE SCOPE').width / 1920;
-      const spectrumHeadingWidth = ctx.measureText(spectrumHeading).width / 1920;
-      // Equal whitespace between the three heading boxes, like space-between.
-      const spectrumHeadingX = (scopeHeadingRight + INSTRUMENT_RECTS.meters.x - spectrumHeadingWidth) / 2;
-      label(spectrumHeading, spectrumHeadingX, .096);
+      label('02   SPECTRUM ANALYZER', INSTRUMENT_RECTS.analyzer.x, .096);
       label('03   PEAK dBFS', INSTRUMENT_RECTS.meters.x, .096);
       label('04   SPECTROGRAM', .06, .3924);
       label('05   TRACK OVERVIEW', .06, .5862);
@@ -262,7 +258,7 @@ export function createSignalAtlasScene(stage, settings) {
       label(remainingText, .94, .737, '#d5dfd8', 18, 'right');
       const remainingCaptionX = Math.min(.876, .94 - (ctx.measureText(remainingText).width + 24) / 1920);
       label('REMAINING', remainingCaptionX, .737, '#809895', 11, 'right');
-      if (!hasAudio) label('LOAD A TRACK TO REVEAL ITS STRUCTURE', .55, .2248, '#75928f', 11, 'center');
+      if (!hasAudio) label('LOAD A TRACK TO REVEAL ITS STRUCTURE', INSTRUMENT_RECTS.analyzer.x + INSTRUMENT_RECTS.analyzer.w / 2, .2248, '#75928f', 11, 'center');
     }
     // Track-start carets belong to the overview even when text labels are off.
     // Their tips sit beneath the waveform, with room above the time captions.
