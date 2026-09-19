@@ -142,8 +142,8 @@ function createTerrain(uniforms) {
       }
     `,
     fragmentShader: `
-      uniform vec3 uTerrainNear;
-      uniform vec3 uTerrainFar;
+      uniform vec3 uTerrainBase;
+      uniform vec3 uTerrainPeak;
       uniform float uStroke;
       uniform float uFilterWidth;
       varying vec2 vSegmentPoint;
@@ -159,7 +159,9 @@ function createTerrain(uniforms) {
         float edge = clamp((vRadius - length(delta)) / uFilterWidth, 0.0, min(1.0, uStroke / uFilterWidth));
         float fade = mix(.29, .98, pow(1.0 - vAge, .85));
         fade *= (.4 + sqrt(max(0.0, vEnergy)) * .6) * mix(.86, 1.0, vMajor);
-        vec3 color = mix(uTerrainFar, uTerrainNear, 1.0 - vAge * .85);
+        // Elevation selects the tone; age only fades it into the distance.
+        float peak = smoothstep(.40, .72, vEnergy);
+        vec3 color = mix(uTerrainBase, uTerrainPeak, peak);
         // Filter luminance in linear light. Multiplying encoded sRGB by
         // coverage makes subpixel strokes too dark, especially in small views.
         vec3 ink = color * fade;
@@ -245,7 +247,7 @@ export function createSpectralTerrainScene(stage, settings) {
     uSpacing: { value: Number(settings.ridgeSpacing) || 1 },
     uFrequencySpread: { value: Number(settings.frequencySpread) || 1 },
     uStroke: { value: settings.lineWidth }, uFilterWidth: { value: 2 }, uResolution: { value: new THREE.Vector2(3840, 2160) },
-    uTerrainNear: { value: new THREE.Color() }, uTerrainFar: { value: new THREE.Color() },
+    uTerrainBase: { value: new THREE.Color() }, uTerrainPeak: { value: new THREE.Color() },
   };
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(34, ASPECT, .1, 200);
@@ -269,8 +271,8 @@ export function createSpectralTerrainScene(stage, settings) {
   let width = 1920, height = 1080, ratio = 2;
   let rasterWidth = 3840, rasterHeight = 2160;
   let currentEnergy = 0;
-  const nearColor = new THREE.Color();
-  const farColor = new THREE.Color();
+  const baseColor = new THREE.Color();
+  const peakColor = new THREE.Color();
   const colorHsl = { h: 0, s: 0, l: 0 };
   let colorKey = '';
 
@@ -360,17 +362,17 @@ export function createSpectralTerrainScene(stage, settings) {
   }
 
   function updateColors(levels) {
-    const near = settings.terrainNear || '#6B9FFF';
-    const far = settings.terrainFar || '#203A73';
-    const key = `${near}|${far}`;
+    const base = settings.terrainBase || '#507BCB';
+    const peak = settings.terrainPeak || '#B6FFF1';
+    const key = `${base}|${peak}`;
     if (key !== colorKey) {
       colorKey = key;
       // Custom shader output is display RGB, matching the native color picker.
-      nearColor.set(near).convertLinearToSRGB();
-      farColor.set(far).convertLinearToSRGB();
+      baseColor.set(base).convertLinearToSRGB();
+      peakColor.set(peak).convertLinearToSRGB();
     }
     currentEnergy = terrainEnergy(levels);
-    for (const [base, output] of [[nearColor, uniforms.uTerrainNear.value], [farColor, uniforms.uTerrainFar.value]]) {
+    for (const [base, output] of [[baseColor, uniforms.uTerrainBase.value], [peakColor, uniforms.uTerrainPeak.value]]) {
       output.copy(base);
       if (settings.energyHue) {
         base.getHSL(colorHsl);
@@ -448,7 +450,7 @@ export function createSpectralTerrainScene(stage, settings) {
       canvasWidth: renderer.domElement.width, canvasHeight: renderer.domElement.height,
       drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
       view: preset, camera: getCameraState(),
-      terrainColors: { newest: uniforms.uTerrainNear.value.toArray(), history: uniforms.uTerrainFar.value.toArray(),
+      terrainColors: { base: uniforms.uTerrainBase.value.toArray(), peaks: uniforms.uTerrainPeak.value.toArray(),
         energy: currentEnergy, energyHue: Boolean(settings.energyHue) },
     }),
   };

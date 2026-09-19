@@ -100,12 +100,12 @@ async function runControlChecks(api) {
     await api.renderAt(80);
     const baseline = canvasSnapshot();
     const baselineCamera = api.getCameraState();
-    setControl('terrainNear', '#eeaa55');
-    setControl('terrainFar', '#814d23');
+    setControl('terrainBase', '#814d23');
+    setControl('terrainPeak', '#eeaa55');
     await api.renderAt(80);
     checks.colourControls = canvasSnapshot().hash !== baseline.hash;
-    setControl('terrainNear', controls.terrainNear);
-    setControl('terrainFar', controls.terrainFar);
+    setControl('terrainBase', controls.terrainBase);
+    setControl('terrainPeak', controls.terrainPeak);
     setControl('height', 3);
     for (const view of ['oblique', 'front', 'side']) {
       api.setView(view);

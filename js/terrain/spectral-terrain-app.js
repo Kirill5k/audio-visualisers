@@ -8,8 +8,8 @@ const settings = {
   ridgeSpacing: 1,
   frequencySpread: 1.5,
   historySeconds: 6,
-  terrainNear: '#6B9FFF',
-  terrainFar: '#203A73',
+  terrainBase: '#507BCB',
+  terrainPeak: '#B6FFF1',
   energyHue: false,
 };
 
@@ -19,7 +19,7 @@ window.spectralTerrain = await createSpectralPlayer({
   historySeconds: 12, historyPaddingFrames: 2,
   previewAspect: 16 / 9, previewMinWidth: 3840, previewMinHeight: 2160,
   quality: scene => ({ terrainColumns: 16384, terrainRidges: scene.getInfo().ridges, historyRows: 722 }),
-  controls: ['gain', 'height', 'lineWidth', 'ridgeSpacing', 'frequencySpread', 'historySeconds', 'terrainNear', 'terrainFar', 'energyHue'],
+  controls: ['gain', 'height', 'lineWidth', 'ridgeSpacing', 'frequencySpread', 'historySeconds', 'terrainBase', 'terrainPeak', 'energyHue'],
   extend(player) {
     const { scene, bind } = player;
     const buttons = [...document.querySelectorAll('[data-view]')];
