@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#000000">
+  <title>Phase Scope — Audio Visualiser</title>
+  <link rel="preload" href="fonts/inter/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/visualiser-ui.css">
+  <link rel="stylesheet" href="css/spectral-ui.css">
+  <link rel="stylesheet" href="css/phase-loom.css">
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"}}</script>
+</head>
+<body class="spectral-visualiser phase-loom">
+  <main id="stage" aria-label="Phase Scope audio visualisation"></main>
+  <div id="signature" aria-hidden="true"><span class="signature-name">PHASE SCOPE</span><span class="signature-rule"></span><span id="phaseLabel">STEREO IN MOTION</span></div>
+  <button id="panelToggle" class="glass closed" title="Show settings" aria-label="Show settings" aria-expanded="false">☰</button>
+  <aside id="panel" class="glass hidden" aria-label="Visualiser settings">
+    <div class="brand"><div><div class="eyebrow">Stereo in motion</div><h1>Phase Scope</h1></div><span class="edition">01</span></div>
+    <label class="file-picker" for="fileInput" tabindex="0">Choose an audio file</label>
+    <input id="fileInput" type="file" accept="audio/*">
+    <button id="referenceBtn" class="action reference-button">Play reference track</button>
+    <section class="section">
+      <div class="section-title">Oscilloscope</div>
+      <label class="color-row" for="shape"><span>Projection</span><select id="shape"><option value="auto">Follow the music</option><option value="stereo">Stereo X/Y</option><option value="phase">Phase portrait</option><option value="spatial">Spatial oscilloscope</option></select></label>
+      <p class="hint">The stereo waveform draws each trace. Changes in the music reshape the image.</p>
+      <div class="control"><label class="control-head" for="gain"><span>Audio response</span><span id="gainValue" class="value">1.20</span></label><input id="gain" type="range" min="0.3" max="3" step="0.05" value="1.2"></div>
+      <div class="control"><label class="control-head" for="persistence"><span>Trace persistence</span><span id="persistenceValue" class="value">0.55</span></label><input id="persistence" type="range" min="0" max="1" step="0.05" value="0.55"></div>
+      <label class="toggle-row" for="motion"><span>Slow rotation</span><input id="motion" type="checkbox"></label>
+    </section>
+    <section class="section">
+      <div class="section-title">Light & colour</div>
+      <label class="color-row" for="palette"><span>Palette</span><select id="palette"><option value="phosphor">Phosphor</option><option value="ember">Ember</option><option value="ice">Ice</option><option value="aurora">Aurora</option></select></label>
+      <div class="control"><label class="control-head" for="brightness"><span>Brightness</span><span id="brightnessValue" class="value">1.00</span></label><input id="brightness" type="range" min="0.4" max="2" step="0.05" value="1"></div>
+      <div class="control"><label class="control-head" for="glow"><span>Glow</span><span id="glowValue" class="value">0.20</span></label><input id="glow" type="range" min="0" max="1" step="0.05" value="0.20"></div>
+    </section>
+    <section class="section">
+      <div class="section-title">Perspective</div>
+      <div class="view-buttons" role="group" aria-label="Camera angle"><button class="action" data-view="front" aria-pressed="false">Front</button><button class="action" data-view="oblique" aria-pressed="true">Oblique</button><button class="action" data-view="top" aria-pressed="false">Above</button></div>
+      <div class="control"><label class="control-head" for="zoom"><span>Scale</span><span id="zoomValue" class="value">1.00</span></label><input id="zoom" type="range" min="0.65" max="1.5" step="0.05" value="1"></div>
+    </section>
+    <section class="section">
+      <div class="section-title">Playback position</div>
+      <div class="seek-entry"><label for="seekSeconds">Seconds</label><input id="seekSeconds" class="frequency-input" type="number" min="0" step="0.1" value="0"><button id="seekBtn" class="action glass" disabled>Seek</button></div>
+    </section>
+    <section class="section quality-details"><div class="section-title">Master quality</div><p>32,768 FFT · 16,384 frequency bins<br>16,384 trace columns · GPU rendering<br>MP4 · 1080p / 60 fps, rendered at 4K</p><p class="hint">Space · play / pause &nbsp; R · replay<br>M · mute &nbsp; H · clean view &nbsp; Esc · controls</p></section>
+    <section id="reviewTools" class="section" hidden><div class="section-title">Review tools</div><button id="reviewStateBtn" class="action">Inspect current frame</button><button id="reviewClipBtn" class="action">Render 2-second MP4</button><button id="reviewRecordBtn" class="action">Record 1-second preview</button><pre id="reviewStatus"></pre></section>
+  </aside>
+  <div id="welcome"><div class="welcome-overline">AN AUDIOVISUAL INSTRUMENT</div><h2>See the shape of sound.</h2><p>Your stereo waveform, traced in light.</p><div class="welcome-actions"><button id="welcomeReferenceBtn" class="action welcome-primary">Play reference track <span aria-hidden="true">↗</span></button><button id="welcomeFileBtn" class="action glass">Open audio file</button></div><span class="welcome-note">or drop a track anywhere</span></div>
+  <nav id="actions" aria-label="Playback and export">
+    <button id="playPauseBtn" class="action glass" disabled aria-label="Play">▶ <span class="action-label">Play</span></button>
+    <button id="replayBtn" class="action glass" disabled title="Replay">↺ <span class="action-label">Replay</span></button>
+    <button id="unloadBtn" class="action glass" disabled title="Unload">⊘ <span class="action-label">Unload</span></button>
+    <button id="muteBtn" class="action glass" title="Mute audio" aria-pressed="false">♪ <span class="action-label">Mute</span></button>
+    <button id="recordBtn" class="action glass" disabled><span class="record-dot"></span><span class="action-label">Record</span></button>
+    <button id="exportBtn" class="action glass" disabled>↓ <span class="action-label">Export</span></button>
+    <button id="cleanBtn" class="action glass" title="Hide controls (H)" aria-pressed="false">◩ <span class="action-label">Clean view</span></button>
+    <button id="fullscreenBtn" class="action glass" title="Fullscreen" aria-label="Fullscreen">⛶</button>
+  </nav>
+  <div id="timeline" class="glass"><span id="currentTime">0:00</span><input id="seek" aria-label="Track position" type="range" min="0" max="1000" step="1" value="0" disabled><span id="durationText">0:00</span></div>
+  <div id="readout" class="glass" role="status"><span id="statusLight"></span><span id="statusText">Choose an audio file or play the reference track</span><span id="fps">60 fps export</span></div>
+  <div id="exportOverlay"><div class="export-card glass"><div id="exportStatus">Rendering Phase Scope…</div><div class="progress"><div id="exportProgressBar"></div></div><div id="exportPercent">0%</div><button id="exportCancelBtn" class="action glass">Cancel export</button></div></div>
+  <div id="fatal" role="alert"></div>
+  <div id="reviewOutput" hidden></div>
+  <noscript>This visualiser requires JavaScript.</noscript>
+  <script src="js/recorder.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
+  <script src="js/offline-exporter.js"></script>
+  <script type="module" src="js/phase/phase-loom-app.js"></script>
+</body>
+</html>
