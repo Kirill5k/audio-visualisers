@@ -221,11 +221,20 @@ export function createCaptureSession({
         );
         return { ok: false, reason: "error", error };
       } finally {
-        if (restore) await restore(sceneSaved);
-        if (viewportSaved && restoreViewport) restoreViewport(viewportSaved);
-        preCapture = null;
-        exporting = false;
-        await audio.resumeContext();
+        // Scene restoration may itself fail after an analysis or GPU error.
+        // Always release capture state and the suspended audio context so the
+        // page can report the failure and accept another file or export.
+        try {
+          if (restore) await restore(sceneSaved);
+        } finally {
+          try {
+            if (viewportSaved && restoreViewport) restoreViewport(viewportSaved);
+          } finally {
+            preCapture = null;
+            exporting = false;
+            await audio.resumeContext();
+          }
+        }
       }
     },
   };

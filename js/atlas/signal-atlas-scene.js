@@ -1,13 +1,12 @@
 import * as THREE from 'three';
 import { createWaveformMinimap, rectToWorld } from '../monitor-charts.js';
-import { buildPeakTree } from './signal-atlas-peak-tree.js';
+import { createSpectralHistory, createSpectralSampling } from '../terrain/spectral-history.js';
 import { formatTrackTime } from './signal-atlas-setlist.js';
 import { createSpectrogramPalette } from './signal-atlas-color.js';
 import { createAtlasInstruments, INSTRUMENT_RECTS, INSTRUMENT_VISIBLE_EDGES } from './signal-atlas-instruments.js';
 import { ATLAS_COLORS as C, paletteRgba } from './signal-atlas-palette.js';
 
 const BINS = 16384;
-const ROWS = 1442;
 const FPS = 60;
 const BLACK = new THREE.Color(C.black);
 const RECTS = {
@@ -16,62 +15,7 @@ const RECTS = {
   overview: { x: .06, y: .5922, w: .88, h: .1188 },
 };
 
-const spectralSampling = `
-  uniform sampler2D uHistory;
-  uniform sampler2D uPeakTree;
-  uniform float uFrame;
-  uniform float uSampleRate;
-  uniform float uGain;
-  const float ROWS = 1442.0;
-  const float BINS = 16384.0;
-  float historySample(float bin, float frame) {
-    if (frame < 0.0) return 0.0;
-    float row = mod(floor(frame), ROWS);
-    return texture2D(uHistory, vec2((clamp(bin, 0.0, BINS - 1.0) + .5) / BINS, (row + .5) / ROWS)).r;
-  }
-  float binAt(float x) {
-    // A soft logarithmic axis includes DC and the final FFT bin, while keeping
-    // useful space for bass detail. No analysed frequency is cropped away.
-    float knee = 30.0 * 32768.0 / uSampleRate;
-    return knee * (pow(1.0 + (BINS - 1.0) / knee, clamp(x, 0.0, 1.0)) - 1.0);
-  }
-  float treeSample(float node, float frame) {
-    if (node >= BINS) return historySample(node - BINS, frame);
-    float row = mod(floor(frame), ROWS);
-    return texture2D(uPeakTree, vec2((node + .5) / BINS, (row + .5) / ROWS)).r;
-  }
-  float intervalPeak(float first, float last, float frame) {
-    if (frame < 0.0) return 0.0;
-    float left = BINS + clamp(floor(first), 0.0, BINS - 1.0);
-    float right = BINS + clamp(ceil(last), 0.0, BINS - 1.0);
-    float peak = 0.0;
-    // Decompose the exact interval into complete binary subtrees. Adjacent
-    // probes can miss a single FFT peak; every covered bin contributes here.
-    for (int level = 0; level < 15; level++) {
-      if (left > right) break;
-      if (mod(left, 2.0) > .5) {
-        peak = max(peak, treeSample(left, frame));
-        left += 1.0;
-      }
-      if (mod(right, 2.0) < .5) {
-        peak = max(peak, treeSample(right, frame));
-        right -= 1.0;
-      }
-      left = floor(left * .5);
-      right = floor(right * .5);
-    }
-    return peak;
-  }
-  float spectrum(float x, float halfSpan, float frame) {
-    float first = binAt(x - halfSpan);
-    float last = binAt(x + halfSpan);
-    float a = intervalPeak(first, last, floor(frame));
-    float fraction = fract(frame);
-    if (fraction < .000001) return a;
-    float b = intervalPeak(first, last, floor(frame) + 1.0);
-    return mix(a, b, fraction);
-  }
-`;
+const spectralSampling = createSpectralSampling();
 
 export function createSignalAtlasScene(stage, settings) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: true });
@@ -88,32 +32,13 @@ export function createSignalAtlasScene(stage, settings) {
 
   let width = 1920, height = 1080, ratio = 1, aspect = 16 / 9;
   let disposed = false;
-  let latestFrame = -1;
   let lastLabels = '';
   let labelState = null;
-  const halfLut = new Uint16Array(65536);
-  for (let i = 0; i < halfLut.length; i++) halfLut[i] = THREE.DataUtils.toHalfFloat(i / 65535);
-  const historyData = new Uint16Array(BINS * ROWS);
-  const peakTreeData = new Uint16Array(BINS * ROWS);
-  const stamps = new Int32Array(ROWS).fill(-999999);
-  const texture = new THREE.DataTexture(historyData, BINS, ROWS, THREE.RedFormat, THREE.HalfFloatType);
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = false;
-  texture.unpackAlignment = 1;
-  texture.needsUpdate = true;
-  renderer.initTexture(texture);
-  const peakTreeTexture = new THREE.DataTexture(peakTreeData, BINS, ROWS, THREE.RedFormat, THREE.HalfFloatType);
-  peakTreeTexture.minFilter = THREE.NearestFilter;
-  peakTreeTexture.magFilter = THREE.NearestFilter;
-  peakTreeTexture.generateMipmaps = false;
-  peakTreeTexture.unpackAlignment = 1;
-  peakTreeTexture.needsUpdate = true;
-  renderer.initTexture(peakTreeTexture);
+  const history = createSpectralHistory(renderer);
 
   const common = {
-    uHistory: { value: texture },
-    uPeakTree: { value: peakTreeTexture },
+    uHistory: { value: history.texture },
+    uPeakTree: { value: history.peakTreeTexture },
     uFrame: { value: 0 },
     uSampleRate: { value: 48000 },
     uGain: { value: settings.gain },
@@ -286,43 +211,7 @@ export function createSignalAtlasScene(stage, settings) {
     renderer.resetState();
   }
 
-  function setHistoryFrames(frames) {
-    if (disposed || !frames?.length) return;
-    const updated = [];
-    for (const entry of frames) {
-      if (entry.frame < 0) continue;
-      const row = entry.frame % ROWS;
-      if (stamps[row] === entry.frame) continue;
-      const offset = row * BINS;
-      const source = entry.spectrum;
-      for (let i = 0; i < BINS; i++) historyData[offset + i] = halfLut[source[i]];
-      buildPeakTree(historyData, peakTreeData, BINS, offset, offset);
-      stamps[row] = entry.frame;
-      latestFrame = Math.max(latestFrame, entry.frame);
-      updated.push(row);
-    }
-    if (!updated.length) return;
-    if (updated.length > 48) {
-      texture.needsUpdate = true;
-      peakTreeTexture.needsUpdate = true;
-      renderer.initTexture(texture);
-      renderer.initTexture(peakTreeTexture);
-    } else {
-      const gl = renderer.getContext();
-      renderer.state.activeTexture(gl.TEXTURE0);
-      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-      for (const [rowTexture, rowData] of [[texture, historyData], [peakTreeTexture, peakTreeData]]) {
-        renderer.initTexture(rowTexture);
-        const gpuTexture = renderer.properties.get(rowTexture).__webglTexture;
-        renderer.state.activeTexture(gl.TEXTURE0);
-        renderer.state.bindTexture(gl.TEXTURE_2D, gpuTexture);
-        for (const row of updated) {
-          gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, row, BINS, 1, gl.RED, gl.HALF_FLOAT, rowData.subarray(row * BINS, (row + 1) * BINS));
-        }
-      }
-    }
-    renderer.resetState();
-  }
+  const setHistoryFrames = frames => history.setFrames(frames);
 
   function resize(w, h, pixelRatio = Math.max(1, window.devicePixelRatio || 1)) {
     width = Math.max(2, Math.round(w)); height = Math.max(2, Math.round(h)); ratio = pixelRatio;
@@ -360,7 +249,7 @@ export function createSignalAtlasScene(stage, settings) {
 
   function render({ time = 0, analysis = null, frame = null, spectralFrame = null, levels = null } = {}) {
     if (disposed) return;
-    common.uFrame.value = Math.min(time * FPS, Math.max(0, latestFrame));
+    common.uFrame.value = Math.min(time * FPS, Math.max(0, history.latestFrame));
     common.uSampleRate.value = analysis?.sampleRate || 48000;
     common.uGain.value = settings.gain;
     instruments.update({ frame, spectralFrame, levels, sampleRate: analysis?.sampleRate || 48000, hasAudio: Boolean(analysis?.buffer) });
@@ -380,9 +269,7 @@ export function createSignalAtlasScene(stage, settings) {
   }
 
   function resetHistory() {
-    historyData.fill(0); peakTreeData.fill(0); stamps.fill(-999999); latestFrame = -1;
-    texture.needsUpdate = true;
-    peakTreeTexture.needsUpdate = true;
+    history.reset();
     lastInstrumentLabels = '';
   }
   function dispose() {
@@ -391,7 +278,7 @@ export function createSignalAtlasScene(stage, settings) {
     instruments.dispose();
     instrumentMesh.geometry.dispose(); instrumentMaterial.dispose(); instrumentTexture.dispose(); palette.dispose();
     curtain.geometry.dispose(); curtainMaterial.dispose();
-    labelsMesh.geometry.dispose(); labelsMaterial.dispose(); labelsTexture.dispose(); texture.dispose(); peakTreeTexture.dispose();
+    labelsMesh.geometry.dispose(); labelsMaterial.dispose(); labelsTexture.dispose(); history.dispose();
     renderer.dispose(); renderer.domElement.remove();
   }
   resize(stage.clientWidth || 1920, stage.clientHeight || 1080);
@@ -401,6 +288,6 @@ export function createSignalAtlasScene(stage, settings) {
     hitTest: (x, y) => instruments.hitTest(x, y),
     setOverview(peaks, rmsPeaks) { minimap.setPeaks(peaks, rmsPeaks); lastLabels = ''; },
     dispose,
-    getInfo: () => ({ fftSize: 32768, fftBins: BINS, historyRows: ROWS, historyBytes: historyData.byteLength, peakTreeBytes: peakTreeData.byteLength, canvasWidth: renderer.domElement.width, canvasHeight: renderer.domElement.height, pixelRatio: ratio, drawCalls: renderer.info.render.calls, labelFont: 'Inter', fontLoaded: document.fonts.check('500 11px "Inter"'), instruments: instruments.getInfo(), labelState }),
+    getInfo: () => ({ fftSize: 32768, fftBins: BINS, ...history.getInfo(), canvasWidth: renderer.domElement.width, canvasHeight: renderer.domElement.height, pixelRatio: ratio, drawCalls: renderer.info.render.calls, labelFont: 'Inter', fontLoaded: document.fonts.check('500 11px "Inter"'), instruments: instruments.getInfo(), labelState }),
   };
 }

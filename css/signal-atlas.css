@@ -1,45 +1,9 @@
-@font-face {
-  font-family: "Inter";
-  src: url("../fonts/inter/InterVariable.woff2") format("woff2");
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: block;
-}
-body.signal-atlas {
-  --atlas-black: #000000;
-  --atlas-white: #FFFFFF;
-  --atlas-pearl: #F2F0E8;
-  --atlas-silver: #A5AFBD;
-  --atlas-ivory: #D8D0BD;
-  --atlas-copper: #C58D6B;
-  --atlas-olive: #A6AC7E;
-  --atlas-amber: #E8C574;
-  --atlas-coral: #F07D82;
-  --ink: var(--atlas-pearl);
-  --muted: var(--atlas-silver);
-  --panel: var(--atlas-black);
-  --edge: color-mix(in srgb, var(--atlas-silver) 28%, transparent);
-  --accent: var(--atlas-copper);
-  --danger: var(--atlas-coral);
-  background: var(--atlas-black);
-  color: var(--ink);
-  font-family: "Inter", sans-serif;
-  font-variant-numeric: tabular-nums;
-}
-.signal-atlas h1, .signal-atlas #exportStatus, .signal-atlas #reviewOutput pre { font-family: inherit; }
-.signal-atlas #stage::after { display: none; }
-.signal-atlas #stage { display: flex; align-items: center; justify-content: center; }
-.signal-atlas #stage canvas { width: 100%; height: 100%; object-fit: contain; }
-.signal-atlas .reference-button { width: 100%; margin-top: 8px; background: var(--atlas-black); border: 1px solid var(--edge); }
-.signal-atlas select { color: var(--atlas-copper); background: var(--atlas-black); border: 1px solid var(--edge); border-radius: 5px; padding: 5px; font: inherit; font-size: 11px; }
-.signal-atlas .quality-details p { font: 10px/1.9 "Inter", sans-serif; color: var(--atlas-silver); }
-.signal-atlas .seek-entry { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--atlas-silver); }
+/* Signal Atlas chart-specific controls; common chrome lives in spectral-ui.css. */
 .signal-atlas .rta-range { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
 .signal-atlas .rta-range label { display: grid; gap: 6px; font-size: 11px; color: var(--atlas-silver); }
 .signal-atlas .rta-range input { width: 100%; min-width: 0; padding: 7px; border: 1px solid var(--edge); border-radius: 5px; background: var(--atlas-black); color: var(--ink); font: inherit; }
 .signal-atlas .rta-range input[aria-invalid="true"] { border-color: var(--atlas-coral); }
 .signal-atlas #rtaStatus[data-invalid="true"] { color: var(--atlas-coral); }
-.signal-atlas #panel .hint { font-size: 10px; line-height: 1.6; }
 #spectrumHover { position: fixed; z-index: 4; pointer-events: none; }
 #spectrumHover[hidden] { display: none; }
 .signal-atlas #spectrumHover .spectrum-crosshair { position: absolute; height: 100%; border-left: 1px dashed var(--atlas-silver); opacity: .6; }
@@ -51,46 +15,3 @@ body.signal-atlas {
 .signal-atlas #setlistInput:disabled { opacity: .5; }
 .signal-atlas .setlist-section .hint { margin: 7px 0 0; font-size: 10px; line-height: 1.6; }
 .signal-atlas #setlistStatus { color: var(--atlas-silver); white-space: pre-line; }
-.signal-atlas #timeline { position: fixed; left: 24px; right: 24px; bottom: 68px; z-index: 8; display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 8px; font: 10px "Inter", sans-serif; color: var(--atlas-silver); }
-.signal-atlas #timeline input { flex: 1; }
-.signal-atlas #readout { bottom: 20px; }
-.signal-atlas.clean #panel, .signal-atlas.clean #panelToggle, .signal-atlas.clean #actions, .signal-atlas.clean #timeline, .signal-atlas.clean #readout { visibility: hidden; pointer-events: none; }
-.signal-atlas button:focus-visible, .signal-atlas input:focus-visible, .signal-atlas select:focus-visible, .signal-atlas textarea:focus-visible, .signal-atlas .file-picker:focus-visible { outline: 2px solid var(--atlas-copper); outline-offset: 4px; }
-#reviewTools .action { width: 100%; margin: 4px 0; }
-.signal-atlas #reviewOutput:not([hidden]) { position: fixed; inset: 0; z-index: 90; overflow: auto; padding: 24px; background: var(--atlas-black); }
-#reviewOutput video { display: block; width: min(100%, 1920px); max-height: 85vh; margin: 12px auto; }
-.signal-atlas #reviewOutput pre { white-space: pre-wrap; color: var(--atlas-silver); font-size: 12px; }
-.signal-atlas #reviewOutput a { color: var(--atlas-copper); }
-
-/* Keep shared controls within the instrument palette. */
-.signal-atlas .glass { box-shadow: 0 16px 50px color-mix(in srgb, var(--atlas-black) 35%, transparent); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
-.signal-atlas #panel { scrollbar-color: color-mix(in srgb, var(--atlas-silver) 35%, transparent) transparent; }
-.signal-atlas .eyebrow, .signal-atlas .control-head, .signal-atlas .toggle-row, .signal-atlas .color-row, .signal-atlas #readout, .signal-atlas #fps, .signal-atlas #exportPercent { color: var(--atlas-silver); }
-.signal-atlas h1, .signal-atlas .section-title, .signal-atlas .value, .signal-atlas .action, .signal-atlas #exportStatus { color: var(--atlas-pearl); }
-.signal-atlas .file-picker { color: var(--atlas-pearl); border-color: var(--edge); background: var(--atlas-black); }
-.signal-atlas .file-picker:hover { background: var(--atlas-black); border-color: var(--atlas-copper); }
-.signal-atlas .section { border-top-color: color-mix(in srgb, var(--atlas-silver) 18%, transparent); }
-.signal-atlas input[type="range"] { background: color-mix(in srgb, var(--atlas-silver) 25%, transparent); }
-.signal-atlas input[type="range"]::-webkit-slider-thumb { background: var(--atlas-copper); border-color: var(--atlas-black); box-shadow: 0 0 0 2px color-mix(in srgb, var(--atlas-copper) 12%, transparent); }
-.signal-atlas input[type="range"]::-moz-range-thumb { background: var(--atlas-copper); border: 1px solid var(--atlas-black); box-shadow: 0 0 0 2px color-mix(in srgb, var(--atlas-copper) 12%, transparent); }
-.signal-atlas input[type="checkbox"] { accent-color: var(--atlas-copper); }
-.signal-atlas .frequency-input { background: var(--atlas-black); border-color: var(--edge); }
-.signal-atlas .frequency-input:focus { background: var(--atlas-black); border-color: var(--atlas-copper); }
-.signal-atlas .action:hover:not(:disabled), .signal-atlas #panelToggle:hover { background: var(--atlas-black); border-color: var(--atlas-copper); }
-.signal-atlas .action[aria-pressed="true"] { color: var(--atlas-copper); border-color: var(--atlas-copper); }
-.signal-atlas .action.recording, .signal-atlas .action.recording:hover:not(:disabled) { color: var(--atlas-coral); border-color: var(--atlas-coral); background: var(--atlas-black); }
-.signal-atlas .record-dot { background: var(--atlas-coral); box-shadow: 0 0 9px color-mix(in srgb, var(--atlas-coral) 60%, transparent); }
-.signal-atlas #statusLight { background: var(--atlas-silver); box-shadow: 0 0 0 3px color-mix(in srgb, var(--atlas-silver) 10%, transparent); }
-.signal-atlas #statusLight.live { background: var(--atlas-white); box-shadow: 0 0 9px color-mix(in srgb, var(--atlas-white) 65%, transparent); }
-.signal-atlas #exportOverlay, .signal-atlas #fatal { background: color-mix(in srgb, var(--atlas-black) 88%, transparent); }
-.signal-atlas .progress { background: color-mix(in srgb, var(--atlas-silver) 20%, transparent); }
-.signal-atlas #exportProgressBar { background: var(--atlas-copper); box-shadow: 0 0 13px color-mix(in srgb, var(--atlas-copper) 50%, transparent); }
-.signal-atlas #exportCancelBtn { border-color: color-mix(in srgb, var(--atlas-coral) 50%, transparent); color: var(--atlas-coral); }
-.signal-atlas #exportCancelBtn:hover { border-color: var(--atlas-coral); }
-.signal-atlas #fatal { color: var(--atlas-coral); }
-@media (max-width: 760px) {
-  .signal-atlas #timeline { bottom: 106px; left: 12px; right: 12px; }
-  .signal-atlas #readout { bottom: 62px; }
-  .signal-atlas #panelToggle:not(.closed) { left: auto; right: 12px; }
-  .signal-atlas #panel { max-height: calc(100vh - 154px); }
-}

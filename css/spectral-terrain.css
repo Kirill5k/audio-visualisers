@@ -1,0 +1,8 @@
+body.spectral-terrain { --accent: #6B9FFF; }
+.spectral-terrain #stage canvas { touch-action: none; cursor: grab; flex: none; }
+.spectral-terrain #stage canvas:active { cursor: grabbing; }
+.spectral-terrain .view-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.spectral-terrain .view-presets .action { padding: 9px 6px; font-size: 10px; }
+.spectral-terrain #resetCameraBtn { width: 100%; margin-top: 8px; }
+.spectral-terrain .color-row input[type="color"] { width: 43px; height: 28px; padding: 2px; border: 1px solid var(--edge); background: var(--panel); border-radius: 5px; cursor: pointer; }
+.spectral-terrain #qualityInfo { line-height: 1.8; }

@@ -1,0 +1,80 @@
+@font-face {
+  font-family: "Inter";
+  src: url("../fonts/inter/InterVariable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+}
+body.spectral-visualiser {
+  --atlas-black: #000000;
+  --atlas-white: #FFFFFF;
+  --atlas-pearl: #F2F0E8;
+  --atlas-silver: #A5AFBD;
+  --atlas-ivory: #D8D0BD;
+  --atlas-copper: #C58D6B;
+  --atlas-olive: #A6AC7E;
+  --atlas-amber: #E8C574;
+  --atlas-coral: #F07D82;
+  --ink: var(--atlas-pearl);
+  --muted: var(--atlas-silver);
+  --panel: var(--atlas-black);
+  --edge: color-mix(in srgb, var(--atlas-silver) 28%, transparent);
+  --accent: var(--atlas-copper);
+  --danger: var(--atlas-coral);
+  background: var(--atlas-black);
+  color: var(--ink);
+  font-family: "Inter", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.spectral-visualiser h1, .spectral-visualiser #exportStatus, .spectral-visualiser #reviewOutput pre { font-family: inherit; }
+.spectral-visualiser #stage::after { display: none; }
+.spectral-visualiser #stage { display: flex; align-items: center; justify-content: center; }
+.spectral-visualiser #stage canvas { width: 100%; height: 100%; object-fit: contain; }
+.spectral-visualiser .reference-button { width: 100%; margin-top: 8px; background: var(--atlas-black); border: 1px solid var(--edge); }
+.spectral-visualiser select { color: var(--accent); background: var(--atlas-black); border: 1px solid var(--edge); border-radius: 5px; padding: 5px; font: inherit; font-size: 11px; }
+.spectral-visualiser .quality-details p { font: 10px/1.9 "Inter", sans-serif; color: var(--atlas-silver); }
+.spectral-visualiser .seek-entry { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--atlas-silver); }
+.spectral-visualiser #panel .hint { font-size: 10px; line-height: 1.6; }
+.spectral-visualiser #timeline { position: fixed; left: 24px; right: 24px; bottom: 68px; z-index: 8; display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 8px; font: 10px "Inter", sans-serif; color: var(--atlas-silver); }
+.spectral-visualiser #timeline input { flex: 1; }
+.spectral-visualiser #readout { bottom: 20px; }
+.spectral-visualiser.clean #panel, .spectral-visualiser.clean #panelToggle, .spectral-visualiser.clean #actions, .spectral-visualiser.clean #timeline, .spectral-visualiser.clean #readout { visibility: hidden; pointer-events: none; }
+.spectral-visualiser button:focus-visible, .spectral-visualiser input:focus-visible, .spectral-visualiser select:focus-visible, .spectral-visualiser textarea:focus-visible, .spectral-visualiser .file-picker:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+#reviewTools .action { width: 100%; margin: 4px 0; }
+.spectral-visualiser #reviewOutput:not([hidden]) { position: fixed; inset: 0; z-index: 90; overflow: auto; padding: 24px; background: var(--atlas-black); }
+#reviewOutput video { display: block; width: min(100%, 1920px); max-height: 85vh; margin: 12px auto; }
+.spectral-visualiser #reviewOutput pre { white-space: pre-wrap; color: var(--atlas-silver); font-size: 12px; }
+.spectral-visualiser #reviewOutput a { color: var(--accent); }
+
+/* Keep shared controls within the instrument palette. */
+.spectral-visualiser .glass { box-shadow: 0 16px 50px color-mix(in srgb, var(--atlas-black) 35%, transparent); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.spectral-visualiser #panel { scrollbar-color: color-mix(in srgb, var(--atlas-silver) 35%, transparent) transparent; }
+.spectral-visualiser .eyebrow, .spectral-visualiser .control-head, .spectral-visualiser .toggle-row, .spectral-visualiser .color-row, .spectral-visualiser #readout, .spectral-visualiser #fps, .spectral-visualiser #exportPercent { color: var(--atlas-silver); }
+.spectral-visualiser h1, .spectral-visualiser .section-title, .spectral-visualiser .value, .spectral-visualiser .action, .spectral-visualiser #exportStatus { color: var(--atlas-pearl); }
+.spectral-visualiser .file-picker { color: var(--atlas-pearl); border-color: var(--edge); background: var(--atlas-black); }
+.spectral-visualiser .file-picker:hover { background: var(--atlas-black); border-color: var(--accent); }
+.spectral-visualiser .section { border-top-color: color-mix(in srgb, var(--atlas-silver) 18%, transparent); }
+.spectral-visualiser input[type="range"] { background: color-mix(in srgb, var(--atlas-silver) 25%, transparent); }
+.spectral-visualiser input[type="range"]::-webkit-slider-thumb { background: var(--accent); border-color: var(--atlas-black); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
+.spectral-visualiser input[type="range"]::-moz-range-thumb { background: var(--accent); border: 1px solid var(--atlas-black); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
+.spectral-visualiser input[type="checkbox"] { accent-color: var(--accent); }
+.spectral-visualiser .frequency-input { background: var(--atlas-black); border-color: var(--edge); }
+.spectral-visualiser .frequency-input:focus { background: var(--atlas-black); border-color: var(--accent); }
+.spectral-visualiser .action:hover:not(:disabled), .spectral-visualiser #panelToggle:hover { background: var(--atlas-black); border-color: var(--accent); }
+.spectral-visualiser .action[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.spectral-visualiser .action.recording, .spectral-visualiser .action.recording:hover:not(:disabled) { color: var(--atlas-coral); border-color: var(--atlas-coral); background: var(--atlas-black); }
+.spectral-visualiser .record-dot { background: var(--atlas-coral); box-shadow: 0 0 9px color-mix(in srgb, var(--atlas-coral) 60%, transparent); }
+.spectral-visualiser #statusLight { background: var(--atlas-silver); box-shadow: 0 0 0 3px color-mix(in srgb, var(--atlas-silver) 10%, transparent); }
+.spectral-visualiser #statusLight.live { background: var(--atlas-white); box-shadow: 0 0 9px color-mix(in srgb, var(--atlas-white) 65%, transparent); }
+.spectral-visualiser #exportOverlay, .spectral-visualiser #fatal { background: color-mix(in srgb, var(--atlas-black) 88%, transparent); }
+.spectral-visualiser .progress { background: color-mix(in srgb, var(--atlas-silver) 20%, transparent); }
+.spectral-visualiser #exportProgressBar { background: var(--accent); box-shadow: 0 0 13px color-mix(in srgb, var(--accent) 50%, transparent); }
+.spectral-visualiser #exportCancelBtn { border-color: color-mix(in srgb, var(--atlas-coral) 50%, transparent); color: var(--atlas-coral); }
+.spectral-visualiser #exportCancelBtn:hover { border-color: var(--atlas-coral); }
+.spectral-visualiser #fatal { color: var(--atlas-coral); }
+@media (max-width: 760px) {
+  .spectral-visualiser #timeline { bottom: 106px; left: 12px; right: 12px; }
+  .spectral-visualiser #readout { bottom: 62px; }
+  .spectral-visualiser #panelToggle:not(.closed) { left: auto; right: 12px; }
+  .spectral-visualiser #panel { max-height: calc(100vh - 154px); }
+}
