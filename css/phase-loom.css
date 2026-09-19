@@ -7,6 +7,14 @@ body.phase-loom { --atlas-black:#000000; --atlas-white:#f6f3ff; --atlas-pearl:#e
 .phase-loom #panel { width:300px; border-radius:12px; }
 .phase-loom .color-row select { min-width:0; max-width:175px; }
 .phase-loom .edition { color:var(--accent); font:11px/1.5 Inter,sans-serif; letter-spacing:.12em; margin-top:5px; }
+.phase-loom .section-reason { color:#d4c8e8; font-size:11px; line-height:1.5; margin:0 0 12px; }
+.phase-loom .music-meter { display:grid; grid-template-columns:65px 1fr 30px; align-items:center; gap:8px; font-size:10px; color:#a89fb2; margin:8px 0; }
+.phase-loom .music-meter meter { width:100%; height:5px; border:0; background:#292134; border-radius:4px; }
+.phase-loom .music-meter meter::-webkit-meter-bar { background:#292134; border:0; }
+.phase-loom .music-meter meter::-webkit-meter-optimum-value { background:#ab7cff; }
+.phase-loom .music-meter output { text-align:right; color:#d4c8e8; font-variant-numeric:tabular-nums; }
+.phase-loom .section-jump { display:flex; flex-direction:column; gap:7px; color:#a89fb2; font-size:10px; margin:16px 0 8px; }
+.phase-loom .section-jump select { width:100%; min-width:0; background:#17121f; color:#d4c8e8; border:1px solid var(--edge); border-radius:5px; padding:8px; font:10px Inter,sans-serif; }
 .phase-loom .view-buttons { display:flex; gap:5px; margin-bottom:15px; }
 .phase-loom .view-buttons .action { justify-content:center; flex:1; padding:9px 5px; background:rgba(23,18,33,.5); border:1px solid var(--edge); }
 .phase-loom .view-buttons .action[aria-pressed="true"] { color:var(--accent); border-color:var(--accent); }

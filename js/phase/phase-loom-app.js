@@ -20,7 +20,7 @@ try {
 }
 
 let busy = '', position = 0, finished = false, dirty = true, disposed = false;
-let viewport = { width: 1920, height: 1080, pixelRatio: 1 }, view = 'oblique';
+let viewport = { width: 1920, height: 1080, pixelRatio: 1 }, view = 'front';
 let lastFrame = null, lastFrameIndex = -1, latestFps = 0, fpsStarted = performance.now(), fpsFrames = 0;
 let lastError = null, raf = 0, reviewURL = null, recordingStopWaiter = null, recordingStopError = null;
 const emptyFrame = { time: 0, spectrum: new Uint8Array(16384), waveform: new Float32Array(2048),
@@ -87,6 +87,7 @@ function updateButtons() {
   for (const input of document.querySelectorAll('#panel input, #panel select, #panel button')) {
     if (!['fileInput', 'referenceBtn', 'seekSeconds', 'seekBtn'].includes(input.id)) input.disabled = lock;
   }
+  $('sectionSelect').disabled = !ready;
   $('welcome').hidden = audio.hasAudio;
   $('stage').setAttribute('aria-busy', String(Boolean(busy)));
   $('statusLight').classList.toggle('live', audio.isPlaying);
@@ -97,6 +98,13 @@ function renderAtPosition(seconds) {
   lastFrame = audio.hasAudio ? analysis.getFrame(position) : emptyFrame;
   scene.render(lastFrame);
   $('phaseLabel').textContent = projectionNames[settings.shape] || (audio.hasAudio ? `Passage ${String((lastFrame.section ?? 0) + 1).padStart(2, '0')} · ${lastFrame.phaseName}` : 'STEREO IN MOTION');
+  const phase = lastFrame.phase;
+  $('sectionReason').textContent = phase?.reason || 'Load a track to find its passages';
+  for (const [id, value] of [['complexity', phase?.complexity], ['bass', phase?.bassPresence], ['drum', phase?.drumPresence]]) {
+    $(id + 'Meter').value = value ?? 0;
+    $(id + 'Value').textContent = value == null ? '—' : `${Math.round(value * 100)}%`;
+  }
+  if (audio.hasAudio && document.activeElement !== $('sectionSelect')) $('sectionSelect').value = String(lastFrame.section);
   const timeOptions = { forceHours: audio.duration >= 3600 };
   $('currentTime').textContent = formatTrackTime(position, timeOptions);
   $('durationText').textContent = formatTrackTime(audio.duration, timeOptions);
@@ -104,6 +112,19 @@ function renderAtPosition(seconds) {
   if (document.activeElement !== $('seekSeconds')) $('seekSeconds').value = position.toFixed(2);
   $('seekSeconds').max = String(audio.duration);
   dirty = false;
+}
+
+function populateSections() {
+  const options = analysis.sections.map((section, index) => {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = `${formatTrackTime(section.time)} · ${section.reason || section.name}`;
+    return option;
+  });
+  if (!options.length) {
+    const option = document.createElement('option'); option.value = ''; option.textContent = 'Load a track first'; options.push(option);
+  }
+  $('sectionSelect').replaceChildren(...options);
 }
 
 function ended() {
@@ -143,10 +164,12 @@ async function loadTrack(file, { autoplay = true } = {}) {
     const buffer = await audio.load(file);
     analysis.dispose?.(); analysis = createPhaseAnalysis();
     await analysis.load(buffer, { onProgress: fraction => status(`Listening for musical changes · ${Math.round(fraction * 100)}%`) });
+    populateSections();
     position = 0; finished = false; lastFrameIndex = -1;
     renderAtPosition(0); status('Ready · ' + audio.fileName);
   } catch (error) {
     audio.unload(); analysis.dispose?.(); analysis = createPhaseAnalysis();
+    populateSections();
     position = 0; finished = false; renderAtPosition(0); throw error;
   } finally { busy = ''; updateButtons(); }
   if (autoplay) await play();
@@ -169,6 +192,7 @@ async function loadReference() {
 function unload() {
   if (locked()) return false;
   audio.unload(); analysis.dispose?.(); analysis = createPhaseAnalysis();
+  populateSections();
   position = 0; finished = false; lastFrameIndex = -1;
   renderAtPosition(0); updateButtons(); status('Choose an audio file or play the reference track'); return true;
 }
@@ -290,6 +314,10 @@ bind('playPauseBtn', 'click', () => audio.isPlaying ? pause() : play());
 bind('replayBtn', 'click', () => seek(0, { resume: true })); bind('unloadBtn', 'click', unload);
 bind('seek', 'change', event => seek(Number(event.target.value) / 1000 * audio.duration));
 bind('seekBtn', 'click', () => seek(Number($('seekSeconds').value)));
+bind('sectionSelect', 'change', event => {
+  const section = analysis.sections[Number(event.target.value)];
+  if (section) return seek(section.time);
+});
 bind('seekSeconds', 'keydown', event => { if (event.key === 'Enter') { event.preventDefault(); return seek(Number(event.target.value)); } });
 bind('recordBtn', 'click', toggleRecording); bind('exportBtn', 'click', () => exportVideo());
 bind('muteBtn', 'click', toggleMute); bind('panelToggle', 'click', () => togglePanel()); bind('cleanBtn', 'click', () => toggleClean());
@@ -344,7 +372,7 @@ const api = Object.freeze({
     fileName: audio.fileName, fps: latestFps, settings: { ...settings }, view,
     viewport: { ...viewport, canvasWidth: scene.canvas.width, canvasHeight: scene.canvas.height },
     quality: { fftSize: 32768, frequencyBins: 16384, columns: 16384, exportWidth: 1920, exportHeight: 1080, exportFps: 60, exportScale: 2 },
-    features: lastFrame?.features, phase: $('phaseLabel').textContent, shapeFrom: lastFrame?.shapeFrom, shapeTo: lastFrame?.shapeTo, morph: lastFrame?.morph, sections: analysis.sections,
+    features: lastFrame?.features, phase: $('phaseLabel').textContent, musicPhase: lastFrame?.phase, shapeFrom: lastFrame?.shapeFrom, shapeTo: lastFrame?.shapeTo, morph: lastFrame?.morph, sections: analysis.sections,
     scene: scene.getInfo(), analysis: analysis.getInfo?.(), error: lastError }),
 });
 window.phaseLoom = api;

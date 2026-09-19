@@ -12,8 +12,8 @@ const PCM_SIZE = 32768;
 // meshes: changing harmonics and stereo relationships make the visible forms.
 const vertexShader = /* glsl */`
   uniform sampler2D uPcm;
-  uniform float uStart, uSamples, uDelay, uCalibration, uGain, uPersistence;
-  uniform float uProjection, uFrom, uTo, uMorph;
+  uniform float uStart, uSamples, uHistoryStep, uDelay, uCalibration, uGain, uPersistence;
+  uniform float uProjection, uFrom, uTo, uMorph, uComplexity;
   attribute vec3 trace;
   varying float vAcross, vLight, vColor;
   vec3 pcm(float sampleIndex) {
@@ -25,16 +25,34 @@ const vertexShader = /* glsl */`
   }
   vec3 sectionProjection(float shape,float rail,float side,float mid,float delayed) {
     if(shape<.5)return vec3((mid-delayed)*.8,(mid+delayed)*.65,side*.25);
-    if(shape<1.5)return vec3(rail*.63+sign(mid)*.18,mid*.85,side*.3+rail*.24);
-    if(shape<2.5)return vec3(mid*1.15,rail*.48+mid*rail*.32,side*.22+abs(rail)*.18);
+    if(shape<1.5){
+      // A closed phase orbit: the waveform controls its angle and uneven rim.
+      vec2 phase=vec2(mid-delayed,mid+delayed);
+      float magnitude=length(phase);
+      float radius=.62+mid*.18+delayed*.12;
+      vec2 orbit=phase/max(.001,magnitude)*radius*vec2(1.24,.90);
+      return vec3(orbit,side*.30)*smoothstep(0.0,.12,magnitude);
+    }
+    if(shape<2.5){
+      // Five voltage sectors open into a radial crown. Every ray and crossing
+      // still follows PCM; the large silhouette is clearly distinct from rails.
+      float angle=rail*2.55;
+      float radius=abs(rail)*.24+abs(mid)*.86+abs(delayed)*.18;
+      return vec3(sin(angle)*radius*1.18,cos(angle)*radius*.90,side*.28+mid*sin(angle)*.20);
+    }
     if(shape<3.5)return vec3(rail*.59,mid,side*.26);
     return vec3(rail*.80*(.16+.78*abs(mid)),mid,side*.20+rail*mid*.18);
   }
   vec3 point(float u, float age) {
-    float index = uStart + u*uSamples - age*uSamples*.50*uPersistence;
+    float index = uStart + u*uSamples - age*uHistoryStep;
     vec3 current = pcm(index)*uCalibration;
     vec3 lag = pcm(index-uDelay)*uCalibration;
     vec3 lag2 = pcm(index-uDelay*2.0)*uCalibration;
+    // Smooth voltage compression retains polarity and detail while keeping
+    // individual drum peaks from overruling the section's intended size.
+    current=.92*current*inversesqrt(vec3(1.0)+current*current);
+    lag=.92*lag*inversesqrt(vec3(1.0)+lag*lag);
+    lag2=.92*lag2*inversesqrt(vec3(1.0)+lag2*lag2);
     float side = (current.x-current.y)*.85;
     float mid = current.z;
     float delayed = lag.z;
@@ -43,7 +61,18 @@ const vertexShader = /* glsl */`
       // Three voltage regions in the delayed waveform make a phase-sliced
       // portrait. The audio chooses every rail visit and connecting stroke.
       float rail = smoothstep(.15,.19,delayed)-smoothstep(.15,.19,-delayed);
-      p = mix(sectionProjection(uFrom,rail,side,mid,delayed),sectionProjection(uTo,rail,side,mid,delayed),uMorph);
+      // Dense arrangements reveal an extra pair of voltage rails. Both sets
+      // are visited by the signal itself; the section only controls the lens.
+      float detail = smoothstep(.35,.80,uComplexity);
+      float outer = smoothstep(.39,.43,delayed)-smoothstep(.39,.43,-delayed);
+      rail = (rail + outer*detail)/(1.0+detail);
+      vec3 from=sectionProjection(uFrom,rail,side,mid,delayed);
+      vec3 to=sectionProjection(uTo,rail,side,mid,delayed);
+      p = mix(from,to,uMorph);
+      // A brief outward stretch makes the fast transformation punchier, then
+      // settles exactly into the destination. No camera rotation or extra glow.
+      float impulse=4.0*uMorph*(1.0-uMorph)*step(.5,abs(uTo-uFrom));
+      p.xy*=1.0+.18*impulse;
       p.x+=side*.10+(mid-delayed)*.025;
       p.z+=lag2.z*.12;
     } else if(uProjection<1.5) {
@@ -57,7 +86,7 @@ const vertexShader = /* glsl */`
     p *= uGain;
     // A gentle limiter preserves the waveform while keeping loud peaks framed.
     p = p*inversesqrt(vec3(1.0)+p*p*.13);
-    return p*2.15;
+    return p*2.05;
   }
   void main() {
     float u=trace.x, age=trace.y;
@@ -74,11 +103,11 @@ const vertexShader = /* glsl */`
     clip.xy+=normal*trace.z*(1.30/1080.0)*clip.w;
     gl_Position=clip;
     vAcross=trace.z;
-    float history=exp(-age*.65/max(.08,uPersistence));
+    float history=exp(-age*.32/max(.04,uPersistence));
     // Beam dwell lights slow passages more strongly than rapid crossings,
     // independent of the current section's orientation.
     float speed=length(after.xy/after.w-clip.xy/clip.w)*900.0;
-    vLight=history*(.35+.65*u)*(.16+.84/(1.0+speed));
+    vLight=history*(.40+.60*u)*(.32+.68/(1.0+speed))*smoothstep(.012,.10,length(p));
     vColor=clamp(length(p)*.26,0.0,1.0);
   }
 `;
@@ -89,7 +118,7 @@ const fragmentShader = /* glsl */`
   void main(){
     float edge=1.0-smoothstep(.2,1.0,abs(vAcross));
     vec3 color=mix(uColorB,uColorA,vColor*.70);
-    gl_FragColor=vec4(color*uBrightness*2.00,edge*vLight*.76);
+    gl_FragColor=vec4(color*uBrightness*2.35,edge*vLight*.76);
   }
 `;
 
@@ -114,14 +143,14 @@ export function createPhaseLoomScene(container,settings){
   const pcmData=new Float32Array(PCM_SIZE*4);
   const pcmTexture=new THREE.DataTexture(pcmData,8192,4,THREE.RGBAFormat,THREE.FloatType);
   pcmTexture.minFilter=pcmTexture.magFilter=THREE.NearestFilter;pcmTexture.needsUpdate=true;
-  const uniforms={uPcm:{value:pcmTexture},uStart:{value:PCM_SIZE-4096},uSamples:{value:2048},uDelay:{value:62},
-    uCalibration:{value:1},uGain:{value:1.2},uPersistence:{value:.55},uProjection:{value:0},uFrom:{value:3},uTo:{value:3},uMorph:{value:0},
+  const uniforms={uPcm:{value:pcmTexture},uStart:{value:PCM_SIZE-4096},uSamples:{value:2048},uHistoryStep:{value:0},uDelay:{value:62},
+    uCalibration:{value:1},uGain:{value:1.2},uPersistence:{value:.55},uProjection:{value:0},uFrom:{value:3},uTo:{value:3},uMorph:{value:0},uComplexity:{value:0},
     uBrightness:{value:1},uColorA:{value:new THREE.Color('#7023ff')},uColorB:{value:new THREE.Color('#be83ff')}};
   const material=new THREE.ShaderMaterial({vertexShader,fragmentShader,uniforms,transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide});
   const mesh=new THREE.Mesh(geometry,material);mesh.frustumCulled=false;scene.add(mesh);
   const composer=new EffectComposer(renderer,new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType,depthBuffer:false}));
   composer.addPass(new RenderPass(scene,camera));
-  const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.3,.18,.55);composer.addPass(bloom);
+  const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.12,0,1.2);composer.addPass(bloom);
   // Compress the RGB triplet together, preserving its violet hue even where
   // hundreds of strokes overlap. Per-channel filmic clipping turned it white.
   const output=new ShaderPass({uniforms:{tDiffuse:{value:null}},
@@ -129,42 +158,56 @@ export function createPhaseLoomScene(container,settings){
     fragmentShader:'uniform sampler2D tDiffuse;varying vec2 vUv;void main(){vec3 c=texture2D(tDiffuse,vUv).rgb*1.65;float peak=max(c.r,max(c.g,c.b));c=c/(1.0+peak);gl_FragColor=vec4(pow(max(c,vec3(0.0)),vec3(1.0/2.2)),1.0);}'});
   output.material.toneMapped=false;composer.addPass(output);
   let width=1920,height=1080,pixelRatio=1,view='front',lastData=null;
-  const palettes={phosphor:['#681aff','#cfa1ff'],ice:['#246bff','#b7dfff'],aurora:['#12bb82','#adffdd'],ember:['#f73a20','#ffd5a2']};
+  const palettes={phosphor:['#640cff','#ae5dff'],ice:['#246bff','#b7dfff'],aurora:['#12bb82','#adffdd'],ember:['#f73a20','#ffd5a2']};
   function setView(next){view=next;camera.position.copy(next==='top'?new THREE.Vector3(0,6,8):next==='oblique'?new THREE.Vector3(4.5,1.7,9):new THREE.Vector3(0,0,10.2)).normalize().multiplyScalar(10.2);camera.lookAt(0,0,0);controls.target.set(0,0,0);controls.update();}
   function render(data){
     lastData=data;
-    let levelPeak=0;
+    let levelPeak=0,levelSquare=0,levelCount=0;
     if(data?.waveformLeft&&data?.waveformRight){
       const l=data.waveformLeft,r=data.waveformRight,selected=data.scopeChannel===1?r:l;
       for(let i=0;i<PCM_SIZE;i++){
         const j=i*4;pcmData[j]=l[i];pcmData[j+1]=r[i];pcmData[j+2]=selected[i];
-        levelPeak=Math.max(levelPeak,Math.abs(selected[i]));
+        if(i>=PCM_SIZE-(data.scopeSamples||4096)*5){
+          levelPeak=Math.max(levelPeak,Math.abs(selected[i]));
+          levelSquare+=selected[i]*selected[i];levelCount++;
+        }
       }
       pcmTexture.needsUpdate=true;
     }else if(!data?.features?.rms){pcmData.fill(0);pcmTexture.needsUpdate=true;}
     const samples=data?.scopeSamples??2048;
-    uniforms.uStart.value=(data?.scopeStart??PCM_SIZE-4096)+samples*.5;
-    uniforms.uSamples.value=samples*.5;
+    const automatic=settings.shape==='auto';
+    const complexity=automatic?Math.max(0,Math.min(1,data?.phase?.complexity??0)):0;
+    const windowFraction=automatic ? .44+complexity*.36 : .5;
+    uniforms.uStart.value=(data?.scopeStart??PCM_SIZE-4096)+samples*(1-windowFraction);
+    uniforms.uSamples.value=samples*windowFraction;
+    // About270ms at the default persistence bridges inter-beat gaps using
+    // actual causal PCM, including when seeking or exporting out of order.
+    uniforms.uHistoryStep.value=samples*.90*(settings.persistence??.55);
     uniforms.uDelay.value=data?.scopeDelaySamples??62;
-    // A causal peak window bounds every displayed trace and steadies framing.
-    // Current transients remain free to expand within that envelope.
-    uniforms.uCalibration.value=Math.min(8,.82/Math.max(.10,levelPeak));
+    // RMS plus a peak guard steadies the beam between sharp drum transients;
+    // a noise floor prevents normalizing silence into a visible shape.
+    const referenceLevel=Math.max(.035,levelPeak*.5,Math.sqrt(levelSquare/Math.max(1,levelCount))*2.2);
+    uniforms.uCalibration.value=Math.min(12,.85/referenceLevel);
     uniforms.uGain.value=settings.gain??1.2;
     uniforms.uPersistence.value=settings.persistence??.55;
     uniforms.uProjection.value=({stereo:1,phase:2,spatial:3})[settings.shape]??0;
     uniforms.uFrom.value=data?.shapeFrom??3;
     uniforms.uTo.value=data?.shapeTo??3;
     uniforms.uMorph.value=data?.morph??1;
+    uniforms.uComplexity.value=complexity;
     uniforms.uBrightness.value=settings.brightness??1;
     const colors=palettes[settings.palette]||palettes.phosphor;uniforms.uColorA.value.set(colors[0]);uniforms.uColorB.value.set(colors[1]);
-    bloom.strength=(settings.glow??.2)*1.5;
+    bloom.strength=(settings.glow??.2)*.6;
     const time=data?.time||0;
     mesh.rotation.set(settings.motion?Math.sin(time*.041)*.12:0,settings.motion?Math.sin(time*.031)*.20:0,0);
-    mesh.scale.setScalar((settings.zoom||1)*1.18);composer.render();
+    // Section size is derived from musical density, never elapsed time or a
+    // random choice. The same passage renders identically after seeking/export.
+    const phaseSize=automatic?Math.max(.7,Math.min(1.3,data?.phase?.size??1)):1;
+    mesh.scale.setScalar((settings.zoom||1)*1.18*phaseSize);composer.render();
   }
   function resize(w,h,ratio=1){width=w;height=h;pixelRatio=ratio;renderer.setPixelRatio(ratio);renderer.setSize(w,h,false);composer.setPixelRatio(ratio);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();}
   controls.addEventListener('change',()=>{if(lastData)render(lastData);});
   return{canvas:renderer.domElement,render,resize,setView,gpuFinish:()=>renderer.getContext().finish(),
-    getInfo:()=>({columns:COLUMNS,traces:TRACES,vertices:TRACES*COLUMNS*2,source:'stereo PCM + delayed PCM',width,height,pixelRatio,view}),
+    getInfo:()=>({columns:COLUMNS,traces:TRACES,vertices:TRACES*COLUMNS*2,source:'stereo PCM + delayed PCM',width,height,pixelRatio,view,phaseScale:mesh.scale.x/(settings.zoom||1)/1.18,complexity:uniforms.uComplexity.value}),
     dispose(){controls.dispose();geometry.dispose();material.dispose();pcmTexture.dispose();bloom.dispose();output.dispose();composer.dispose();renderer.dispose();renderer.domElement.remove();}};
 }

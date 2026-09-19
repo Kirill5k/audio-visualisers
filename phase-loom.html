@@ -23,10 +23,19 @@
     <section class="section">
       <div class="section-title">Oscilloscope</div>
       <label class="color-row" for="shape"><span>Projection</span><select id="shape"><option value="auto">Follow the music</option><option value="stereo">Stereo X/Y</option><option value="phase">Phase portrait</option><option value="spatial">Spatial oscilloscope</option></select></label>
-      <p class="hint">The stereo waveform draws each trace. Changes in the music reshape the image.</p>
+      <p class="hint">The stereo waveform draws each trace. Busier passages open into larger, more detailed shapes.</p>
       <div class="control"><label class="control-head" for="gain"><span>Audio response</span><span id="gainValue" class="value">1.20</span></label><input id="gain" type="range" min="0.3" max="3" step="0.05" value="1.2"></div>
       <div class="control"><label class="control-head" for="persistence"><span>Trace persistence</span><span id="persistenceValue" class="value">0.55</span></label><input id="persistence" type="range" min="0" max="1" step="0.05" value="0.55"></div>
       <label class="toggle-row" for="motion"><span>Slow rotation</span><input id="motion" type="checkbox"></label>
+    </section>
+    <section class="section music-structure">
+      <div class="section-title">Musical structure</div>
+      <p id="sectionReason" class="section-reason">Load a track to find its passages</p>
+      <div class="music-meter"><span>Busyness</span><meter id="complexityMeter" min="0" max="1" value="0" aria-label="Section busyness"></meter><output id="complexityValue">—</output></div>
+      <div class="music-meter"><span>Bass</span><meter id="bassMeter" min="0" max="1" value="0" aria-label="Bass activity"></meter><output id="bassValue">—</output></div>
+      <div class="music-meter"><span>Percussion</span><meter id="drumMeter" min="0" max="1" value="0" aria-label="Percussion activity"></meter><output id="drumValue">—</output></div>
+      <label class="section-jump" for="sectionSelect">Jump to passage<select id="sectionSelect" disabled><option value="">Load a track first</option></select></label>
+      <p class="hint">Detected from sustained changes. A single beat keeps the current passage.</p>
     </section>
     <section class="section">
       <div class="section-title">Light & colour</div>
@@ -36,7 +45,7 @@
     </section>
     <section class="section">
       <div class="section-title">Perspective</div>
-      <div class="view-buttons" role="group" aria-label="Camera angle"><button class="action" data-view="front" aria-pressed="false">Front</button><button class="action" data-view="oblique" aria-pressed="true">Oblique</button><button class="action" data-view="top" aria-pressed="false">Above</button></div>
+      <div class="view-buttons" role="group" aria-label="Camera angle"><button class="action" data-view="front" aria-pressed="true">Front</button><button class="action" data-view="oblique" aria-pressed="false">Oblique</button><button class="action" data-view="top" aria-pressed="false">Above</button></div>
       <div class="control"><label class="control-head" for="zoom"><span>Scale</span><span id="zoomValue" class="value">1.00</span></label><input id="zoom" type="range" min="0.65" max="1.5" step="0.05" value="1"></div>
     </section>
     <section class="section">
