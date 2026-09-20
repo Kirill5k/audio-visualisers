@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Mesh Grid capture checks</title>
+<style>body{background:#101411;color:#e1eade;font:14px system-ui;margin:24px}button,a{color:inherit}button{padding:10px;background:#28412c;border:1px solid #789e71;border-radius:8px;margin-right:8px}pre{white-space:pre-wrap;line-height:1.6}iframe{width:960px;height:540px;border:1px solid #456;max-width:100%}video{width:480px;max-width:100%;display:block}a{display:block;margin:10px 0}.pass{color:#b3e899}.fail{color:#ff9788}</style>
+<h1>Mesh Grid capture checks</h1>
+<p>Uses a two-second excerpt of the local reference.mp3. Exercises the production playback, capture session, recorder and MP4 exporter.</p>
+<button id="run" disabled>Run recording and export checks</button>
+<pre id="results" role="status">Loading visualiser…</pre>
+<div id="artifacts"></div>
+<iframe id="app" src="../mesh-grid.html" allow="autoplay; fullscreen" title="Mesh Grid under test"></iframe>
+<script type="module" src="mesh-grid-capture-browser.js"></script>
+</html>

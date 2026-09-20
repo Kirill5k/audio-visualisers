@@ -1,0 +1,41 @@
+.mesh-grid { --accent: #c7ecaa; --panel: rgba(8, 12, 10, .94); }
+.mesh-grid #panel { width: 314px; max-height: calc(100dvh - 138px); }
+.mesh-grid #panelToggle { left: 344px; }
+.mesh-grid #panelToggle.closed { left: 18px; }
+.mesh-grid h1 { font-size: 25px; letter-spacing: -.055em; font-weight: 550; }
+.mesh-grid .edition { color: var(--muted); font-size: 9px; margin-top: 21px; white-space: nowrap; }
+.mesh-grid #variants { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; }
+.mesh-grid #variants button { height: 28px; padding: 0; border: 1px solid var(--edge); border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 10px; }
+.mesh-grid #variants button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: #c7ecaa12; }
+.mesh-grid .preset-caption { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 10px; color: var(--muted); }
+.mesh-grid .text-button { border: 0; padding: 3px; color: var(--accent); background: transparent; cursor: pointer; font-size: 10px; }
+.mesh-grid .search-label { display: block; margin-top: 22px; font-size: 10px; color: var(--muted); }
+.mesh-grid #controlSearch { width: 100%; margin: 7px 0 2px; padding: 9px; background: #ffffff05; border: 1px solid var(--edge); border-radius: 6px; color: var(--ink); font-size: 11px; }
+.mesh-grid details.section { margin-top: 12px; padding-top: 12px; }
+.mesh-grid details summary { cursor: pointer; color: var(--ink); font-size: 11px; font-weight: 600; padding: 3px 0; }
+.mesh-grid details details { margin: 12px 0 0; padding: 8px 0 0; border-top: 1px solid #ffffff0e; }
+.mesh-grid details details summary { color: var(--muted); font-size: 10px; }
+.mesh-grid .control-head .number-value { width: 65px; padding: 3px 5px; border: 1px solid #ffffff15; background: #0006; color: var(--accent); border-radius: 4px; text-align: right; font-size: 10px; }
+.mesh-grid .color-row, .mesh-grid .toggle-row { margin-top: 9px; }
+.mesh-grid .color-row select { max-width: 155px; }
+.mesh-grid .modulation-card { padding-bottom: 8px; }
+.mesh-grid .control[hidden], .mesh-grid .config-row[hidden], .mesh-grid details[hidden] { display: none; }
+.mesh-grid .hint, .mesh-grid .credit { color: var(--muted); font-size: 10px; line-height: 1.7; }
+.mesh-grid .credit a { color: var(--accent); }
+.mesh-grid button:disabled, .mesh-grid input:disabled, .mesh-grid select:disabled { opacity: .4; cursor: not-allowed; }
+.mesh-grid .file-picker[aria-disabled="true"] { opacity: .4; pointer-events: none; }
+.mesh-grid #dropHint { display: none; position: fixed; inset: 20px; z-index: 80; border: 2px dashed var(--accent); border-radius: 20px; background: #08100de8; align-items: center; justify-content: center; font-size: 24px; pointer-events: none; }
+.mesh-grid.dragging #dropHint { display: flex; }
+.mesh-grid #actions { max-width: calc(100vw - 405px); flex-wrap: wrap; justify-content: flex-end; }
+.mesh-grid #timeline { left: 18px; right: 18px; }
+@media (max-width: 1100px) {
+  .mesh-grid #actions .action-label { display: none; }
+  .mesh-grid #actions { gap: 5px; }
+}
+@media (max-width: 760px) {
+  .mesh-grid #panel { top: 12px; left: 12px; width: min(314px, calc(100vw - 70px)); max-height: calc(100dvh - 160px); }
+  .mesh-grid #panelToggle:not(.closed) { left: auto; right: 12px; }
+  .mesh-grid #actions { top: auto; bottom: 12px; left: 12px; right: 12px; max-width: none; justify-content: center; flex-wrap: nowrap; }
+  .mesh-grid #actions .action { padding: 0 10px; }
+  .mesh-grid #timeline { bottom: 102px; }
+}

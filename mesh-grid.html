@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mesh Grid — Audio Visualiser</title>
+  <link rel="preload" href="fonts/inter/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/visualiser-ui.css">
+  <link rel="stylesheet" href="css/spectral-ui.css">
+  <link rel="stylesheet" href="css/mesh-grid.css">
+  <script type="importmap">
+    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"}}
+  </script>
+</head>
+<body class="spectral-visualiser mesh-grid">
+  <main id="stage" aria-label="Mesh Grid audio visualisation"></main>
+  <button id="panelToggle" class="glass" title="Hide settings" aria-label="Hide settings" aria-expanded="true" aria-controls="panel">☰</button>
+  <aside id="panel" class="glass" aria-label="Visualiser settings">
+    <div class="brand"><div><div class="eyebrow">An audiovisual instrument</div><h1>Mesh Grid</h1></div><span class="edition">16 variants</span></div>
+    <label class="file-picker" for="fileInput" tabindex="0">Choose an audio file</label>
+    <input id="fileInput" type="file" accept="audio/*">
+    <button id="referenceBtn" class="action reference-button">Load reference track</button>
+    <section class="section">
+      <div class="section-title">Variations</div>
+      <div id="variants" role="group" aria-label="Mesh Grid variants"></div>
+      <div class="preset-caption"><span id="presetName">Variant 6</span><button id="resetBtn" class="text-button">Reset variant</button></div>
+    </section>
+    <label class="search-label" for="controlSearch">Find a control</label>
+    <input id="controlSearch" type="search" placeholder="Search controls…" autocomplete="off">
+    <div id="configControls"></div>
+    <section class="section quality-details">
+      <div class="section-title">Capture</div>
+      <p>1920 × 1080 · 60 fps<br>Record the current performance, or export the full track.<br>Mute affects listening only.</p>
+      <p id="capabilityStatus" class="hint"></p>
+      <p class="hint">Space · play/pause &nbsp; R · replay<br>M · mute &nbsp; H · clean view &nbsp; F · fullscreen<br>Drag · orbit &nbsp; Scroll · zoom &nbsp; Shift-drag · pan</p>
+      <p class="credit">Rendering adapted from <a href="https://vizz.fm/app/?preset=Y29uZmlnLTE3ODUwMDc2NDY0NzItNDg1" target="_blank" rel="noopener noreferrer">Vizz · Mathew Preziotte</a>, with permission.</p>
+    </section>
+  </aside>
+  <nav id="actions" aria-label="Playback and export">
+    <button id="playPauseBtn" class="action glass" disabled title="Play">▶ <span class="action-label">Play</span></button>
+    <button id="replayBtn" class="action glass" disabled title="Replay">↺ <span class="action-label">Replay</span></button>
+    <button id="unloadBtn" class="action glass" disabled title="Unload">⊘ <span class="action-label">Unload</span></button>
+    <button id="muteBtn" class="action glass" title="Mute listening only" aria-pressed="false">♪ <span class="action-label">Mute</span></button>
+    <button id="recordBtn" class="action glass" disabled><span class="record-dot"></span><span class="action-label">Record</span></button>
+    <button id="exportBtn" class="action glass" disabled>↓ <span class="action-label">Export</span></button>
+    <button id="cleanBtn" class="action glass" title="Hide controls (H)" aria-pressed="false">◩ <span class="action-label">Clean view</span></button>
+    <button id="fullscreenBtn" class="action glass" title="Fullscreen" aria-label="Fullscreen">⛶</button>
+  </nav>
+  <div id="timeline" class="glass"><span id="currentTime">0:00</span><input id="seek" aria-label="Track position" type="range" min="0" max="1000" step="1" value="0" disabled><span id="durationText">0:00</span></div>
+  <div id="readout" class="glass" role="status"><span id="statusLight"></span><span id="statusText">Choose an audio file or load the reference track</span><span id="fps">— fps</span></div>
+  <div id="dropHint" aria-hidden="true">Drop an audio file</div>
+  <div id="exportOverlay" role="dialog" aria-modal="true" aria-label="Video export"><div class="export-card glass"><div id="exportStatus">Rendering Mesh Grid…</div><div class="progress"><div id="exportProgressBar"></div></div><div id="exportPercent">0%</div><button id="exportCancelBtn" class="action glass">Cancel export</button></div></div>
+  <div id="fatal" role="alert"></div>
+  <noscript>This visualiser requires JavaScript.</noscript>
+  <script src="js/recorder.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
+  <script src="js/offline-exporter.js"></script>
+  <script type="module" src="js/mesh-grid/mesh-grid-app.js"></script>
+</body>
+</html>
