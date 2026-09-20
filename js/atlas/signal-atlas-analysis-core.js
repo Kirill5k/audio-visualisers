@@ -6,6 +6,7 @@ export const OVERVIEW_BINS = 16384;
 export const RTA_FFT_SIZE = 2048;
 export const RTA_BINS = RTA_FFT_SIZE / 2;
 export const RTA_FLOOR_DB = -120;
+export const MOTION_FFT_SIZE = 4096;
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 
 /** Preview, meters, seeks and export use the same absolute 60 Hz clock. The
@@ -74,6 +75,63 @@ export function createStereoSpectrum(channels, sampleRate) {
     }
     return spectrum;
   };
+}
+
+/** A separate short window detects changes quickly while the visual spectrum
+ * retains all 32,768 FFT samples. Positive changes are measured in channel
+ * power, so opposite stereo phases cannot cancel. Dividing by the larger
+ * adjacent-frame power makes the response independent of recording gain above
+ * the -80 dBFS RMS gate. The returned scalar has no attack/release or hidden
+ * playback state: consumers can apply their own audio-time ballistics.
+ *
+ * Only four absolute-frame spectra are retained. A random seek reconstructs
+ * both windows, yielding the same result as continuous forward playback. */
+export function createStereoMotionFlux(channels, sampleRate) {
+  if (!channels.length || !channels.every(channel => channel instanceof Float32Array)
+      || !(sampleRate > 0) || !Number.isFinite(sampleRate)) {
+    throw new Error('Decoded channels and a finite positive sample rate are required');
+  }
+  const fft = createFFT(MOTION_FFT_SIZE);
+  const bins = MOTION_FFT_SIZE / 2;
+  const cache = new Map();
+  const cacheCapacity = 4;
+  const blackmanEnbw = (.42 ** 2 + .5 ** 2 / 2 + .08 ** 2 / 2) / .42 ** 2;
+  const gatePower = 2 * blackmanEnbw * 1e-8;
+
+  function powerAt(frame) {
+    if (cache.has(frame)) return cache.get(frame);
+    const power = new Float64Array(bins);
+    if (frame > 0) {
+      const endSample = Math.round(frame * sampleRate / ANALYSIS_FPS);
+      for (const channel of channels) {
+        const magnitudes = fft.magnitudes(channel, endSample);
+        for (let bin = 0; bin < bins; bin++) {
+          power[bin] += magnitudes[bin] ** 2 / channels.length * (bin === 0 ? .5 : 1);
+        }
+      }
+    }
+    let total = 0;
+    for (const value of power) total += value;
+    const record = { power, total };
+    cache.set(frame, record);
+    while (cache.size > cacheCapacity) cache.delete(cache.keys().next().value);
+    return record;
+  }
+
+  function motionFluxAt(frame) {
+    if (!Number.isFinite(frame)) throw new Error('Motion frame must be finite');
+    frame = Math.floor(frame);
+    if (frame <= 0) return 0;
+    const previous = powerAt(frame - 1);
+    const current = powerAt(frame);
+    if (current.total <= gatePower) return 0;
+    let positive = 0;
+    for (let bin = 0; bin < bins; bin++) positive += Math.max(0, current.power[bin] - previous.power[bin]);
+    return clamp(positive / Math.max(current.total, previous.total), 0, 1);
+  }
+  motionFluxAt.getInfo = () => ({ fftSize: MOTION_FFT_SIZE, cachedFrames: cache.size,
+    cacheCapacity, cacheBytes: cache.size * (bins * Float64Array.BYTES_PER_ELEMENT + Float64Array.BYTES_PER_ELEMENT) });
+  return motionFluxAt;
 }
 
 /** Short, calibrated per-channel FFTs keep the RTA responsive without changing

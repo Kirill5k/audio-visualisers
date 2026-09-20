@@ -1,9 +1,10 @@
-import { createSignalSummaryBuilder, createStereoSpectrum, createSmoothedStereoRta } from './signal-atlas-analysis-core.js';
+import { createSignalSummaryBuilder, createStereoSpectrum, createSmoothedStereoRta, createStereoMotionFlux } from './signal-atlas-analysis-core.js';
 
 let generation = 0;
 let rangeEpoch = 0;
 let spectrumAt = null;
 let rtaAt = null;
+let motionFluxAt = null;
 let ready = false;
 const yieldToMessages = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -24,6 +25,7 @@ self.onmessage = async ({ data: message }) => {
       if (generation !== requestGeneration) return;
       spectrumAt = createStereoSpectrum(message.channels, message.sampleRate);
       rtaAt = createSmoothedStereoRta(message.channels, message.sampleRate);
+      motionFluxAt = createStereoMotionFlux(message.channels, message.sampleRate);
       ready = true;
       const summary = builder.summary;
       self.postMessage({ type: 'loaded', id, generation, summary, workerRtaCacheBytes: rtaAt.getCacheBytes() },
@@ -36,7 +38,8 @@ self.onmessage = async ({ data: message }) => {
       // second 24-second history in the worker while the GPU is being updated.
       for (let offset = 0; offset < message.frames.length; offset += 4) {
         if (generation !== requestGeneration || message.epoch !== rangeEpoch) return;
-        const frames = message.frames.slice(offset, offset + 4).map(frame => ({ frame, spectrum: spectrumAt(frame), ...rtaAt(frame) }));
+        const frames = message.frames.slice(offset, offset + 4).map(frame => ({ frame,
+          spectrum: spectrumAt(frame), ...rtaAt(frame), motionFlux: motionFluxAt(frame) }));
         self.postMessage({ type: 'frames', id, generation, frames, workerRtaCacheBytes: rtaAt.getCacheBytes() }, frames.flatMap(item =>
           [item.spectrum.buffer, item.rtaLeft.buffer, item.rtaRight.buffer]));
         await yieldToMessages();

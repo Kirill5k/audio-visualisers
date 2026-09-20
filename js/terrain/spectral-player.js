@@ -71,6 +71,7 @@ export async function createSpectralPlayer({
     if ($('statusText')) $('statusText').textContent = message;
     $('statusLight')?.classList.toggle('live', Boolean(live));
     $('statusLight')?.classList.toggle('busy', Boolean(busy));
+    extension.onButtonsUpdated?.();
     stage?.setAttribute('aria-busy', String(Boolean(busy)));
   }
 
@@ -205,6 +206,7 @@ export async function createSpectralPlayer({
     }
     stage.setAttribute('aria-busy', String(Boolean(busy)));
     $('statusLight')?.classList.toggle('busy', Boolean(busy));
+    extension.onButtonsUpdated?.();
   }
 
   // Keep the displayed spectrum independently of the bounded history cache. A
@@ -336,12 +338,24 @@ export async function createSpectralPlayer({
 
   async function pause() {
     if (!audio.hasAudio || busy || recorder.isRecording) return false;
-    await audio.pause();
-    if (!finished) displayedTime = audio.getPlaybackPosition();
-    setStatus('Paused · ' + audio.fileName, false);
+    const token = ++generation;
+    busy = 'pausing';
     updateButtons();
-    dirty = true;
-    return true;
+    try {
+      await audio.pause();
+      if (token !== generation || disposed) return false;
+      const position = finished ? audio.duration : audio.getPlaybackPosition();
+      // The audio clock can advance beyond the last RAF. Reconstruct through
+      // its frozen position before exposing the paused image or starting capture.
+      if (!await rebuildHistory(position, token)) return false;
+      setStatus(finished ? 'Track complete · replay to begin again' : 'Paused · ' + audio.fileName, false);
+      return true;
+    } finally {
+      if (token === generation) {
+        busy = '';
+        updateButtons();
+      }
+    }
   }
 
   async function seek(seconds, { resume = audio.isPlaying } = {}) {

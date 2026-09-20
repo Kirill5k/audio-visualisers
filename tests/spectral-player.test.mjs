@@ -65,11 +65,12 @@ function environment(input) {
   globalThis.cancelAnimationFrame = () => {};
   globalThis.ResizeObserver = class { observe() {} disconnect() {} };
   globalThis.Worker = BrowserWorker;
+  let audioContext;
   let decodeFailure = false, startFailure = false, stopFailure = null;
   let stoppedTracks = 0, abortedRecording = false;
   const node = () => ({ connect() {}, disconnect() {}, stop() {}, start() {} });
   globalThis.AudioContext = class {
-    constructor(options) { assert.equal(options.sampleRate, 48000); this.state = 'suspended'; this.currentTime = 0; this.destination = {}; }
+    constructor(options) { assert.equal(options.sampleRate, 48000); this.state = 'suspended'; this.currentTime = 0; this.destination = {}; audioContext = this; }
     createAnalyser() { return node(); }
     createGain() { return { ...node(), gain: { value: 1, setValueAtTime() {} } }; }
     createMediaStreamDestination() { return { stream: { getAudioTracks: () => [{}] } }; }
@@ -125,6 +126,7 @@ function environment(input) {
   };
   const file = { name: 'fixture.wav', arrayBuffer: async () => new ArrayBuffer(0) };
   return { scene, file, elements, events,
+    advanceAudio: seconds => { audioContext.currentTime += seconds; },
     failDecode: () => { decodeFailure = true; },
     failRecordingStart: () => { startFailure = true; },
     failRecordingStop: () => { stopFailure = new Error('Encoder stopped unexpectedly'); },
@@ -164,6 +166,47 @@ test('shared lifecycle retains 12 seconds plus interpolation, final partial fram
     assert.equal(player.getState().ready, false);
     assert.equal(player.getState().scene.hasSpectrum, false);
     assert.deepEqual(player.getState().scene.rows, []);
+  } finally { env.cleanup(); }
+});
+
+test('pause reconstructs audio frames advanced since the last RAF before resolving', async () => {
+  const env = environment(audioBuffer(2.005));
+  try {
+    const player = await create(env);
+    await player.loadFile(env.file);
+    await player.renderAt(1.2);
+    await player.play();
+    env.advanceAudio(.055);
+    assert.equal(player.getState().uploadedFrame, 72, 'no RAF has uploaded the advancing audio');
+
+    const pausing = player.pause();
+    assert.equal(player.getState().busy, 'pausing');
+    assert.equal(env.scene.interactionEnabled, false);
+    assert.equal(await player.seek(0), false, 'transport remains locked until the final image is ready');
+    assert.equal(await pausing, true);
+    const paused = player.getState();
+    assert.equal(paused.playing, false);
+    assert.equal(paused.paused, true);
+    assert.equal(paused.busy, '');
+    assert.equal(paused.position, 1.255);
+    assert.equal(paused.uploadedFrame, 75);
+    assert.equal(paused.scene.rows.at(-1), 75);
+    assert.equal(paused.scene.time, paused.position, 'the paused image is rendered before pause resolves');
+    assert.equal(env.scene.interactionEnabled, true);
+    const reconstructed = await player.renderAt(paused.position);
+    assert.deepEqual(reconstructed.scene, paused.scene, 'direct seeking produces the same complete paused history');
+
+    await player.play();
+    env.advanceAudio(.01);
+    await player.pause();
+    assert.ok(Math.abs(player.getState().position - 1.265) < 1e-12, 'resume preserves the fractional position');
+    assert.equal(player.getState().uploadedFrame, 75);
+
+    await player.renderAt(2.005);
+    await player.pause();
+    assert.equal(player.getState().position, 2.005);
+    assert.equal(player.getState().uploadedFrame, 121, 'pause retains the partial final interval');
+    assert.equal(player.getState().finished, true);
   } finally { env.cleanup(); }
 });
 

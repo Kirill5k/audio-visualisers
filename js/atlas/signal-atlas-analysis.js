@@ -1,4 +1,4 @@
-import { ANALYSIS_FPS, FFT_SIZE, FFT_BINS, RTA_FFT_SIZE, RTA_BINS, LEVEL_STRIDE, createSignalFrame, fillSignalFrame, signalFrameIndex } from './signal-atlas-analysis-core.js';
+import { ANALYSIS_FPS, FFT_SIZE, FFT_BINS, RTA_FFT_SIZE, RTA_BINS, MOTION_FFT_SIZE, LEVEL_STRIDE, createSignalFrame, fillSignalFrame, signalFrameIndex } from './signal-atlas-analysis-core.js';
 
 export { createSignalFrame };
 const MAX_RANGE_FRAMES = 1450;
@@ -103,8 +103,8 @@ export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 }
     return Math.floor(frame);
   }
 
-  function packFrame({ frame, spectrum, rtaLeft, rtaRight }) {
-    return { frame, time: frame / ANALYSIS_FPS, spectrum, rtaLeft, rtaRight };
+  function packFrame({ frame, spectrum, rtaLeft, rtaRight, motionFlux }) {
+    return { frame, time: frame / ANALYSIS_FPS, spectrum, rtaLeft, rtaRight, motionFlux };
   }
 
   async function load(input, { onProgress } = {}) {
@@ -230,7 +230,7 @@ export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 }
 
   function getInfo() {
     return { fftSize: FFT_SIZE, frequencyBinCount: FFT_BINS, rtaFftSize: RTA_FFT_SIZE,
-      rtaFrequencyBinCount: RTA_BINS, fps: ANALYSIS_FPS,
+      rtaFrequencyBinCount: RTA_BINS, motionFftSize: MOTION_FFT_SIZE, fps: ANALYSIS_FPS,
       frameCount: summary?.frames || 0, duration: summary?.duration || 0, sampleRate: summary?.sampleRate || 0,
       cachedFrames: cache.size, cacheCapacity: cache.capacity, cacheBytes: cache.bytes,
       workerRtaCacheBytes,
