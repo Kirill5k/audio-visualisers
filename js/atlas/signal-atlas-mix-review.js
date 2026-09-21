@@ -18,10 +18,10 @@ function snapshotPixels(rects) {
   gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
   const bottomBytes = canvas.width * Math.floor(canvas.height * .25) * 4;
   let hash = 2166136261, bottomQuarterNonBlackPixels = 0, markerStripNonBlackPixels = 0;
-  // The overview ends at 71.1%; carets occupy 71.1–71.6%. This strip isolates
-  // the lower marker strokes from both waveform and elapsed/remaining text.
-  const markerBottom = Math.floor(canvas.height * (1 - .724));
-  const markerTop = Math.ceil(canvas.height * (1 - .713));
+  // The overview ends at 71.1%; carets occupy 70.6–71.1%. The playhead also
+  // crosses this strip, so compare marker ink against an unmarked frame.
+  const markerBottom = Math.floor(canvas.height * (1 - .712));
+  const markerTop = Math.ceil(canvas.height * (1 - .705));
   const markerLeft = Math.floor(canvas.width * .057);
   const markerRight = Math.ceil(canvas.width * .943);
   for (let i = 0; i < pixels.length; i += 4) {
@@ -80,15 +80,19 @@ export async function runMixControlChecks(api) {
     const sample = api.getState();
     results.checks.sampleSetlistFiltersDuration = sample.setlist.entries.length === 2 && sample.setlist.outOfRange.length === 2 && sample.setlist.errors.length === 0;
 
+    setControl('setlistInput', '');
+    await api.renderAt(80);
+    results.frames.unmarked = capture();
     setControl('setlistInput', '00:00 First\n00:30 Second\n01:00 Third\n02:00 Fourth\n04:00 Fifth');
     await api.renderAt(80);
     results.checks.fiveMarkerLabels = api.getState().scene.labelState.markerCount === 5;
     results.frames.marked = capture();
-    results.checks.caretsProduceVisiblePixels = results.frames.marked.markerStripNonBlackPixels > 30;
+    results.checks.caretsProduceVisiblePixels = results.frames.marked.markerStripNonBlackPixels - results.frames.unmarked.markerStripNonBlackPixels > 30;
     setControl('setlistInput', '');
     await api.renderAt(80);
     results.frames.cleared = capture();
-    results.checks.clearingRemovesMarkerPixels = api.getState().scene.labelState.markerCount === 0 && results.frames.cleared.markerStripNonBlackPixels === 0;
+    results.checks.clearingRemovesMarkerPixels = api.getState().scene.labelState.markerCount === 0
+      && results.frames.cleared.markerStripNonBlackPixels === results.frames.unmarked.markerStripNonBlackPixels;
 
     results.presets = {};
     for (const [preset, min, max] of [['full', 20, 20000], ['bass', 20, 500], ['mids', 500, 4000], ['highs', 4000, 20000]]) {

@@ -185,9 +185,9 @@ export function createSignalAtlasScene(stage, settings) {
       if (!hasAudio) label('LOAD A TRACK TO REVEAL ITS STRUCTURE', INSTRUMENT_RECTS.analyzer.x + INSTRUMENT_RECTS.analyzer.w / 2, .2248, C.silver, 11, 'center');
     }
     // Track-start carets belong to the overview even when text labels are off.
-    // Their tips meet the waveform's lower edge, with room above the time values.
+    // Their tips sit 5px above the waveform's lower edge.
     if (hasAudio && markerEntries?.length) {
-      const tipY = (RECTS.overview.y + RECTS.overview.h) * 1080;
+      const tipY = (RECTS.overview.y + RECTS.overview.h) * 1080 - 5;
       let active = -1;
       for (let i = 0; i < markerEntries.length; i++) if (markerEntries[i].time <= time) active = i;
       ctx.lineWidth = 1.25;
