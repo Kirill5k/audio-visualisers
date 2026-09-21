@@ -179,15 +179,15 @@ export function createSignalAtlasScene(stage, settings) {
       label('03   PEAK dBFS', INSTRUMENT_RECTS.meters.x, .096);
       label('04   SPECTROGRAM', .06, .3924);
       label('05   TRACK OVERVIEW', .06, .5862);
-      label(hasAudio ? `${(time / analysis.duration * 100).toFixed(1)}%` : '—', .94, .5862, C.silver, 10, 'right');
+      label(hasAudio ? `${(time / analysis.duration * 100).toFixed(1)}%` : '—', .94, .5862, C.pearl, 13, 'right');
       label(elapsedText, .06, .737, C.pearl, 18);
       label(remainingText, .94, .737, C.pearl, 18, 'right');
       if (!hasAudio) label('LOAD A TRACK TO REVEAL ITS STRUCTURE', INSTRUMENT_RECTS.analyzer.x + INSTRUMENT_RECTS.analyzer.w / 2, .2248, C.silver, 11, 'center');
     }
     // Track-start carets belong to the overview even when text labels are off.
-    // Their tips sit beneath the waveform, with room above the time values.
+    // Their tips meet the waveform's lower edge, with room above the time values.
     if (hasAudio && markerEntries?.length) {
-      const tipY = (RECTS.overview.y + RECTS.overview.h) * 1080 + 5;
+      const tipY = (RECTS.overview.y + RECTS.overview.h) * 1080;
       let active = -1;
       for (let i = 0; i < markerEntries.length; i++) if (markerEntries[i].time <= time) active = i;
       ctx.lineWidth = 1.25;

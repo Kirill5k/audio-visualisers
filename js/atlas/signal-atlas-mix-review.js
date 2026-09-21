@@ -18,8 +18,8 @@ function snapshotPixels(rects) {
   gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
   const bottomBytes = canvas.width * Math.floor(canvas.height * .25) * 4;
   let hash = 2166136261, bottomQuarterNonBlackPixels = 0, markerStripNonBlackPixels = 0;
-  // The overview ends at 71.1%; carets occupy 71.5–72.1%. This strip isolates
-  // actual marker ink from both waveform and elapsed/remaining text.
+  // The overview ends at 71.1%; carets occupy 71.1–71.6%. This strip isolates
+  // the lower marker strokes from both waveform and elapsed/remaining text.
   const markerBottom = Math.floor(canvas.height * (1 - .724));
   const markerTop = Math.ceil(canvas.height * (1 - .713));
   const markerLeft = Math.floor(canvas.width * .057);
