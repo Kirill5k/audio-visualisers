@@ -93,3 +93,56 @@ test('scope correlation includes samples omitted by point decimation', () => {
   assert.equal(result.count, 1);
   assert.ok(result.correlation < -.95, 'a sparse display must not invent positive correlation');
 });
+
+test('cached scope ages preserve exact weights and correlation across track formats and seeks', () => {
+  // Include short windows, sample-rate changes, decimation and an oversized
+  // custom window that must use the bounded cache's direct-calculation fallback.
+  for (const [sampleRate, length, capacity, startSample] of [
+    [48000, 16384, 7680, 12000], [44100, 16384, 321, -16384],
+    [96000, 32768, 777, 123456], [48000, 4096, 127, 84000],
+    [500000, 70000, 13, 10], [48000, 16384, 7680, 12000],
+  ]) {
+    const left = Float32Array.from({ length }, (_, i) => Math.sin(i * .043));
+    const right = Float32Array.from({ length }, (_, i) => Math.sin(i * .047));
+    const positions = new Float32Array(capacity * 3), weights = new Float32Array(capacity);
+    const actual = fillPhaseTrail({ left, right, startSample }, sampleRate, positions, weights);
+    const samples = Math.min(length, Math.max(1, Math.round(sampleRate * .16)));
+    const stride = Math.max(1, Math.ceil(samples / capacity));
+    let count = 0, squareLeft = 0, squareRight = 0, product = 0;
+    const expectedPositions = new Float32Array(positions.length), expectedWeights = new Float32Array(weights.length);
+    for (let index = length - samples; index < length; index++) {
+      const l = left[index], r = right[index];
+      const weight = phaseTrailWeight((length - 1 - index) / sampleRate);
+      squareLeft += l * l * weight;
+      squareRight += r * r * weight;
+      product += l * r * weight;
+      if ((startSample + index) % stride !== 0) continue;
+      expectedPositions[count * 3] = r - l;
+      expectedPositions[count * 3 + 1] = l + r;
+      expectedWeights[count++] = weight;
+    }
+    const denominator = Math.sqrt(squareLeft * squareRight);
+    assert.deepEqual(actual, { count, correlation: denominator > 1e-12 ? Math.max(-1, Math.min(1, product / denominator)) : 0,
+      duration: samples / sampleRate, stride });
+    assert.deepEqual(positions, expectedPositions);
+    assert.deepEqual(weights, expectedWeights);
+  }
+});
+
+test('scope reuses age weights between frames and refreshes them for a changed window or sample rate', t => {
+  const exponential = t.mock.method(Math, 'exp');
+  const positions = new Float32Array(96), weights = new Float32Array(32);
+  const frame = { left: new Float32Array(32).fill(.5), startSample: 0 };
+  fillPhaseTrail(frame, 1000, positions, weights);
+  let calls = exponential.mock.callCount();
+  assert.ok(calls > 0);
+  frame.startSample = 17;
+  fillPhaseTrail(frame, 1000, positions, weights);
+  assert.equal(exponential.mock.callCount(), calls, 'new audio time does not recompute sample ages');
+  fillPhaseTrail(frame, 2000, positions, weights);
+  assert.ok(exponential.mock.callCount() > calls, 'a different sample rate changes sample ages');
+  calls = exponential.mock.callCount();
+  frame.left = new Float32Array(16).fill(.5);
+  fillPhaseTrail(frame, 2000, positions, weights);
+  assert.ok(exponential.mock.callCount() > calls, 'a different window refreshes the cached table');
+});

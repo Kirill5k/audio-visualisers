@@ -55,6 +55,21 @@ export function phaseTrailWeight(ageSeconds) {
   return (Math.exp(-ageSeconds / SCOPE_DECAY_SECONDS) - edge) / (1 - edge);
 }
 
+// Sample age depends only on the window size and sample rate. Retain one table
+// in double precision so weighted correlation stays identical after any seek.
+// Larger custom windows use the direct calculation, keeping storage <= 512 KiB.
+const MAX_CACHED_TRAIL_SAMPLES = 65536;
+let trailWeightCache = null;
+function phaseTrailWeights(samples, sampleRate) {
+  if (samples > MAX_CACHED_TRAIL_SAMPLES) return null;
+  if (trailWeightCache?.sampleRate !== sampleRate || trailWeightCache.weights.length !== samples) {
+    const weights = new Float64Array(samples);
+    for (let age = 0; age < samples; age++) weights[age] = phaseTrailWeight(age / sampleRate);
+    trailWeightCache = { sampleRate, weights };
+  }
+  return trailWeightCache.weights;
+}
+
 /** Populate reusable point/opacity buffers from a trailing PCM window. Absolute
  * sample alignment prevents decimation from choosing a new sample set each
  * frame. Correlation uses every raw sample, including those not drawn.
@@ -68,10 +83,12 @@ export function fillPhaseTrail(frame, sampleRate, positions, weights) {
   const first = left.length - samples;
   const stride = Math.max(1, Math.ceil(samples / capacity));
   const startSample = Number.isInteger(frame.startSample) ? frame.startSample : 0;
+  const ageWeights = phaseTrailWeights(samples, sampleRate);
   let count = 0, squareLeft = 0, squareRight = 0, product = 0;
   for (let index = first; index < left.length; index++) {
     const l = left[index] || 0, r = right[index] || 0;
-    const weight = phaseTrailWeight((left.length - 1 - index) / sampleRate);
+    const age = left.length - 1 - index;
+    const weight = ageWeights ? ageWeights[age] : phaseTrailWeight(age / sampleRate);
     squareLeft += l * l * weight;
     squareRight += r * r * weight;
     product += l * r * weight;

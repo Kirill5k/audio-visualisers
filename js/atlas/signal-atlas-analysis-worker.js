@@ -25,7 +25,7 @@ self.onmessage = async ({ data: message }) => {
       if (generation !== requestGeneration) return;
       spectrumAt = createStereoSpectrum(message.channels, message.sampleRate);
       rtaAt = createSmoothedStereoRta(message.channels, message.sampleRate);
-      motionFluxAt = createStereoMotionFlux(message.channels, message.sampleRate);
+      motionFluxAt = message.motionAnalysis === false ? null : createStereoMotionFlux(message.channels, message.sampleRate);
       ready = true;
       const summary = builder.summary;
       self.postMessage({ type: 'loaded', id, generation, summary, workerRtaCacheBytes: rtaAt.getCacheBytes() },
@@ -39,7 +39,7 @@ self.onmessage = async ({ data: message }) => {
       for (let offset = 0; offset < message.frames.length; offset += 4) {
         if (generation !== requestGeneration || message.epoch !== rangeEpoch) return;
         const frames = message.frames.slice(offset, offset + 4).map(frame => ({ frame,
-          spectrum: spectrumAt(frame), ...rtaAt(frame), motionFlux: motionFluxAt(frame) }));
+          spectrum: spectrumAt(frame), ...rtaAt(frame), motionFlux: motionFluxAt ? motionFluxAt(frame) : 0 }));
         self.postMessage({ type: 'frames', id, generation, frames, workerRtaCacheBytes: rtaAt.getCacheBytes() }, frames.flatMap(item =>
           [item.spectrum.buffer, item.rtaLeft.buffer, item.rtaRight.buffer]));
         await yieldToMessages();

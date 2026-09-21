@@ -27,6 +27,18 @@ export const INSTRUMENT_RECTS = Object.freeze({
 const CURVE_POINTS = 1280, SCOPE_POINTS = 8192;
 const SCOPE = { cx: SCOPE_CENTER_X * 1920, cy: labelY(.262), scale: 108 * .7,
   left: .064, right: .23175, top: rowY(.132), bottom: rowY(.394) };
+// Dynamic labels occupy only these small crops of the original instrument
+// canvas; the scene aligns every crop to that canvas's raster grid.
+export const INSTRUMENT_LABEL_RECTS = Object.freeze({
+  static: Object.freeze({ x: .06, y: .1044, w: .88, h: .2604 }),
+  correlation: Object.freeze({
+    x: SCOPE_CENTER_X - CORRELATION_WIDTH / 2 - 3 / 1920,
+    y: (labelY(.429) - 22) / 1080,
+    w: CORRELATION_WIDTH + 6 / 1920,
+    h: (labelY(.45) + 10 - (labelY(.429) - 22)) / 1080,
+  }),
+  peaks: Object.freeze({ x: meterRect.x, y: (labelY(.124) - 20) / 1080, w: meterRect.w, h: 26 / 1080 }),
+});
 const DB_STEPS = [0, -6, -12, -18, -24, -30, -36, -42, -48, -54, -60, -66, -72, -78, -84, -90];
 const FREQUENCIES = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 const planeVertex = `varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`;
@@ -59,6 +71,8 @@ export function createAtlasInstruments(scene, settings) {
   let aspect = 16 / 9, width = 1920, height = 1080, ratio = 1;
   let latest = { frame: null, spectralFrame: null, levels: null, sampleRate: 48000, hasAudio: false };
   let range = clampRange(settings.rtaMin, settings.rtaMax), boost = 6, correlation = 0;
+  const curveFirstFrequency = new Float64Array(CURVE_POINTS), curveLastFrequency = new Float64Array(CURVE_POINTS);
+  let curveRangeKey = '';
   const meterState = { left: { sampleDb: -Infinity, displayDb: -Infinity, heldDb: -Infinity }, right: { sampleDb: -Infinity, displayDb: -Infinity, heldDb: -Infinity } };
   let scopeState = { count: 0, correlation: 0, duration: 0, stride: 1 };
   const curveLeft = makeCurve(C.ivory), curveRight = makeCurve(C.copper);
@@ -111,10 +125,10 @@ export function createAtlasInstruments(scene, settings) {
   function updateCurve(curve, data) {
     const rect = INSTRUMENT_RECTS.analyzer;
     const values = curve.values, positions = curve.positions;
+    curve.mesh.visible = latest.hasAudio && Boolean(data?.length);
+    if (!curve.mesh.visible) return;
     for (let i = 0; i < CURVE_POINTS; i++) {
-      const t = i / (CURVE_POINTS - 1), span = .5 / (CURVE_POINTS - 1);
-      const db = sampleSpectrum(data, frequencyAt(t - span, range.min, range.max), latest.sampleRate,
-        frequencyAt(t + span, range.min, range.max));
+      const db = sampleSpectrum(data, curveFirstFrequency[i], latest.sampleRate, curveLastFrequency[i]);
       values[i] = (rect.y + rect.h * (1 - dbToUnit(db + boost))) * 1080;
     }
     const step = rect.w * 1920 / (CURVE_POINTS - 1);
@@ -131,12 +145,20 @@ export function createAtlasInstruments(scene, settings) {
       }
     }
     curve.mesh.geometry.attributes.position.needsUpdate = true;
-    curve.mesh.visible = latest.hasAudio && Boolean(data?.length);
   }
 
   function update({ frame = null, spectralFrame = null, levels = null, sampleRate = 48000, hasAudio = false } = {}) {
     latest = { frame, spectralFrame, levels, sampleRate, hasAudio };
     range = clampRange(settings.rtaMin, settings.rtaMax, sampleRate);
+    const rangeKey = `${range.min}|${range.max}`;
+    if (rangeKey !== curveRangeKey) {
+      curveRangeKey = rangeKey;
+      for (let i = 0; i < CURVE_POINTS; i++) {
+        const t = i / (CURVE_POINTS - 1), span = .5 / (CURVE_POINTS - 1);
+        curveFirstFrequency[i] = frequencyAt(t - span, range.min, range.max);
+        curveLastFrequency[i] = frequencyAt(t + span, range.min, range.max);
+      }
+    }
     boost = [0, 6, 12, 18].includes(Number(settings.rtaBoost)) ? Number(settings.rtaBoost) : 6;
     scopeState = fillPhaseTrail(hasAudio ? frame : null, sampleRate, scopePositions, scopeWeights);
     correlation = scopeState.correlation;
@@ -177,7 +199,17 @@ export function createAtlasInstruments(scene, settings) {
     update(latest);
   }
 
-  function drawLabels(ctx) {
+  const peakLabel = state => state.heldDb >= 0 ? 'CLIP' : Number.isFinite(state.heldDb) ? state.heldDb.toFixed(1).replace('-', '−') : '−∞';
+
+  function getLabelKeys() {
+    return {
+      static: [settings.labels, settings.gridOpacity, range.min, range.max].join('|'),
+      correlation: `${settings.labels}|${correlation}`,
+      peaks: `${settings.labels}|${peakLabel(meterState.left)}|${peakLabel(meterState.right)}`,
+    };
+  }
+
+  function drawLabels(ctx, layer = 'static') {
     const labels = settings.labels !== false;
     const opacity = Number.isFinite(settings.gridOpacity) ? settings.gridOpacity : .3;
     const line = (x1, y1, x2, y2, color = C.silver, alpha = Math.min(1, opacity * 1.6)) => {
@@ -192,8 +224,30 @@ export function createAtlasInstruments(scene, settings) {
     ctx.save();
     ctx.textBaseline = 'alphabetic';
 
-    // Scope guides and the in-phase ellipse share the reference's R−L / L+R axes.
     const { cx, cy, scale } = SCOPE;
+    const barW = CORRELATION_WIDTH * 1920, barX = cx - barW / 2, barY = labelY(.45);
+    if (layer === 'correlation') {
+      text(`Φ  ${correlation >= 0 ? '+' : '−'}${Math.abs(correlation).toFixed(3)}`, cx, labelY(.429),
+        correlation < 0 ? C.coral : correlation > 0 ? C.olive : C.silver, 14, 'center');
+      const gradient = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+      gradient.addColorStop(0, C.coral); gradient.addColorStop(.5, paletteRgba(C.silver, .45)); gradient.addColorStop(1, C.olive);
+      ctx.fillStyle = gradient; ctx.globalAlpha = .7; ctx.fillRect(barX, barY, barW, 4); ctx.globalAlpha = 1;
+      const pointer = barX + (correlation + 1) / 2 * barW;
+      ctx.fillStyle = C.white; ctx.fillRect(pointer - 1, barY - 4, 2, 12);
+      ctx.restore();
+      return;
+    }
+    if (layer === 'peaks') {
+      for (const meter of meters) {
+        const x = (meterRect.x + meterRect.w * meterCenter(meter.index)) * 1920;
+        const state = meterState[meter.channel];
+        text(peakLabel(state), x, labelY(.124), state.heldDb >= 0 ? C.coral : C.pearl, 11, 'center');
+      }
+      ctx.restore();
+      return;
+    }
+
+    // Scope guides and the in-phase ellipse share the reference's R−L / L+R axes.
     line(cx - scale, cy - scale, cx + scale, cy + scale);
     line(cx + scale, cy - scale, cx - scale, cy + scale);
     line(cx, cy - scale * 1.1, cx, cy + scale * 1.1);
@@ -208,19 +262,11 @@ export function createAtlasInstruments(scene, settings) {
     ctx.globalAlpha = 1; ctx.setLineDash([]);
     text('L', cx - scale - 10, cy - scale - 8, C.ivory, 12, 'center');
     text('R', cx + scale + 10, cy - scale - 8, C.copper, 12, 'center');
-    text(`Φ  ${correlation >= 0 ? '+' : '−'}${Math.abs(correlation).toFixed(3)}`, cx, labelY(.429),
-      correlation < 0 ? C.coral : correlation > 0 ? C.olive : C.silver, 14, 'center');
-    const barW = CORRELATION_WIDTH * 1920, barX = cx - barW / 2, barY = labelY(.45);
-    const gradient = ctx.createLinearGradient(barX, 0, barX + barW, 0);
-    gradient.addColorStop(0, C.coral); gradient.addColorStop(.5, paletteRgba(C.silver, .45)); gradient.addColorStop(1, C.olive);
-    ctx.fillStyle = gradient; ctx.globalAlpha = .7; ctx.fillRect(barX, barY, barW, 4); ctx.globalAlpha = 1;
-    const pointer = barX + (correlation + 1) / 2 * barW;
-    ctx.fillStyle = C.white; ctx.fillRect(pointer - 1, barY - 4, 2, 12);
     text('−1', barX, labelY(.473), C.silver, 10);
     text('0', barX + barW / 2, labelY(.473), C.silver, 10, 'center');
     text('+1', barX + barW, labelY(.473), C.silver, 10, 'right');
 
-    const analyzer = INSTRUMENT_RECTS.analyzer, meterRect = INSTRUMENT_RECTS.meters;
+    const analyzer = INSTRUMENT_RECTS.analyzer;
     const leftX = analyzer.x * 1920, rightX = (analyzer.x + analyzer.w) * 1920;
     const meterLeftX = INSTRUMENT_VISIBLE_EDGES.meterLeft * 1920;
     const meterRightX = (meterRect.x + meterRect.w * (meterCenter(1) + METER_BAR_WIDTH / 2)) * 1920;
@@ -250,10 +296,8 @@ export function createAtlasInstruments(scene, settings) {
     text('Hz', rightX, labelY(.478), C.silver, 9, 'right');
     for (const meter of meters) {
       const x = (meterRect.x + meterRect.w * meterCenter(meter.index)) * 1920;
-      const state = meterState[meter.channel], color = meter.index ? C.copper : C.ivory;
+      const color = meter.index ? C.copper : C.ivory;
       text(meter.index ? 'R' : 'L', x, labelY(.462), color, 11, 'center');
-      const peak = state.heldDb >= 0 ? 'CLIP' : Number.isFinite(state.heldDb) ? state.heldDb.toFixed(1).replace('-', '−') : '−∞';
-      text(peak, x, labelY(.124), state.heldDb >= 0 ? C.coral : C.pearl, 11, 'center');
     }
     ctx.restore();
   }
@@ -268,7 +312,7 @@ export function createAtlasInstruments(scene, settings) {
 
   resize(width, height, ratio);
   return {
-    resize, update, drawLabels, hitTest,
+    resize, update, drawLabels, getLabelKeys, hitTest,
     getInfo: () => ({ rects: INSTRUMENT_RECTS, correlation, scope: { ...scopeState }, rta: { ...range, boost, fftSize: RTA_FFT_SIZE, bins: RTA_FFT_SIZE / 2 },
       meters: { left: { ...meterState.left }, right: { ...meterState.right } }, hasAudio: latest.hasAudio }),
     dispose() {

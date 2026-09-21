@@ -29,7 +29,7 @@ class SignalFrameCache {
 /** Worker-owned full-resolution FFTs plus a bounded main-thread cache.
  * Histories are requested by absolute 60 Hz frame number, so playback, seeking
  * and offline export receive identical data regardless of request order. */
-export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 } = {}) {
+export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30, motionAnalysis = true } = {}) {
   const cache = new SignalFrameCache(Math.max(1, Math.min(1500, Math.floor(cacheFrames))));
   let worker = null, generation = 0, epoch = 0, requestId = 0;
   let audioBuffer = null, channels = null, summary = null, loadRequest = null, disposed = false;
@@ -130,7 +130,7 @@ export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 }
     const promise = new Promise((resolve, reject) => { loadRequest = { id, resolve, reject, onProgress }; });
     onProgress?.(0);
     try {
-      worker.postMessage({ type: 'load', id, generation, epoch, channels: copies, sampleRate: input.sampleRate }, copies.map(channel => channel.buffer));
+      worker.postMessage({ type: 'load', id, generation, epoch, channels: copies, sampleRate: input.sampleRate, motionAnalysis }, copies.map(channel => channel.buffer));
     } catch (error) { failWorker(error); }
     return promise;
   }
@@ -230,7 +230,7 @@ export function createSignalAnalysis({ cacheFrames = 1500, prefetchFrames = 30 }
 
   function getInfo() {
     return { fftSize: FFT_SIZE, frequencyBinCount: FFT_BINS, rtaFftSize: RTA_FFT_SIZE,
-      rtaFrequencyBinCount: RTA_BINS, motionFftSize: MOTION_FFT_SIZE, fps: ANALYSIS_FPS,
+      rtaFrequencyBinCount: RTA_BINS, motionFftSize: motionAnalysis === false ? 0 : MOTION_FFT_SIZE, fps: ANALYSIS_FPS,
       frameCount: summary?.frames || 0, duration: summary?.duration || 0, sampleRate: summary?.sampleRate || 0,
       cachedFrames: cache.size, cacheCapacity: cache.capacity, cacheBytes: cache.bytes,
       workerRtaCacheBytes,

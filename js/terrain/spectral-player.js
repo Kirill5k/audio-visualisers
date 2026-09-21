@@ -13,11 +13,12 @@ const FPS = 60;
 export async function createSpectralPlayer({
   name, slug, settings, createScene, historySeconds = 24, historyPaddingFrames = 0,
   previewAspect = null, previewMinWidth = 0, previewMinHeight = 0, audioSampleRate = 48000,
-  controls = [], quality = {}, extend = () => ({}),
+  controls = [], quality = {}, motionAnalysis = true, extend = () => ({}),
 }) {
   const HISTORY_FRAMES = Math.round(historySeconds * FPS) + historyPaddingFrames;
   const audio = createAudioPlayback({ fftSize: 32768, maxFftSize: 32768, smoothing: 0, sampleRate: audioSampleRate });
-  let analysis = createSignalAnalysis({ cacheFrames: 1500, prefetchFrames: 30 });
+  const createAnalysis = () => createSignalAnalysis({ cacheFrames: 1500, prefetchFrames: 30, motionAnalysis });
+  let analysis = createAnalysis();
   const sampleFrame = createSignalFrame(16384);
   const stage = $('stage');
   // Canvas text is rasterized once per label update. Load the bundled variable
@@ -423,7 +424,7 @@ export async function createSpectralPlayer({
     } catch (error) {
       audio.unload();
       analysis.dispose();
-      analysis = createSignalAnalysis({ cacheFrames: 1500, prefetchFrames: 30 });
+      analysis = createAnalysis();
       resetSceneHistory();
       scene.setOverview?.(new Float32Array(0));
       uploadedFrame = -1;
@@ -466,7 +467,7 @@ export async function createSpectralPlayer({
     generation++;
     audio.unload();
     analysis.dispose();
-    analysis = createSignalAnalysis({ cacheFrames: 1500, prefetchFrames: 30 });
+    analysis = createAnalysis();
     resetSceneHistory();
     scene.setOverview?.(new Float32Array(0));
     uploadedFrame = -1;

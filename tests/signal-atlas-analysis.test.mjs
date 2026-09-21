@@ -362,6 +362,36 @@ test('public peak levels include the partial final interval and clear when unloa
   } finally { analysis.dispose(); }
 });
 
+test('disabling unused motion analysis preserves spectra, meters and seek results', async () => {
+  globalThis.Worker = BrowserWorker;
+  const full = createSignalAnalysis({ cacheFrames: 2 });
+  const atlas = createSignalAnalysis({ cacheFrames: 2, motionAnalysis: false });
+  try {
+    const left = tone(1000), right = tone(3000);
+    left.fill(0, 0, rate / 2);
+    right.fill(0, 0, rate / 2);
+    const input = buffer([left, right]);
+    await Promise.all([full.load(input), atlas.load(input)]);
+    assert.equal(full.getInfo().motionFftSize, 4096, 'other visualisers retain motion analysis by default');
+    assert.equal(atlas.getInfo().motionFftSize, 0);
+    assert.deepEqual(atlas.peaks, full.peaks);
+    assert.deepEqual(atlas.rmsPeaks, full.rmsPeaks);
+    for (const index of [31, 60, 0, 31]) {
+      const [expected, actual] = await Promise.all([full.getFrame(index), atlas.getFrame(index)]);
+      assert.deepEqual(actual, { ...expected, motionFlux: 0 });
+      assert.deepEqual(atlas.getLevels(index / 60), full.getLevels(index / 60));
+      if (index === 31) assert.ok(expected.motionFlux > 0, 'fixture must exercise motion analysis');
+    }
+    atlas.reset();
+    await atlas.load(input);
+    assert.equal(atlas.getInfo().motionFftSize, 0, 'replacement retains the opt-out');
+    assert.equal((await atlas.getFrame(31)).motionFlux, 0);
+  } finally {
+    full.dispose();
+    atlas.dispose();
+  }
+});
+
 test('history range results retain the complete current spectrum when FIFO inserts evict it', async () => {
   globalThis.Worker = BrowserWorker;
   const analysis = createSignalAnalysis({ cacheFrames: 3 });

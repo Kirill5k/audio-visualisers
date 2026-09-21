@@ -17,6 +17,8 @@ const settings = {
 window.signalAtlas = await createSpectralPlayer({
   name: 'Signal Atlas', slug: 'signal-atlas', settings,
   createScene: createSignalAtlasScene, historySeconds: 24,
+  // Atlas uses the detailed spectrum and stereo instruments, but no motion flux.
+  motionAnalysis: false,
   controls: ['gain', 'gridOpacity', 'labels'],
   extend(player) {
     const { audio, scene, bind } = player;

@@ -3,7 +3,7 @@ import { createWaveformMinimap, rectToWorld } from '../monitor-charts.js';
 import { createSpectralHistory, createSpectralSampling } from '../terrain/spectral-history.js';
 import { formatTrackTime } from './signal-atlas-setlist.js';
 import { createSpectrogramPalette } from './signal-atlas-color.js';
-import { createAtlasInstruments, INSTRUMENT_RECTS, INSTRUMENT_VISIBLE_EDGES } from './signal-atlas-instruments.js';
+import { createAtlasInstruments, INSTRUMENT_RECTS, INSTRUMENT_VISIBLE_EDGES, INSTRUMENT_LABEL_RECTS } from './signal-atlas-instruments.js';
 import { ATLAS_COLORS as C, paletteRgba } from './signal-atlas-palette.js';
 
 const BINS = 16384;
@@ -94,46 +94,69 @@ export function createSignalAtlasScene(stage, settings) {
   labelsMesh.renderOrder = 100;
   scene.add(labelsMesh);
 
-  const instrumentRect = { x: .06, y: .1044, w: .88, h: .2604 };
-  const instrumentCanvas = document.createElement('canvas');
-  const instrumentCtx = instrumentCanvas.getContext('2d', { willReadFrequently: true });
-  let instrumentTexture = new THREE.CanvasTexture(instrumentCanvas);
-  const instrumentMaterial = new THREE.MeshBasicMaterial({ map: instrumentTexture, transparent: true, depthTest: false, depthWrite: false });
-  const instrumentMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), instrumentMaterial);
-  instrumentMesh.renderOrder = 101;
-  scene.add(instrumentMesh);
-  let lastInstrumentLabels = '';
+  const instrumentRect = INSTRUMENT_LABEL_RECTS.static;
+  const instrumentLayers = Object.entries(INSTRUMENT_LABEL_RECTS).map(([name, rect]) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const material = new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+    mesh.renderOrder = name === 'static' ? 101 : 102;
+    scene.add(mesh);
+    return { name, rect, canvas, ctx, material, mesh, texture: null, key: '', uploads: 0, pixels: null };
+  });
+
   function resizeInstrumentLabels() {
-    const w = Math.max(1, Math.round(width * ratio * instrumentRect.w));
-    const h = Math.max(1, Math.round(height * ratio * instrumentRect.h));
-    if (instrumentCanvas.width !== w || instrumentCanvas.height !== h) {
-      instrumentCanvas.width = w;
-      instrumentCanvas.height = h;
-      instrumentTexture.dispose();
-      instrumentTexture = new THREE.CanvasTexture(instrumentCanvas);
-      instrumentMaterial.map = instrumentTexture;
-      instrumentMaterial.needsUpdate = true;
+    // Crops use the same integer pixel grid as the original full instrument
+    // canvas, preserving glyph rasterization at every preview/export size.
+    const baseWidth = Math.max(1, Math.round(width * ratio * instrumentRect.w));
+    const baseHeight = Math.max(1, Math.round(height * ratio * instrumentRect.h));
+    for (const layer of instrumentLayers) {
+      const { rect, canvas, material, mesh } = layer;
+      const x = Math.max(0, Math.floor((rect.x - instrumentRect.x) / instrumentRect.w * baseWidth));
+      const y = Math.max(0, Math.floor((rect.y - instrumentRect.y) / instrumentRect.h * baseHeight));
+      const right = Math.min(baseWidth, Math.ceil((rect.x + rect.w - instrumentRect.x) / instrumentRect.w * baseWidth));
+      const bottom = Math.min(baseHeight, Math.ceil((rect.y + rect.h - instrumentRect.y) / instrumentRect.h * baseHeight));
+      const w = Math.max(1, right - x), h = Math.max(1, bottom - y);
+      if (!layer.texture || canvas.width !== w || canvas.height !== h) {
+        canvas.width = w; canvas.height = h;
+        layer.texture?.dispose();
+        layer.texture = new THREE.CanvasTexture(canvas);
+        layer.texture.colorSpace = THREE.SRGBColorSpace;
+        layer.texture.minFilter = THREE.LinearFilter;
+        layer.texture.generateMipmaps = false;
+        material.map = layer.texture;
+        material.needsUpdate = true;
+      }
+      layer.pixels = { x, y, baseWidth, baseHeight };
+      const box = rectToWorld({
+        x: instrumentRect.x + x / baseWidth * instrumentRect.w,
+        y: instrumentRect.y + y / baseHeight * instrumentRect.h,
+        w: w / baseWidth * instrumentRect.w,
+        h: h / baseHeight * instrumentRect.h,
+      }, aspect, 0);
+      mesh.scale.set(box.width, box.height, 1);
+      mesh.position.set(box.cx, box.cy, 0);
+      layer.key = '';
     }
-    instrumentTexture.colorSpace = THREE.SRGBColorSpace;
-    instrumentTexture.minFilter = THREE.LinearFilter;
-    instrumentTexture.generateMipmaps = false;
-    const box = rectToWorld(instrumentRect, aspect, 0);
-    instrumentMesh.scale.set(box.width, box.height, 1);
-    instrumentMesh.position.set(box.cx, box.cy, 0);
-    lastInstrumentLabels = '';
   }
-  function drawInstrumentLabels(time, hasAudio) {
-    const key = [time, hasAudio, settings.labels, settings.gridOpacity, settings.rtaMin, settings.rtaMax, settings.rtaBoost].join('|');
-    if (key === lastInstrumentLabels) return;
-    lastInstrumentLabels = key;
-    const ctx = instrumentCtx;
-    ctx.clearRect(0, 0, instrumentCanvas.width, instrumentCanvas.height);
-    ctx.save();
-    ctx.scale(instrumentCanvas.width / (1920 * instrumentRect.w), instrumentCanvas.height / (1080 * instrumentRect.h));
-    ctx.translate(-instrumentRect.x * 1920, -instrumentRect.y * 1080);
-    instruments.drawLabels(ctx);
-    ctx.restore();
-    instrumentTexture.needsUpdate = true;
+
+  function drawInstrumentLabels() {
+    const keys = instruments.getLabelKeys();
+    for (const layer of instrumentLayers) {
+      const key = keys[layer.name];
+      if (key === layer.key) continue;
+      layer.key = key;
+      const { ctx, canvas, pixels } = layer;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.save();
+      ctx.translate(-pixels.x, -pixels.y);
+      ctx.scale(pixels.baseWidth / (1920 * instrumentRect.w), pixels.baseHeight / (1080 * instrumentRect.h));
+      ctx.translate(-instrumentRect.x * 1920, -instrumentRect.y * 1080);
+      instruments.drawLabels(ctx, layer.name);
+      ctx.restore();
+      layer.texture.needsUpdate = true;
+      layer.uploads++;
+    }
   }
 
   let markerEntries = null;
@@ -253,7 +276,7 @@ export function createSignalAtlasScene(stage, settings) {
     common.uSampleRate.value = analysis?.sampleRate || 48000;
     common.uGain.value = settings.gain;
     instruments.update({ frame, spectralFrame, levels, sampleRate: analysis?.sampleRate || 48000, hasAudio: Boolean(analysis?.buffer) });
-    drawInstrumentLabels(time, Boolean(analysis?.buffer));
+    drawInstrumentLabels();
     minimap.update({ progress: analysis?.duration ? Math.min(1, time / analysis.duration) : 0 });
     drawLabels(time, analysis);
     renderer.setScissorTest(false);
@@ -270,13 +293,16 @@ export function createSignalAtlasScene(stage, settings) {
 
   function resetHistory() {
     history.reset();
-    lastInstrumentLabels = '';
+    for (const layer of instrumentLayers) layer.key = '';
   }
   function dispose() {
     disposed = true;
     minimap.dispose?.();
     instruments.dispose();
-    instrumentMesh.geometry.dispose(); instrumentMaterial.dispose(); instrumentTexture.dispose(); palette.dispose();
+    for (const layer of instrumentLayers) {
+      layer.mesh.geometry.dispose(); layer.material.dispose(); layer.texture?.dispose();
+    }
+    palette.dispose();
     curtain.geometry.dispose(); curtainMaterial.dispose();
     labelsMesh.geometry.dispose(); labelsMaterial.dispose(); labelsTexture.dispose(); history.dispose();
     renderer.dispose(); renderer.domElement.remove();
@@ -288,6 +314,7 @@ export function createSignalAtlasScene(stage, settings) {
     hitTest: (x, y) => instruments.hitTest(x, y),
     setOverview(peaks, rmsPeaks) { minimap.setPeaks(peaks, rmsPeaks); lastLabels = ''; },
     dispose,
-    getInfo: () => ({ fftSize: 32768, fftBins: BINS, ...history.getInfo(), canvasWidth: renderer.domElement.width, canvasHeight: renderer.domElement.height, pixelRatio: ratio, drawCalls: renderer.info.render.calls, labelFont: 'Inter', fontLoaded: document.fonts.check('500 11px "Inter"'), instruments: instruments.getInfo(), labelState }),
+    getInfo: () => ({ fftSize: 32768, fftBins: BINS, ...history.getInfo(), canvasWidth: renderer.domElement.width, canvasHeight: renderer.domElement.height, pixelRatio: ratio, drawCalls: renderer.info.render.calls, labelFont: 'Inter', fontLoaded: document.fonts.check('500 11px "Inter"'), instruments: instruments.getInfo(), labelState,
+      instrumentLabelLayers: instrumentLayers.map(layer => ({ name: layer.name, width: layer.canvas.width, height: layer.canvas.height, uploads: layer.uploads })) }),
   };
 }
