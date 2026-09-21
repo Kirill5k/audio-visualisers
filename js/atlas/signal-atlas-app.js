@@ -2,9 +2,11 @@ import { createSpectralPlayer } from '../terrain/spectral-player.js';
 import { createSignalAtlasScene } from './signal-atlas-scene.js';
 import { parseSetlist } from './signal-atlas-setlist.js';
 import { validateRange, clampRange, RTA_PRESETS } from './signal-atlas-instrument-math.js';
+import { ATLAS_COLOR_DEFAULTS, ATLAS_COLOR_PRESETS, matchingAtlasColorPreset } from './signal-atlas-palette.js';
 
 const $ = id => document.getElementById(id);
 const settings = {
+  ...ATLAS_COLOR_DEFAULTS,
   gain: 1.3,
   gridOpacity: .3,
   labels: true,
@@ -24,6 +26,15 @@ window.signalAtlas = await createSpectralPlayer({
     const { audio, scene, bind } = player;
     let setlistResult = parseSetlist('');
     let hoverPosition = null;
+
+    function applyColors(colors) {
+      for (const key of Object.keys(ATLAS_COLOR_DEFAULTS)) {
+        settings[key] = colors[key];
+        $(key).value = colors[key];
+      }
+      $('colorPreset').value = matchingAtlasColorPreset(settings);
+      player.invalidate();
+    }
 
     function updateSetlist({ clear = false } = {}) {
       const input = $('setlistInput');
@@ -132,6 +143,23 @@ window.signalAtlas = await createSpectralPlayer({
     bind('setlistInput', 'input', () => {
       if (!player.locked) updateSetlist();
     });
+    bind('resetColorsBtn', 'click', () => {
+      if (player.locked) return;
+      applyColors(ATLAS_COLOR_DEFAULTS);
+    });
+    bind('colorPreset', 'change', event => {
+      if (player.locked) return;
+      const preset = ATLAS_COLOR_PRESETS[event.target.value];
+      if (preset) applyColors(preset.colors);
+    });
+    for (const key of Object.keys(ATLAS_COLOR_DEFAULTS)) {
+      bind(key, 'input', event => {
+        if (player.locked) return;
+        settings[key] = event.target.value;
+        $('colorPreset').value = matchingAtlasColorPreset(settings);
+        player.invalidate();
+      });
+    }
 
     return {
       initialize: syncAnalyzerRange,

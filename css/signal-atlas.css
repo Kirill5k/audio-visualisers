@@ -1,5 +1,7 @@
 /* Signal Atlas chart-specific controls; common chrome lives in spectral-ui.css. */
 .signal-atlas .rta-range { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+.signal-atlas .atlas-colors { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--edge); }
+.signal-atlas .atlas-colors input[type="color"] { width: 43px; height: 28px; padding: 2px; border: 1px solid var(--edge); border-radius: 5px; background: var(--panel); cursor: pointer; }
 .signal-atlas .rta-range label { display: grid; gap: 6px; font-size: 11px; color: var(--atlas-silver); }
 .signal-atlas .rta-range input { width: 100%; min-width: 0; padding: 7px; border: 1px solid var(--edge); border-radius: 5px; background: var(--atlas-black); color: var(--ink); font: inherit; }
 .signal-atlas .rta-range input[aria-invalid="true"] { border-color: var(--atlas-coral); }

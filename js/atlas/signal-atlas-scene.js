@@ -4,11 +4,11 @@ import { createSpectralHistory, createSpectralSampling } from '../terrain/spectr
 import { formatTrackTime } from './signal-atlas-setlist.js';
 import { createSpectrogramPalette } from './signal-atlas-color.js';
 import { createAtlasInstruments, INSTRUMENT_RECTS, INSTRUMENT_VISIBLE_EDGES, INSTRUMENT_LABEL_RECTS } from './signal-atlas-instruments.js';
-import { ATLAS_COLORS as C, paletteRgba } from './signal-atlas-palette.js';
+import { ATLAS_COLORS, resolveAtlasColors, paletteRgba } from './signal-atlas-palette.js';
 
 const BINS = 16384;
 const FPS = 60;
-const BLACK = new THREE.Color(C.black);
+const BLACK = new THREE.Color(ATLAS_COLORS.black);
 const RECTS = {
   // Split the .1176 height released by the first row equally between these rows.
   curtain: { x: .06, y: .4014, w: .88, h: .1518 },
@@ -18,6 +18,10 @@ const RECTS = {
 const spectralSampling = createSpectralSampling();
 
 export function createSignalAtlasScene(stage, settings) {
+  let colors = resolveAtlasColors(settings);
+  const colorSettingsKey = () => [settings.colorPrimary, settings.colorAccent, settings.colorText, settings.colorGuides].join('|');
+  const spectrogramSettingsKey = () => [settings.colorSpectrogramLow, settings.colorSpectrogramMid, settings.colorSpectrogramHigh].join('|');
+  let lastColorSettings = colorSettingsKey(), lastSpectrogramSettings = spectrogramSettingsKey();
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: true });
   renderer.setClearColor(BLACK, 1);
   renderer.autoClear = false;
@@ -46,7 +50,7 @@ export function createSignalAtlasScene(stage, settings) {
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-50, 50, 50 / aspect, -50 / aspect, -10, 10);
   camera.position.z = 5;
-  const palette = new THREE.DataTexture(createSpectrogramPalette(), 1024, 1, THREE.RGBAFormat);
+  const palette = new THREE.DataTexture(createSpectrogramPalette(settings), 1024, 1, THREE.RGBAFormat);
   palette.minFilter = THREE.NearestFilter;
   palette.magFilter = THREE.NearestFilter;
   palette.generateMipmaps = false;
@@ -76,8 +80,8 @@ export function createSignalAtlasScene(stage, settings) {
   const curtain = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), curtainMaterial);
   scene.add(curtain);
 
-  const minimap = createWaveformMinimap(scene, RECTS.overview, { color: C.ivory,
-    playedColor: C.copper, playheadColor: C.ivory,
+  const minimap = createWaveformMinimap(scene, RECTS.overview, { color: colors.ivory,
+    playedColor: colors.copper, playheadColor: colors.ivory,
     barWidth: 2.3, barGap: .32 });
   const instruments = createAtlasInstruments(scene, settings);
 
@@ -165,7 +169,8 @@ export function createSignalAtlasScene(stage, settings) {
     const hasAudio = Boolean(analysis?.buffer);
     if (markerEntries !== settings.setlist) { markerEntries = settings.setlist; markerVersion++; }
     const key = [Math.floor(time), Math.floor((analysis?.duration || 0) - time), analysis?.duration || 0,
-      settings.labels, settings.gridOpacity, width, height, ratio, markerVersion].join('|');
+      settings.labels, settings.gridOpacity, width, height, ratio, markerVersion,
+      colors.ivory, colors.copper, colors.pearl, colors.silver].join('|');
     if (key === lastLabels) return;
     lastLabels = key;
     const duration = hasAudio ? analysis.duration : 0;
@@ -179,7 +184,7 @@ export function createSignalAtlasScene(stage, settings) {
     ctx.save();
     ctx.scale(w / 1920, h / 1080);
     const rule = (x1, y1, x2, y2, alpha = settings.gridOpacity) => {
-      ctx.strokeStyle = paletteRgba(C.silver, alpha); ctx.lineWidth = .75;
+      ctx.strokeStyle = paletteRgba(colors.silver, alpha); ctx.lineWidth = .75;
       ctx.beginPath(); ctx.moveTo(x1 * 1920, y1 * 1080); ctx.lineTo(x2 * 1920, y2 * 1080); ctx.stroke();
     };
     rule(.06,.073,.94,.073);
@@ -189,23 +194,23 @@ export function createSignalAtlasScene(stage, settings) {
     rule(.06,.3704,.94,.3704);
     rule(.06,.5662,.94,.5662);
     if (settings.labels) {
-      const label = (text, x, y, color = C.pearl, size = 13, align = 'left') => {
+      const label = (text, x, y, color = colors.pearl, size = 13, align = 'left') => {
         ctx.fillStyle = color;
         ctx.font = `500 ${size}px "Inter", sans-serif`;
         ctx.textAlign = align;
         ctx.fillText(text, x * 1920, y * 1080);
       };
-      label('S I G N A L   A T L A S', .06, .052, C.pearl, 18);
-      label(hasAudio ? `STEREO STUDY  /  ${(analysis.sampleRate / 1000).toFixed(1)} kHz` : 'AN AUDIOVISUAL INSTRUMENT', .94, .051, C.silver, 10, 'right');
+      label('S I G N A L   A T L A S', .06, .052, colors.pearl, 18);
+      label(hasAudio ? `STEREO STUDY  /  ${(analysis.sampleRate / 1000).toFixed(1)} kHz` : 'AN AUDIOVISUAL INSTRUMENT', .94, .051, colors.silver, 10, 'right');
       label('01   PHASE SCOPE', .06, .096);
       label('02   SPECTRUM ANALYZER', INSTRUMENT_RECTS.analyzer.x, .096);
       label('03   PEAK dBFS', INSTRUMENT_RECTS.meters.x, .096);
       label('04   SPECTROGRAM', .06, .3924);
       label('05   TRACK OVERVIEW', .06, .5862);
-      label(hasAudio ? `${(time / analysis.duration * 100).toFixed(1)}%` : '—', .94, .5862, C.pearl, 13, 'right');
-      label(elapsedText, .06, .737, C.pearl, 18);
-      label(remainingText, .94, .737, C.pearl, 18, 'right');
-      if (!hasAudio) label('LOAD A TRACK TO REVEAL ITS STRUCTURE', INSTRUMENT_RECTS.analyzer.x + INSTRUMENT_RECTS.analyzer.w / 2, .2248, C.silver, 11, 'center');
+      label(hasAudio ? `${(time / analysis.duration * 100).toFixed(1)}%` : '—', .94, .5862, colors.pearl, 13, 'right');
+      label(elapsedText, .06, .737, colors.pearl, 18);
+      label(remainingText, .94, .737, colors.pearl, 18, 'right');
+      if (!hasAudio) label('LOAD A TRACK TO REVEAL ITS STRUCTURE', INSTRUMENT_RECTS.analyzer.x + INSTRUMENT_RECTS.analyzer.w / 2, .2248, colors.silver, 11, 'center');
     }
     // Track-start carets belong to the overview even when text labels are off.
     // Their tips sit 5px above the waveform's lower edge.
@@ -220,7 +225,7 @@ export function createSignalAtlasScene(stage, settings) {
         const marker = markerEntries[i];
         if (marker.time < 0 || marker.time >= duration) continue;
         const x = (RECTS.overview.x + marker.time / duration * RECTS.overview.w) * 1920;
-        ctx.strokeStyle = i === active ? C.ivory : paletteRgba(C.copper, marker.time < time ? .45 : .8);
+        ctx.strokeStyle = i === active ? colors.ivory : paletteRgba(colors.copper, marker.time < time ? .45 : .8);
         ctx.beginPath();
         ctx.moveTo(x - 3, tipY + 5);
         ctx.lineTo(x, tipY);
@@ -270,8 +275,27 @@ export function createSignalAtlasScene(stage, settings) {
     lastLabels = '';
   }
 
+  function updateColors() {
+    const colorKey = colorSettingsKey();
+    if (colorKey !== lastColorSettings) {
+      const next = resolveAtlasColors(settings);
+      if (next.ivory !== colors.ivory || next.copper !== colors.copper) {
+        minimap.setColors({ color: next.ivory, playedColor: next.copper, playheadColor: next.ivory });
+      }
+      colors = next;
+      lastColorSettings = colorKey;
+    }
+    const spectrogramKey = spectrogramSettingsKey();
+    if (spectrogramKey !== lastSpectrogramSettings) {
+      palette.image.data = createSpectrogramPalette(settings);
+      palette.needsUpdate = true;
+      lastSpectrogramSettings = spectrogramKey;
+    }
+  }
+
   function render({ time = 0, analysis = null, frame = null, spectralFrame = null, levels = null } = {}) {
     if (disposed) return;
+    updateColors();
     common.uFrame.value = Math.min(time * FPS, Math.max(0, history.latestFrame));
     common.uSampleRate.value = analysis?.sampleRate || 48000;
     common.uGain.value = settings.gain;
@@ -314,7 +338,7 @@ export function createSignalAtlasScene(stage, settings) {
     hitTest: (x, y) => instruments.hitTest(x, y),
     setOverview(peaks, rmsPeaks) { minimap.setPeaks(peaks, rmsPeaks); lastLabels = ''; },
     dispose,
-    getInfo: () => ({ fftSize: 32768, fftBins: BINS, ...history.getInfo(), canvasWidth: renderer.domElement.width, canvasHeight: renderer.domElement.height, pixelRatio: ratio, drawCalls: renderer.info.render.calls, labelFont: 'Inter', fontLoaded: document.fonts.check('500 11px "Inter"'), instruments: instruments.getInfo(), labelState,
+    getInfo: () => ({ fftSize: 32768, fftBins: BINS, ...history.getInfo(), canvasWidth: renderer.domElement.width, canvasHeight: renderer.domElement.height, pixelRatio: ratio, colors: { ...colors }, drawCalls: renderer.info.render.calls, labelFont: 'Inter', fontLoaded: document.fonts.check('500 11px "Inter"'), instruments: instruments.getInfo(), labelState,
       instrumentLabelLayers: instrumentLayers.map(layer => ({ name: layer.name, width: layer.canvas.width, height: layer.canvas.height, uploads: layer.uploads })) }),
   };
 }

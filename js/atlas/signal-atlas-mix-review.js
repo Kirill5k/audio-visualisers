@@ -1,5 +1,15 @@
 // Opt-in checks for the production analysis controls. No work runs on import.
-const CONTROL_IDS = ['rtaMin', 'rtaMax', 'rtaBoost', 'rtaPreset', 'gain', 'gridOpacity', 'labels', 'setlistInput'];
+import { ATLAS_COLOR_DEFAULTS, ATLAS_COLOR_PRESETS } from './signal-atlas-palette.js';
+
+const COLOR_IDS = Object.keys(ATLAS_COLOR_DEFAULTS);
+const CONTROL_IDS = ['rtaMin', 'rtaMax', 'rtaBoost', 'rtaPreset', 'gain', 'gridOpacity', 'labels', 'setlistInput', ...COLOR_IDS];
+// These regions follow the scene's spectrogram/overview layout and headings.
+const COLOR_RECTS = {
+  spectrogram: { x: .06, y: .4014, w: .88, h: .1518 },
+  overview: { x: .06, y: .5922, w: .88, h: .1188 },
+  headings: { x: .05, y: .03, w: .90, h: .073 },
+};
+const waitForPausedPaint = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
 function setControl(id, value) {
   const input = document.getElementById(id);
@@ -17,7 +27,12 @@ function snapshotPixels(rects) {
   const pixels = new Uint8Array(canvas.width * canvas.height * 4);
   gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
   const bottomBytes = canvas.width * Math.floor(canvas.height * .25) * 4;
-  let hash = 2166136261, bottomQuarterNonBlackPixels = 0, markerStripNonBlackPixels = 0;
+  let hash = 2166136261, outsideSpectrogramHash = 2166136261, bottomQuarterNonBlackPixels = 0, markerStripNonBlackPixels = 0;
+  const spectrogram = COLOR_RECTS.spectrogram;
+  const spectrumLeft = Math.floor(canvas.width * spectrogram.x);
+  const spectrumRight = Math.ceil(canvas.width * (spectrogram.x + spectrogram.w));
+  const spectrumBottom = Math.floor(canvas.height * (1 - spectrogram.y - spectrogram.h));
+  const spectrumTop = Math.ceil(canvas.height * (1 - spectrogram.y));
   // The overview ends at 71.1%; carets occupy 70.6–71.1%. The playhead also
   // crosses this strip, so compare marker ink against an unmarked frame.
   const markerBottom = Math.floor(canvas.height * (1 - .712));
@@ -30,10 +45,14 @@ function snapshotPixels(rects) {
     const pixel = i / 4;
     const y = Math.floor(pixel / canvas.width), x = pixel % canvas.width;
     if (nonBlack && y >= markerBottom && y < markerTop && x >= markerLeft && x < markerRight) markerStripNonBlackPixels++;
-    for (let channel = 0; channel < 4; channel++) hash = Math.imul(hash ^ pixels[i + channel], 16777619);
+    const outsideSpectrogram = x < spectrumLeft || x >= spectrumRight || y < spectrumBottom || y >= spectrumTop;
+    for (let channel = 0; channel < 4; channel++) {
+      hash = Math.imul(hash ^ pixels[i + channel], 16777619);
+      if (outsideSpectrogram) outsideSpectrogramHash = Math.imul(outsideSpectrogramHash ^ pixels[i + channel], 16777619);
+    }
   }
   const instrumentHashes = {};
-  for (const [name, rect] of Object.entries(rects)) {
+  for (const [name, rect] of Object.entries({ ...rects, ...COLOR_RECTS })) {
     const left = Math.max(0, Math.floor(canvas.width * rect.x));
     const right = Math.min(canvas.width, Math.ceil(canvas.width * (rect.x + rect.w)));
     const bottom = Math.max(0, Math.floor(canvas.height * (1 - rect.y - rect.h)));
@@ -46,6 +65,7 @@ function snapshotPixels(rects) {
     instrumentHashes[name] = (regionHash >>> 0).toString(16).padStart(8, '0');
   }
   return { width: canvas.width, height: canvas.height, hash: (hash >>> 0).toString(16).padStart(8, '0'),
+    outsideSpectrogramHash: (outsideSpectrogramHash >>> 0).toString(16).padStart(8, '0'),
     instrumentHashes, bottomQuarterNonBlackPixels, markerStripNonBlackPixels, gpuError: gl.getError() };
 }
 
@@ -63,6 +83,9 @@ export async function runMixControlChecks(api) {
     if (!input) throw new Error(`The ${id} control is unavailable.`);
     return [id, input.type === 'checkbox' ? input.checked : input.value];
   }));
+  const colorPreset = document.getElementById('colorPreset');
+  if (!colorPreset || colorPreset.disabled) throw new Error('The colour preset control is unavailable.');
+  const savedColorPreset = colorPreset.value;
   const results = { passed: false, checks: {}, frames: {}, restored: false };
   const wasClean = document.body.classList.contains('clean');
   const started = performance.now();
@@ -150,6 +173,98 @@ export async function runMixControlChecks(api) {
     results.checks.gainPreservesInstruments = ['scope', 'analyzer', 'meters'].every(name =>
       results.frames.lowGain.instrumentHashes[name] === results.frames.highGain.instrumentHashes[name]);
 
+    // Exercise paused invalidation directly. Seeking between these edits would
+    // hide missing control handlers or stale material/label palette caches.
+    for (const id of COLOR_IDS) setControl(id, ATLAS_COLOR_DEFAULTS[id]);
+    setControl('gain', 1.3);
+    setControl('gridOpacity', .3);
+    setControl('rtaBoost', 6);
+    await waitForPausedPaint();
+    results.frames.defaultColors = capture();
+    results.checks.defaultColorInputsInferOriginal = colorPreset.value === 'original';
+    const colorTime = api.getState().position;
+    const colorFrame = api.getState().uploadedFrame;
+    const sameRegions = (before, after, names) => names.every(name => before.instrumentHashes[name] === after.instrumentHashes[name]);
+    const changedRegions = (before, after, names) => names.every(name => before.instrumentHashes[name] !== after.instrumentHashes[name]);
+    const paintedWhilePaused = () => {
+      const state = api.getState();
+      return !state.playing && !state.busy && state.position === colorTime && state.uploadedFrame === colorFrame;
+    };
+    let colorsPaintedWhilePaused = paintedWhilePaused();
+
+    // Finish with Original so the individual picker checks share the same
+    // default baseline. Every selection must repaint without seeking.
+    const colorPresets = Object.entries(ATLAS_COLOR_PRESETS);
+    let previousPresetFrame = results.frames.defaultColors;
+    for (const [key, preset] of [...colorPresets.filter(([name]) => name !== 'original'), ['original', ATLAS_COLOR_PRESETS.original]]) {
+      setControl('colorPreset', key);
+      await waitForPausedPaint();
+      const frame = capture();
+      results.frames[`colorPreset_${key}`] = frame;
+      results.checks[`${key}ColorPresetSynchronizesInputs`] = colorPreset.value === key && COLOR_IDS.every(id =>
+        document.getElementById(id).value.toUpperCase() === preset.colors[id].toUpperCase());
+      results.checks[`${key}ColorPresetRepaintsWhilePaused`] = paintedWhilePaused() && frame.hash !== previousPresetFrame.hash;
+      colorsPaintedWhilePaused &&= paintedWhilePaused();
+      previousPresetFrame = frame;
+    }
+    results.checks.originalColorPresetRestoresDefaultPixels = results.frames.colorPreset_original.hash === results.frames.defaultColors.hash;
+
+    setControl('colorPrimary', '#40d9f2');
+    await waitForPausedPaint();
+    results.frames.primaryColor = capture();
+    colorsPaintedWhilePaused &&= paintedWhilePaused();
+    results.checks.manualColorEditSelectsCustom = colorPreset.value === 'custom';
+    results.checks.primaryColorChangesTraces = changedRegions(results.frames.defaultColors, results.frames.primaryColor, ['analyzer', 'overview']);
+    results.checks.primaryColorPreservesMeterAndSpectrogram = sameRegions(results.frames.defaultColors, results.frames.primaryColor, ['meters', 'spectrogram']);
+
+    setControl('colorAccent', '#e94dc4');
+    await waitForPausedPaint();
+    results.frames.accentColor = capture();
+    colorsPaintedWhilePaused &&= paintedWhilePaused();
+    results.checks.accentColorChangesTraces = changedRegions(results.frames.primaryColor, results.frames.accentColor, ['scope', 'analyzer', 'overview']);
+    results.checks.accentColorPreservesMeterAndSpectrogram = sameRegions(results.frames.primaryColor, results.frames.accentColor, ['meters', 'spectrogram']);
+
+    setControl('colorText', '#8fe867');
+    await waitForPausedPaint();
+    results.frames.textColor = capture();
+    colorsPaintedWhilePaused &&= paintedWhilePaused();
+    results.checks.textColorChangesHeadings = changedRegions(results.frames.accentColor, results.frames.textColor, ['headings']);
+    results.checks.textColorPreservesTracesAndSpectrogram = sameRegions(results.frames.accentColor, results.frames.textColor, ['scope', 'analyzer', 'overview', 'spectrogram']);
+
+    setControl('colorGuides', '#6987f5');
+    await waitForPausedPaint();
+    results.frames.guideColor = capture();
+    colorsPaintedWhilePaused &&= paintedWhilePaused();
+    results.checks.guideColorChangesInstrumentGrids = changedRegions(results.frames.textColor, results.frames.guideColor, ['scope', 'analyzer', 'meters']);
+    results.checks.guideColorPreservesWaveformAndSpectrogram = sameRegions(results.frames.textColor, results.frames.guideColor, ['overview', 'spectrogram']);
+
+    // Change all stops together: an individual stop need not have visible audio
+    // energy at this time, but the whole alternative palette must affect history.
+    setControl('colorSpectrogramLow', '#053a24');
+    setControl('colorSpectrogramMid', '#15d5c0');
+    setControl('colorSpectrogramHigh', '#f95ac0');
+    await waitForPausedPaint();
+    results.frames.customColors = capture();
+    colorsPaintedWhilePaused &&= paintedWhilePaused();
+    results.checks.spectrogramColorsChangeHistory = changedRegions(results.frames.guideColor, results.frames.customColors, ['spectrogram']);
+    results.checks.spectrogramColorsPreserveOtherPixels = results.frames.guideColor.outsideSpectrogramHash === results.frames.customColors.outsideSpectrogramHash
+      && sameRegions(results.frames.guideColor, results.frames.customColors, ['scope', 'analyzer', 'meters', 'overview', 'headings']);
+    results.checks.colorsUpdateWhilePaused = colorsPaintedWhilePaused;
+    await api.renderAt(12);
+    await api.renderAt(colorTime);
+    results.frames.customColorsAfterSeek = capture();
+    results.checks.customColorsDeterministicAfterSeek = results.frames.customColors.hash === results.frames.customColorsAfterSeek.hash;
+
+    const resetColors = document.getElementById('resetColorsBtn');
+    if (!resetColors || resetColors.disabled) throw new Error('The Reset colours control is unavailable.');
+    resetColors.click();
+    await waitForPausedPaint();
+    results.frames.resetColors = capture();
+    results.checks.resetColorsRestoresInputs = COLOR_IDS.every(id =>
+      document.getElementById(id).value.toUpperCase() === ATLAS_COLOR_DEFAULTS[id].toUpperCase());
+    results.checks.resetColorsSelectsOriginal = colorPreset.value === 'original';
+    results.checks.resetColorsRestoresDefaultPixels = paintedWhilePaused() && results.frames.defaultColors.hash === results.frames.resetColors.hash;
+
     const canvas = document.querySelector('#stage canvas');
     const bounds = canvas.getBoundingClientRect();
     const rect = api.getState().scene.instruments.rects.analyzer;
@@ -192,6 +307,9 @@ export async function runMixControlChecks(api) {
         const input = document.getElementById(id);
         return (input.type === 'checkbox' ? input.checked : input.value) === controls[id];
       });
+      // Restoring the seven picker values must infer a named preset or Custom;
+      // assigning the disabled Custom option itself would bypass that behavior.
+      results.restored &&= colorPreset.value === savedColorPreset;
       if (initial.playing) await api.play();
       results.restored &&= api.getState().playing === initial.playing;
       if (document.body.classList.contains('clean') !== wasClean) document.getElementById('cleanBtn').click();

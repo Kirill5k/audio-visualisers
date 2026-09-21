@@ -609,6 +609,14 @@ export function createWaveformMinimap(scene, rect, options = {}) {
   rebuildPeaks();
   return {
     group, layout, setPeaks, setOnsets, update, dispose,
+    setColors({ color, playedColor, playheadColor } = {}) {
+      if (color != null) {
+        uniforms.uColor.value.set(color);
+        markerMat.color.set(color);
+      }
+      if (playedColor != null) uniforms.uPlayedColor.value.set(playedColor);
+      if (playheadColor != null) playheadMat.color.set(playheadColor);
+    },
     setResolution(width, height, ratio = 1) {
       viewportWidth = width;
       pixelRatio = ratio;

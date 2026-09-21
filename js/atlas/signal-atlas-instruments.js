@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { amplitudeToDb, clampRange, dbToUnit, fillPhaseTrail, frequencyAt, RTA_FFT_SIZE, sampleSpectrum } from './signal-atlas-instrument-math.js';
-import { ATLAS_COLORS as C, paletteRgb, paletteRgba } from './signal-atlas-palette.js';
+import { resolveAtlasColors, paletteRgb, paletteRgba } from './signal-atlas-palette.js';
 
 // Compress the instrument row around its heading without shrinking typography.
 const rowY = y => .096 + (y - .096) * .7;
@@ -66,6 +66,9 @@ function makeCurve(color) {
  * renders never affect a seek, repeated frame, or offline export.
  */
 export function createAtlasInstruments(scene, settings) {
+  let colors = resolveAtlasColors(settings);
+  const colorSettingsKey = () => [settings.colorPrimary, settings.colorAccent, settings.colorText, settings.colorGuides].join('|');
+  let lastColorSettings = colorSettingsKey();
   const group = new THREE.Group();
   scene.add(group);
   let aspect = 16 / 9, width = 1920, height = 1080, ratio = 1;
@@ -75,7 +78,7 @@ export function createAtlasInstruments(scene, settings) {
   let curveRangeKey = '';
   const meterState = { left: { sampleDb: -Infinity, displayDb: -Infinity, heldDb: -Infinity }, right: { sampleDb: -Infinity, displayDb: -Infinity, heldDb: -Infinity } };
   let scopeState = { count: 0, correlation: 0, duration: 0, stride: 1 };
-  const curveLeft = makeCurve(C.ivory), curveRight = makeCurve(C.copper);
+  const curveLeft = makeCurve(colors.ivory), curveRight = makeCurve(colors.copper);
   group.add(curveLeft.mesh, curveRight.mesh);
 
   const scopePositions = new Float32Array(SCOPE_POINTS * 3);
@@ -85,7 +88,7 @@ export function createAtlasInstruments(scene, settings) {
   scopeGeometry.setAttribute('aWeight', new THREE.BufferAttribute(scopeWeights, 1).setUsage(THREE.DynamicDrawUsage));
   const scopeMaterial = new THREE.ShaderMaterial({
     uniforms: { uSize: { value: 4 }, uClip: { value: new THREE.Vector4() },
-      uColor: { value: new THREE.Vector3(...paletteRgb(C.copper)) } },
+      uColor: { value: new THREE.Vector3(...paletteRgb(colors.copper)) } },
     transparent: true, depthWrite: false, depthTest: false,
     vertexShader: `uniform float uSize; attribute float aWeight; varying vec2 vPosition; varying float vWeight;
       void main(){vWeight=aWeight;vPosition=position.xy;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);gl_PointSize=uSize;}`,
@@ -99,13 +102,13 @@ export function createAtlasInstruments(scene, settings) {
   group.add(scope);
 
   const barGeometry = new THREE.PlaneGeometry(1, 1);
-  const holdMaterial = new THREE.MeshBasicMaterial({ color: C.white, depthWrite: false, depthTest: false });
+  const holdMaterial = new THREE.MeshBasicMaterial({ color: colors.white, depthWrite: false, depthTest: false });
   const meters = ['left', 'right'].map((channel, index) => {
     const material = new THREE.ShaderMaterial({
       uniforms: { uLevel: { value: 0 },
-        uOlive: { value: new THREE.Vector3(...paletteRgb(C.olive)) },
-        uAmber: { value: new THREE.Vector3(...paletteRgb(C.amber)) },
-        uCoral: { value: new THREE.Vector3(...paletteRgb(C.coral)) } },
+        uOlive: { value: new THREE.Vector3(...paletteRgb(colors.olive)) },
+        uAmber: { value: new THREE.Vector3(...paletteRgb(colors.amber)) },
+        uCoral: { value: new THREE.Vector3(...paletteRgb(colors.coral)) } },
       depthWrite: false, depthTest: false,
       vertexShader: planeVertex,
       fragmentShader: `uniform float uLevel; uniform vec3 uOlive; uniform vec3 uAmber; uniform vec3 uCoral; varying vec2 vUv;
@@ -147,7 +150,21 @@ export function createAtlasInstruments(scene, settings) {
     curve.mesh.geometry.attributes.position.needsUpdate = true;
   }
 
+  function updateColors() {
+    const key = colorSettingsKey();
+    if (key === lastColorSettings) return;
+    const next = resolveAtlasColors(settings);
+    if (next.ivory !== colors.ivory) curveLeft.mesh.material.color.set(next.ivory);
+    if (next.copper !== colors.copper) {
+      curveRight.mesh.material.color.set(next.copper);
+      scopeMaterial.uniforms.uColor.value.set(...paletteRgb(next.copper));
+    }
+    colors = next;
+    lastColorSettings = key;
+  }
+
   function update({ frame = null, spectralFrame = null, levels = null, sampleRate = 48000, hasAudio = false } = {}) {
+    updateColors();
     latest = { frame, spectralFrame, levels, sampleRate, hasAudio };
     range = clampRange(settings.rtaMin, settings.rtaMax, sampleRate);
     const rangeKey = `${range.min}|${range.max}`;
@@ -203,20 +220,20 @@ export function createAtlasInstruments(scene, settings) {
 
   function getLabelKeys() {
     return {
-      static: [settings.labels, settings.gridOpacity, range.min, range.max].join('|'),
-      correlation: `${settings.labels}|${correlation}`,
-      peaks: `${settings.labels}|${peakLabel(meterState.left)}|${peakLabel(meterState.right)}`,
+      static: [settings.labels, settings.gridOpacity, range.min, range.max, colors.ivory, colors.copper, colors.silver].join('|'),
+      correlation: `${settings.labels}|${correlation}|${colors.silver}`,
+      peaks: `${settings.labels}|${peakLabel(meterState.left)}|${peakLabel(meterState.right)}|${colors.pearl}`,
     };
   }
 
   function drawLabels(ctx, layer = 'static') {
     const labels = settings.labels !== false;
     const opacity = Number.isFinite(settings.gridOpacity) ? settings.gridOpacity : .3;
-    const line = (x1, y1, x2, y2, color = C.silver, alpha = Math.min(1, opacity * 1.6)) => {
+    const line = (x1, y1, x2, y2, color = colors.silver, alpha = Math.min(1, opacity * 1.6)) => {
       ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = .8;
       ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.globalAlpha = 1;
     };
-    const text = (value, x, y, color = C.silver, size = 11, align = 'left') => {
+    const text = (value, x, y, color = colors.silver, size = 11, align = 'left') => {
       if (!labels) return;
       ctx.font = `500 ${size * 1.18}px "Inter", sans-serif`; ctx.fillStyle = color; ctx.textAlign = align;
       ctx.fillText(value, x, y);
@@ -228,12 +245,12 @@ export function createAtlasInstruments(scene, settings) {
     const barW = CORRELATION_WIDTH * 1920, barX = cx - barW / 2, barY = labelY(.45);
     if (layer === 'correlation') {
       text(`Φ  ${correlation >= 0 ? '+' : '−'}${Math.abs(correlation).toFixed(3)}`, cx, labelY(.429),
-        correlation < 0 ? C.coral : correlation > 0 ? C.olive : C.silver, 14, 'center');
+        correlation < 0 ? colors.coral : correlation > 0 ? colors.olive : colors.silver, 14, 'center');
       const gradient = ctx.createLinearGradient(barX, 0, barX + barW, 0);
-      gradient.addColorStop(0, C.coral); gradient.addColorStop(.5, paletteRgba(C.silver, .45)); gradient.addColorStop(1, C.olive);
+      gradient.addColorStop(0, colors.coral); gradient.addColorStop(.5, paletteRgba(colors.silver, .45)); gradient.addColorStop(1, colors.olive);
       ctx.fillStyle = gradient; ctx.globalAlpha = .7; ctx.fillRect(barX, barY, barW, 4); ctx.globalAlpha = 1;
       const pointer = barX + (correlation + 1) / 2 * barW;
-      ctx.fillStyle = C.white; ctx.fillRect(pointer - 1, barY - 4, 2, 12);
+      ctx.fillStyle = colors.white; ctx.fillRect(pointer - 1, barY - 4, 2, 12);
       ctx.restore();
       return;
     }
@@ -241,7 +258,7 @@ export function createAtlasInstruments(scene, settings) {
       for (const meter of meters) {
         const x = (meterRect.x + meterRect.w * meterCenter(meter.index)) * 1920;
         const state = meterState[meter.channel];
-        text(peakLabel(state), x, labelY(.124), state.heldDb >= 0 ? C.coral : C.pearl, 11, 'center');
+        text(peakLabel(state), x, labelY(.124), state.heldDb >= 0 ? colors.coral : colors.pearl, 11, 'center');
       }
       ctx.restore();
       return;
@@ -254,17 +271,17 @@ export function createAtlasInstruments(scene, settings) {
     line(cx - scale * 1.4, cy, cx + scale * 1.4, cy);
     for (const radius of [.25, .5, .75, 1]) {
       ctx.beginPath(); ctx.ellipse(cx, cy, scale * .5 * radius, scale * .88 * radius, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = radius === 1 ? C.olive : C.silver;
+      ctx.strokeStyle = radius === 1 ? colors.olive : colors.silver;
       ctx.globalAlpha = radius === 1 ? Math.min(1, opacity * 5) : Math.min(1, opacity * 1.6);
       ctx.lineWidth = radius === 1 ? 1.3 : .8;
       ctx.setLineDash(radius === 1 ? [4, 4] : []); ctx.stroke();
     }
     ctx.globalAlpha = 1; ctx.setLineDash([]);
-    text('L', cx - scale - 10, cy - scale - 8, C.ivory, 12, 'center');
-    text('R', cx + scale + 10, cy - scale - 8, C.copper, 12, 'center');
-    text('−1', barX, labelY(.473), C.silver, 10);
-    text('0', barX + barW / 2, labelY(.473), C.silver, 10, 'center');
-    text('+1', barX + barW, labelY(.473), C.silver, 10, 'right');
+    text('L', cx - scale - 10, cy - scale - 8, colors.ivory, 12, 'center');
+    text('R', cx + scale + 10, cy - scale - 8, colors.copper, 12, 'center');
+    text('−1', barX, labelY(.473), colors.silver, 10);
+    text('0', barX + barW / 2, labelY(.473), colors.silver, 10, 'center');
+    text('+1', barX + barW, labelY(.473), colors.silver, 10, 'right');
 
     const analyzer = INSTRUMENT_RECTS.analyzer;
     const leftX = analyzer.x * 1920, rightX = (analyzer.x + analyzer.w) * 1920;
@@ -275,9 +292,9 @@ export function createAtlasInstruments(scene, settings) {
       const y = (analyzer.y + analyzer.h * (1 - dbToUnit(db))) * 1080;
       line(leftX, y, rightX, y);
       line(meterLeftX, y, meterRightX, y);
-      text(db === 0 ? '0' : `−${Math.abs(db)}`, meterLabelX, y + 3.5, C.silver, 10, 'right');
+      text(db === 0 ? '0' : `−${Math.abs(db)}`, meterLabelX, y + 3.5, colors.silver, 10, 'right');
     }
-    line(rightX, analyzer.y * 1080, rightX, (analyzer.y + analyzer.h) * 1080, C.silver, opacity * 1.4);
+    line(rightX, analyzer.y * 1080, rightX, (analyzer.y + analyzer.h) * 1080, colors.silver, opacity * 1.4);
     const ticks = [...new Set([range.min, ...FREQUENCIES.filter(f => f > range.min && f < range.max), range.max])];
     let lastTextX = -Infinity;
     for (const frequency of ticks) {
@@ -286,17 +303,17 @@ export function createAtlasInstruments(scene, settings) {
       line(x, analyzer.y * 1080, x, (analyzer.y + analyzer.h) * 1080);
       if (x - lastTextX > 48 || frequency === range.max) {
         const label = frequency >= 1000 ? `${Number((frequency / 1000).toFixed(1))}k` : String(Math.round(frequency));
-        text(label, x, labelY(.462), C.silver, 11, frequency === range.min ? 'left' : frequency === range.max ? 'right' : 'center');
+        text(label, x, labelY(.462), colors.silver, 11, frequency === range.min ? 'left' : frequency === range.max ? 'right' : 'center');
         lastTextX = x;
       }
     }
-    text('L', leftX, labelY(.124), C.ivory, 11);
-    text('R', leftX + 26, labelY(.124), C.copper, 11);
-    text('dBFS', meterLabelX, labelY(.124), C.silver, 9, 'right');
-    text('Hz', rightX, labelY(.478), C.silver, 9, 'right');
+    text('L', leftX, labelY(.124), colors.ivory, 11);
+    text('R', leftX + 26, labelY(.124), colors.copper, 11);
+    text('dBFS', meterLabelX, labelY(.124), colors.silver, 9, 'right');
+    text('Hz', rightX, labelY(.478), colors.silver, 9, 'right');
     for (const meter of meters) {
       const x = (meterRect.x + meterRect.w * meterCenter(meter.index)) * 1920;
-      const color = meter.index ? C.copper : C.ivory;
+      const color = meter.index ? colors.copper : colors.ivory;
       text(meter.index ? 'R' : 'L', x, labelY(.462), color, 11, 'center');
     }
     ctx.restore();
