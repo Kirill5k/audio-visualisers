@@ -169,7 +169,7 @@ export function createSignalAtlasScene(stage, settings) {
     const hasAudio = Boolean(analysis?.buffer);
     if (markerEntries !== settings.setlist) { markerEntries = settings.setlist; markerVersion++; }
     const key = [Math.floor(time), Math.floor((analysis?.duration || 0) - time), analysis?.duration || 0,
-      settings.labels, settings.gridOpacity, width, height, ratio, markerVersion,
+      settings.labels, settings.headers, settings.gridOpacity, width, height, ratio, markerVersion,
       colors.ivory, colors.copper, colors.pearl, colors.silver].join('|');
     if (key === lastLabels) return;
     lastLabels = key;
@@ -202,11 +202,14 @@ export function createSignalAtlasScene(stage, settings) {
       };
       label('S I G N A L   A T L A S', .06, .052, colors.pearl, 18);
       label(hasAudio ? `STEREO STUDY  /  ${(analysis.sampleRate / 1000).toFixed(1)} kHz` : 'AN AUDIOVISUAL INSTRUMENT', .94, .051, colors.silver, 10, 'right');
-      label('01   PHASE SCOPE', .06, .096);
-      label('02   SPECTRUM ANALYZER', INSTRUMENT_RECTS.analyzer.x, .096);
-      label('03   PEAK dBFS', INSTRUMENT_RECTS.meters.x, .096);
-      label('04   SPECTROGRAM', .06, .3924);
-      label('05   TRACK OVERVIEW', .06, .5862);
+      if (settings.headers) {
+        const topHeaderY = .096 - 5 / 1080;
+        label('01   PHASE SCOPE', .06, topHeaderY);
+        label('02   SPECTRUM ANALYZER', INSTRUMENT_RECTS.analyzer.x, topHeaderY);
+        label('03   PEAK dBFS', INSTRUMENT_RECTS.meters.x, topHeaderY);
+        label('04   SPECTROGRAM', .06, .3924);
+        label('05   TRACK OVERVIEW', .06, .5862);
+      }
       label(hasAudio ? `${(time / analysis.duration * 100).toFixed(1)}%` : '—', .94, .5862, colors.pearl, 13, 'right');
       label(elapsedText, .06, .737, colors.pearl, 18);
       label(remainingText, .94, .737, colors.pearl, 18, 'right');

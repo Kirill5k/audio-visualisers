@@ -10,6 +10,7 @@ const settings = {
   gain: 1.3,
   gridOpacity: .3,
   labels: true,
+  headers: true,
   rtaMin: 20,
   rtaMax: 20000,
   rtaBoost: 6,
@@ -21,7 +22,7 @@ window.signalAtlas = await createSpectralPlayer({
   createScene: createSignalAtlasScene, historySeconds: 24,
   // Atlas uses the detailed spectrum and stereo instruments, but no motion flux.
   motionAnalysis: false,
-  controls: ['gain', 'gridOpacity', 'labels'],
+  controls: ['gain', 'gridOpacity', 'labels', 'headers'],
   extend(player) {
     const { audio, scene, bind } = player;
     let setlistResult = parseSetlist('');
