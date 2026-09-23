@@ -8,6 +8,9 @@ const STAR_COUNT = 131072;
 const DEPTH = 2600;
 const EMPTY_BANDS = new Float32Array(32);
 const MAX_LIGHT_EVENTS = 6;
+const LIGHT_EVENT_SECONDS = 2.4;
+const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
+const smooth = value => value * value * (3 - 2 * value);
 
 function frameHash(value) {
   value = Math.imul(value ^ (value >>> 16), 0x45d9f3b);
@@ -170,7 +173,12 @@ const starVertex = /* glsl */`
     float bin = aFrequency.x;
     vec2 spectrumUv = vec2(mod(bin, 256.0) + 0.5, floor(bin / 256.0) + 0.5)
       / vec2(256.0, 64.0);
-    float frequency = texture2D(uSpectrum, spectrumUv).r * uPlaying * uGain;
+    // Deep Drift reads the interpolated response bands exclusively. The raw FFT
+    // path belongs to Living Constellations and keeps that scene unchanged.
+    float frequency = uLevels[band];
+    if (uDeepDynamics < 0.5) {
+      frequency = texture2D(uSpectrum, spectrumUv).r * uPlaying * uGain;
+    }
     float attack = uOnsets[band];
     float sustained = uLevels[band];
     // Neighbouring world cells share an attack band. This produces local groups
@@ -187,6 +195,12 @@ const starVertex = /* glsl */`
     // so unaffected space stays dark through even the loudest musical attacks.
     float reaction = min(2.7, (attack * 2.4 + frequency * 0.3 + sustained * 0.2
       + (uKick * 2.9 + uBass * 0.25) * bassGroup * nearWeight) * cohort * uPulse);
+    if (uDeepDynamics > 0.5) {
+      // The continuous bed breathes beneath sparse local accents. Its modest
+      // response never inflates every subpixel star into a flashing grain.
+      reaction = min(1.15, (sustained * 0.70 + uHighs * 0.14
+        + uBass * bassGroup * nearWeight * 0.24) * cohort);
+    }
     float burst = 0.0;
     if (uDeepDynamics > 0.5) {
       for (int i = 0; i < 6; i++) {
@@ -199,7 +213,9 @@ const starVertex = /* glsl */`
     float proximity = clamp(650.0 / depth, 0.45, 3.2);
     float prominent = smoothstep(0.98, 1.0, aStyle.x);
     float hero = smoothstep(0.9975, 1.0, aStyle.x);
-    float core = (0.29 + prominent * 0.67 + hero * 0.35 + min(0.8, burst * 0.6)) * uPixelRatio * uStarSize
+    float accentCore = burst * 0.6;
+    if (uDeepDynamics > 0.5) accentCore *= 0.16 + prominent * 0.84;
+    float core = (0.29 + prominent * 0.67 + hero * 0.35 + min(0.8, accentCore)) * uPixelRatio * uStarSize
       * sqrt(proximity) * (1.0 + min(0.18, reaction * 0.07));
     float haloSize = mix(4.5, 13.0, hero);
     gl_PointSize = clamp(core * haloSize, 2.0, 38.0 * uPixelRatio);
@@ -215,6 +231,12 @@ const starVertex = /* glsl */`
     float extinction = mix(1.0, exp(-dust.b * dust.r * 7.0), smoothstep(900.0, 2350.0, -p.z));
     float excitation = reaction * (0.12 + pow(aStyle.x, 3.0) * 0.42)
       + burst * (0.62 + pow(aStyle.x, 3.0) * 1.25);
+    if (uDeepDynamics > 0.5) {
+      // Accents reveal a few bright members of a stellar neighbourhood. Most
+      // distant grains remain quiet, so each response has a readable centre.
+      excitation = reaction * (0.09 + pow(aStyle.x, 3.0) * 0.34)
+        + burst * (0.055 + pow(aStyle.x, 6.0) * 0.65 + prominent * 1.35);
+    }
     vFlux = min(1.75 + min(0.6, burst * 0.35), luminosity + excitation) * wrapFade * density * uBrightness
       * extinction * mix(0.65, 1.1, proximity / 3.2);
     vec3 stellarColor = mix(uLowColor, uHighColor, 0.3 + aStyle.y * 0.66);
@@ -266,6 +288,8 @@ const nebulaFragment = /* glsl */`
   uniform float uNebula;
   uniform float uGain;
   uniform float uMids;
+  uniform float uEnergy;
+  uniform float uHighs;
   uniform float uKick;
   uniform float uDeepDynamics;
   uniform vec4 uLightEvents[6];
@@ -291,21 +315,42 @@ const nebulaFragment = /* glsl */`
     float illumination = min(1.25, pocketA * (uLevels[10] * 0.6 + uOnsets[10] * 0.9)
       + pocketB * (uLevels[18] * 0.7 + uOnsets[18] * 0.9)
       + pocketC * (uMids * 0.65 + uKick * 0.5));
+    if (uDeepDynamics > 0.5) {
+      illumination = min(1.1, pocketA * (uLevels[10] * 0.70 + uMids * 0.18)
+        + pocketB * (uLevels[18] * 0.75 + uMids * 0.12)
+        + pocketC * uMids * 0.70);
+    }
     vec3 blue = mix(vec3(0.023, 0.073, 0.155), uLowColor * 0.32, 0.35);
     vec3 violet = vec3(0.072, 0.034, 0.105);
     vec3 gas = mix(blue, violet, smoothstep(0.3, 0.9, cloud.b) * 0.35);
     vec3 color = gas * density * (0.75 + illumination * 0.95)
       + vec3(0.052, 0.13, 0.23) * filament * (0.36 + illumination * 0.75);
     if (uDeepDynamics > 0.5) {
+      // Sustained musical phrases reveal a luminous destination between the
+      // foreground currents. Only textured gas emits: empty sky stays black.
+      float destination = pow(max(0.0, dot(d, normalize(vec3(0.20, -0.15, -1.0)))), 24.0);
+      // Keep the distant cloud detail subordinate to the foreground currents.
+      // Its dark indigo silhouette frames one destination instead of competing
+      // with every bank at the same blue-grey brightness across the whole sky.
+      float focalRegion = smoothstep(0.04, 0.78,
+        destination + pocketA * 0.18 + pocketB * 0.32);
+      color *= mix(vec3(0.34, 0.32, 0.48), vec3(0.78, 0.82, 0.94), focalRegion);
+      float phrase = smoothstep(0.08, 0.74, uMids * 0.62 + uEnergy * 0.38);
+      float banks = min(1.0, pocketA * 0.18 + pocketB * 0.35 + destination);
+      float ridges = filament * (0.60 + smoothstep(0.09, 0.32, cloud.r) * 0.85);
+      vec3 ice = mix(vec3(0.23, 0.32, 0.49), vec3(0.56, 0.65, 0.82), min(0.5, uHighs * 0.65));
+      vec3 phraseColor = mix(ice, vec3(0.29, 0.13, 0.43),
+        min(0.6, pocketA * 0.48 + (1.0 - destination) * 0.14));
+      color += phraseColor * (ridges * 2.15 + density * 0.13) * banks * phrase;
       float burstEmission = 0.0;
       for (int i = 0; i < 6; i++) {
         vec3 pocketDirection = normalize(uLightEvents[i].xyz + vec3(0.0, 0.0, -0.001));
-        float pocket = pow(max(0.0, dot(d, pocketDirection)), 95.0);
+        float pocket = pow(max(0.0, dot(d, pocketDirection)), 62.0);
         burstEmission += pocket * uEventStrength[i];
       }
       // Only existing emission filaments light up; the surrounding black sky
       // stays black. These accents share the stars' real musical event envelope.
-      color += vec3(0.072, 0.21, 0.43) * (filament * 2.5 + density * 0.22) * burstEmission;
+      color += vec3(0.072, 0.21, 0.43) * (filament * 1.65 + density * 0.26) * burstEmission;
       float waveEmission = 0.0;
       for (int i = 0; i < 6; i++) {
         // A wave crosses the curved cloud surface at a finite speed. Absorption
@@ -314,15 +359,15 @@ const nebulaFragment = /* glsl */`
         vec3 fromOrigin = d - uWaveOrigins[i].xyz;
         float curvedDistance = length(fromOrigin * vec3(1.0, 1.13, 1.0));
         curvedDistance += (cloud.b - 0.5) * 0.052 + (1.0 - cloud.r) * 0.028;
-        float width = 0.015 * uWaveWidth + fwidth(curvedDistance) * 1.1;
+        float width = 0.027 * uWaveWidth + fwidth(curvedDistance) * 1.1;
         float frontDistance = curvedDistance - uWaveOrigins[i].w;
         float front = exp(-pow(frontDistance / width, 2.0));
         // A fainter wake sits behind the sharp arrival rather than blurring it.
         float wake = exp(-pow((frontDistance + width * 2.0) / (width * 2.7), 2.0)) * 0.19;
         waveEmission += (front + wake) * uWaveStrength[i];
       }
-      color += vec3(0.115, 0.37, 0.67) * (filament * 2.7 + density * 0.32)
-        * min(2.4, waveEmission);
+      color += vec3(0.115, 0.37, 0.67) * (filament * 1.9 + density * 0.30)
+        * min(1.2, waveEmission);
     }
     // A minute blue-black floor retains clean blacks without a gradient band.
     gl_FragColor = vec4(vec3(0.00013, 0.00022, 0.00042) + color * uNebula, 1.0);
@@ -360,6 +405,7 @@ export function createDeepDrift({ scene, camera, spectrumTexture, settings }) {
     uBass: { value: 0 },
     uHighs: { value: 0 },
     uMids: { value: 0 },
+    uEnergy: { value: 0 },
     uKick: { value: 0 },
     uPlaying: { value: 0 },
     uDeepDynamics: { value: settings.backgroundOnly ? 0 : 1 },
@@ -416,10 +462,10 @@ export function createDeepDrift({ scene, camera, spectrumTexture, settings }) {
   scene.add(sky, stars);
   const dustRivers = settings.backgroundOnly ? null : createDustRivers({ scene, camera, settings });
   let state = { time: 0, distance: 0 };
+  let presentation = { time: 0, distance: 0, features: {}, light: 0, delta: 0 };
   let events = [];
-  let lastEventFrame = -1000;
+  let lastEventTime = -Infinity;
   let lastProcessedFrame = -1;
-  const heldOnsets = new Float32Array(32);
   const projected = new THREE.Vector3();
   const projection = new THREE.Matrix4();
   let lowColor = settings.colorLow;
@@ -469,116 +515,127 @@ export function createDeepDrift({ scene, camera, spectrumTexture, settings }) {
     return chosen;
   }
 
-  function uploadEvents(time, distance) {
+  function uploadEvents(time, distance, light = 1) {
     uniforms.uEventStrength.value.fill(0);
     for (let i = 0; i < events.length; i++) {
       const event = events[i];
+      if (time < event.born || time - event.born >= LIGHT_EVENT_SECONDS) continue;
       const offset = event.star * 3;
       const z = -(((-positions[offset + 2] - distance) % DEPTH + DEPTH) % DEPTH) - 3;
-      const age = Math.max(0, time - event.born);
-      const envelope = Math.min(1, age / 0.035) * Math.exp(-Math.max(0, age - 0.07) / 0.20);
+      const age = time - event.born;
+      const tail = smooth(Math.min(1, (LIGHT_EVENT_SECONDS - age) / 0.35));
+      const envelope = smooth(Math.min(1, age / 0.08))
+        * Math.exp(-Math.max(0, age - 0.08) / 0.45) * tail;
       uniforms.uLightEvents.value[i].set(positions[offset], positions[offset + 1], z, event.radius);
-      uniforms.uEventStrength.value[i] = envelope * event.strength;
+      uniforms.uEventStrength.value[i] = envelope * event.strength * light;
     }
   }
 
-  function updateActivity({ time, delta, distance, features, frame, playing }) {
+  function updateActivity({ time, distance, features, frame, playing }) {
     const active = !settings.backgroundOnly;
     uniforms.uDeepDynamics.value = active ? 1 : 0;
     if (!active) return;
-    const decay = Math.exp(-Math.max(0, delta) / 0.26);
-    let strongest = 0;
-    let strongestBand = 0;
-    for (let band = 0; band < 32; band++) {
-      const onset = playing ? (features.onsets?.[band] || 0) : 0;
-      const held = Math.max(onset, heldOnsets[band] * decay);
-      heldOnsets[band] = held > 0.002 ? held : 0;
-      if (onset > strongest) { strongest = onset; strongestBand = band; }
-    }
-    events = events.filter(event => time >= event.born && time - event.born < 0.85);
-    // Births require an actual detected spectral attack. The finite event lifetime
-    // and envelope cutoff fit comfortably inside the app's 8-second seek rebuild.
-    if (playing && frame !== lastProcessedFrame && Math.floor(frame / 6) !== Math.floor(lastEventFrame / 6)
-      && strongest > 0.065 && (features.rms || 0) > 0.00001) {
-      const star = chooseVisibleAnchor(frame, strongestBand, distance);
+    events = events.filter(event => time >= event.born && time - event.born < LIGHT_EVENT_SECONDS);
+    // Detecting accents is the response timeline's responsibility. This layer
+    // places a single accent on real stars, only once per canonical frame.
+    if (playing && frame !== lastProcessedFrame && features.accentTrigger > 0
+      && time - lastEventTime >= 0.25 - 1e-7) {
+      const band = Math.round(clamp01((features.accentBand || 0) / 31) * 31);
+      const star = chooseVisibleAnchor(frame, band, distance);
       if (star >= 0) {
         const z = -(((-positions[star * 3 + 2] - distance) % DEPTH + DEPTH) % DEPTH) - 3;
         events.push({
-          star, born: time, frame, band: strongestBand,
-          radius: Math.max(105, Math.min(225, -z * 0.15)),
-          strength: Math.min(2.15, (0.72 + strongest * 2.0 + (features.energy || 0) * 0.45)
-            * Number(settings.pulse ?? 1.3)),
+          star, born: time, frame, band,
+          radius: Math.max(145, Math.min(290, -z * 0.18)),
+          strength: Math.min(1.4, clamp01(features.accentTrigger) * 0.35
+            + clamp01(features.accent) * 0.52 + clamp01(features.energy) * 0.12),
         });
         if (events.length > MAX_LIGHT_EVENTS) events.shift();
-        lastEventFrame = frame;
+        lastEventTime = time;
       }
     }
     if (playing) lastProcessedFrame = frame;
-    uniforms.uOnsets.value.set(heldOnsets);
-    uploadEvents(time, distance);
   }
 
-  function reset() {
-    dustRivers?.reset();
+  function reset(options) {
+    dustRivers?.reset(options);
     state = { time: 0, distance: 0 };
+    presentation = { time: 0, distance: 0, features: {}, light: 0, delta: 0 };
     events = [];
-    lastEventFrame = -1000;
+    lastEventTime = -Infinity;
     lastProcessedFrame = -1;
-    heldOnsets.fill(0);
     uniforms.uEventStrength.value.fill(0);
     nebulaActivity.reset();
     uploadNebulaActivity(nebulaActivity.sample());
     uniforms.uDistance.value = 0;
     uniforms.uLevels.value.fill(0);
     uniforms.uOnsets.value.fill(0);
-    for (const key of ['uBass', 'uHighs', 'uMids', 'uKick', 'uPlaying']) uniforms[key].value = 0;
+    for (const key of ['uBass', 'uHighs', 'uMids', 'uEnergy', 'uKick', 'uPlaying']) uniforms[key].value = 0;
+  }
+
+  // Evaluate a rendered instant without detecting events, decaying held state,
+  // or advancing the canonical 60 Hz history. Pausing holds time and features;
+  // only light changes, leaving cloud deformation and travelling dust still.
+  function present({ time = state.time, distance = state.distance,
+    features = presentation.features, light = 1, delta = 0 } = {}) {
+    light = clamp01(light);
+    presentation = { time, distance, features, light, delta };
+    const background = settings.backgroundOnly ? 0.76 : 1;
+    uniforms.uDeepDynamics.value = settings.backgroundOnly ? 0 : 1;
+    uniforms.uDistance.value = distance;
+    uniforms.uDensity.value = Math.max(0, Math.min(1, Number(settings.density ?? 1)));
+    uniforms.uBrightness.value = Number(settings.brightness ?? 1) * background;
+    uniforms.uStarSize.value = Number(settings.starSize ?? 1);
+    uniforms.uGain.value = Number(settings.gain ?? 1.25);
+    uniforms.uPulse.value = Number(settings.pulse ?? 1.3);
+    uniforms.uNebula.value = Number(settings.nebula ?? 1) * (settings.backgroundOnly ? 0.65 : 1);
+    uniforms.uPlaying.value = light;
+    for (let band = 0; band < 32; band++) {
+      uniforms.uLevels.value[band] = (features.levels?.[band] || 0) * light;
+      // Only the legacy background consumes onset bands in its shaders.
+      uniforms.uOnsets.value[band] = settings.backgroundOnly ? (features.onsets?.[band] || 0) * light : 0;
+    }
+    uniforms.uBass.value = (features.bass || 0) * light;
+    uniforms.uHighs.value = (features.highs || 0) * light;
+    uniforms.uMids.value = (features.mids || 0) * light;
+    uniforms.uEnergy.value = (features.energy || 0) * light;
+    uniforms.uKick.value = (features.kick || 0) * light;
+    uploadEvents(time, distance, light);
+    uploadNebulaActivity(nebulaActivity.sample({ time, features, light }));
+    dustRivers?.present({ time, distance, features, light, delta });
+    if (lowColor !== settings.colorLow) {
+      lowColor = settings.colorLow;
+      uniforms.uLowColor.value.set(lowColor || '#527fa7');
+    }
+    if (highColor !== settings.colorHigh) {
+      highColor = settings.colorHigh;
+      uniforms.uHighColor.value.set(highColor || '#e5efff');
+    }
+    sky.position.copy(camera.position);
   }
 
   return {
     update({ time = 0, delta = 1 / 60, distance = 0, features = {}, frame = Math.round(time * 60), playing = false }) {
-      dustRivers?.update({ time, delta, distance, features, frame, playing });
       state.time = time;
       state.distance = distance;
-      const background = settings.backgroundOnly ? 0.76 : 1;
-      uniforms.uDistance.value = distance;
-      uniforms.uDensity.value = Math.max(0, Math.min(1, Number(settings.density ?? 1)));
-      uniforms.uBrightness.value = Number(settings.brightness ?? 1) * background;
-      uniforms.uStarSize.value = Number(settings.starSize ?? 1);
-      uniforms.uGain.value = Number(settings.gain ?? 1.25);
-      uniforms.uPulse.value = Number(settings.pulse ?? 1.3);
-      uniforms.uNebula.value = Number(settings.nebula ?? 1) * (settings.backgroundOnly ? 0.65 : 1);
-      uniforms.uPlaying.value = playing ? 1 : 0;
-      uniforms.uLevels.value.set(playing ? (features.levels || EMPTY_BANDS) : EMPTY_BANDS);
-      uniforms.uOnsets.value.set(playing ? (features.onsets || EMPTY_BANDS) : EMPTY_BANDS);
-      uniforms.uBass.value = playing ? (features.bass || 0) : 0;
-      uniforms.uHighs.value = playing ? (features.highs || 0) : 0;
-      uniforms.uMids.value = playing ? (features.mids || 0) : 0;
-      uniforms.uKick.value = playing ? (features.kick || 0) : 0;
-      updateActivity({ time, delta, distance, features, frame, playing });
-      uploadNebulaActivity(nebulaActivity.update({ time, frame, features, playing }));
-      if (lowColor !== settings.colorLow) {
-        lowColor = settings.colorLow;
-        uniforms.uLowColor.value.set(lowColor || '#527fa7');
-      }
-      if (highColor !== settings.colorHigh) {
-        highColor = settings.colorHigh;
-        uniforms.uHighColor.value.set(highColor || '#e5efff');
-      }
-      sky.position.copy(camera.position);
+      updateActivity({ time, distance, features, frame, playing });
+      nebulaActivity.update({ time, frame, features, playing });
+      // Living Constellations uses update() alone. Deep Drift follows this with
+      // a fractional-time present() before each render or export frame.
+      present({ time, delta, distance, features, light: playing ? 1 : 0 });
     },
+    present,
     resize(_width, _height, dpr = 1) {
       uniforms.uPixelRatio.value = dpr;
       dustRivers?.resize(_width, _height, dpr);
     },
     reset,
     saveState() {
-      const featureUniforms = {};
-      for (const key of ['uPlaying', 'uBass', 'uHighs', 'uMids', 'uKick']) featureUniforms[key] = uniforms[key].value;
       return {
-        ...state, events: events.map(event => ({ ...event })), lastEventFrame, lastProcessedFrame,
-        heldOnsets: Array.from(heldOnsets),
-        levels: Array.from(uniforms.uLevels.value), onsets: Array.from(uniforms.uOnsets.value),
-        featureUniforms,
+        ...state, events: events.map(event => ({ ...event })), lastEventTime, lastProcessedFrame,
+        presentation: { ...presentation, features: { ...presentation.features,
+          levels: Array.from(presentation.features.levels || EMPTY_BANDS),
+          onsets: Array.from(presentation.features.onsets || EMPTY_BANDS) } },
         nebulaActivity: nebulaActivity.saveState(),
         dustRivers: dustRivers?.saveState() ?? null,
       };
@@ -588,16 +645,10 @@ export function createDeepDrift({ scene, camera, spectrumTexture, settings }) {
       dustRivers?.restoreState(saved.dustRivers);
       state = { time: saved.time, distance: saved.distance };
       events = (saved.events || []).map(event => ({ ...event }));
-      lastEventFrame = saved.lastEventFrame ?? -1000;
+      lastEventTime = saved.lastEventTime ?? -Infinity;
       lastProcessedFrame = saved.lastProcessedFrame ?? -1;
-      heldOnsets.set(saved.heldOnsets || EMPTY_BANDS);
-      uniforms.uLevels.value.set(saved.levels || EMPTY_BANDS);
-      uniforms.uOnsets.value.set(saved.onsets || EMPTY_BANDS);
-      for (const [key, value] of Object.entries(saved.featureUniforms || {})) uniforms[key].value = value;
-      uniforms.uDistance.value = state.distance;
-      uploadEvents(state.time, state.distance);
       nebulaActivity.restoreState(saved.nebulaActivity);
-      uploadNebulaActivity(nebulaActivity.sample());
+      present(saved.presentation || { ...state, features: {}, light: 0 });
     },
     getStats() {
       return {
@@ -605,12 +656,12 @@ export function createDeepDrift({ scene, camera, spectrumTexture, settings }) {
         visibleDensity: uniforms.uDensity.value,
         spectrumBins: 16384,
         volumeDepth: DEPTH,
-        drawCalls: 2 + (dustRivers?.getStats().dustActive ? 1 : 0),
+        drawCalls: 2 + (dustRivers?.getStats().dustDrawCalls || 0),
         ...dustRivers?.getStats(),
-        distance: state.distance,
+        distance: presentation.distance,
         activeLightEvents: events.length,
         peakLight: Math.max(...uniforms.uEventStrength.value),
-        activeWavefronts: nebulaActivity.sample().waves.length,
+        activeWavefronts: nebulaActivity.sample(presentation).waves.length,
         peakWavefront: Math.max(...uniforms.uWaveStrength.value),
         nebulaBreath: uniforms.uBreath.value,
       };

@@ -10,6 +10,12 @@
 .view-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 4px; margin: 8px 0; }
 .view-grid button { border: 1px solid var(--edge); border-radius: 5px; background: #15202a; color: #b9c9d5; padding: 6px 2px; font-size: 10px; cursor: pointer; }
 .view-grid button[aria-pressed="true"] { background: #384853; color: #fff; }
+.response-presets { display: grid; grid-template-columns: repeat(3,1fr); gap: 5px; margin: 10px 0; }
+.response-presets button { border: 1px solid var(--edge); border-radius: 6px; background: #15202a; color: #aabfcf; padding: 8px 2px; font-size: 10px; cursor: pointer; }
+.response-presets button[aria-pressed="true"] { background: #294655; border-color: #7aabb766; color: #e2f5fc; }
+.response-caption { display: flex; align-items: center; justify-content: space-between; color: #9cbacb; font-size: 10px; margin: 6px 0 14px; }
+.response-caption button { background: none; border: 0; padding: 3px; color: #92a3af; font: inherit; cursor: pointer; }
+.response-caption button:hover { color: #e2f5fc; }
 .quality-note { color: #83939d; font-size: 10px; line-height: 1.8; font-variant-numeric: tabular-nums; }
 .shortcut-note { color: #687882; font-size: 10px; line-height: 1.8; margin: 12px 0 2px; }
 #timeline { position: fixed; bottom: 92px; left: max(330px, 25%); right: 22%; display: flex; align-items: center; gap: 12px; z-index: 8; color: #a6b8c5; font: 10px ui-monospace,monospace; }

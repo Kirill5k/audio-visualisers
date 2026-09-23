@@ -9,12 +9,16 @@ import { createStarfieldAnalysis } from './starfield-analysis.js';
 import { createDeepDrift } from './deep-drift-scene.js';
 import { createLivingConstellations } from './living-constellations-scene.js';
 import { createStarfieldSettings } from './starfield-settings.js';
+import { RESPONSE_PRESETS, DEFAULT_RESPONSE_SETTINGS, createDeepDriftResponseTimeline, saveResponseTransition, restoreResponseTransition } from './deep-drift-response.js';
+import { createDeepDriftClock } from './deep-drift-clock.js';
 
 const living = document.body.dataset.visualiser === 'living-constellations';
 const title = living ? 'Living Constellations' : 'Deep Drift';
 const filename = living ? 'living_constellations' : 'deep_drift';
 const $ = id => document.getElementById(id);
 const settings = createStarfieldSettings();
+if (!living) Object.assign(settings, DEFAULT_RESPONSE_SETTINGS);
+let responsePreset = 'fluid';
 const range = (id, label, min, max, step, value, suffix = '') => `<div class="control"><div class="control-head"><label for="${id}">${label}</label><output class="value" id="${id}Value" for="${id}">${value}${suffix}</output></div><input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-suffix="${suffix}"></div>`;
 const toggle = (id, label, checked = false) => `<label class="toggle-row"><span>${label}</span><input id="${id}" type="checkbox" ${checked ? 'checked' : ''}></label>`;
 document.body.insertAdjacentHTML('beforeend', `
@@ -30,16 +34,25 @@ document.body.insertAdjacentHTML('beforeend', `
       <button id="recenterBtn" class="secondary-button">Recenter camera</button>
     </section>
     <section class="section"><div class="section-title">Audio response</div>
-      ${range('gain', 'Response gain', .25, 3, .05, 1.25)}${range('pulse', 'Star flares', 0, 3, .05, 1.3)}
-      <div class="quality-note">16,384 frequency bins · 32,768 FFT<br>Fast transient analysis · 2,048 FFT</div>
+      ${living ? `${range('gain', 'Response gain', .25, 3, .05, 1.25)}${range('pulse', 'Star flares', 0, 3, .05, 1.3)}
+      <div class="quality-note">16,384 frequency bins · 32,768 FFT<br>Fast transient analysis · 2,048 FFT</div>` : `
+      <div class="response-presets" role="group" aria-label="Response presets">${Object.entries(RESPONSE_PRESETS).map(([id, preset]) => `<button data-response-preset="${id}" aria-pressed="${id === 'fluid'}">${preset.label}</button>`).join('')}</div>
+      <div class="response-caption"><span id="responseName">Fluid</span><button id="resetResponse" type="button">Reset response</button></div>
+      ${range('gain', 'Sensitivity', .25, 3, .05, settings.gain)}
+      ${range('smoothness', 'Smoothness', .25, 2, .05, settings.smoothness)}
+      ${range('bassMotion', 'Bass motion', 0, 2, .05, settings.bassMotion)}
+      ${range('midFlow', 'Midrange flow', 0, 2, .05, settings.midFlow)}
+      ${range('trebleShimmer', 'Treble shimmer', 0, 2, .05, settings.trebleShimmer)}
+      ${range('pulse', 'Accent strength', 0, 2, .05, settings.pulse)}
+      <p class="quality-note">Bass opens the wisps. Mids shape the flow.<br>Treble catches the light.</p>`}
     </section>
-    ${living ? '' : `<section class="section"><div class="section-title">Dust rivers</div>
-      ${toggle('dustRivers', 'Enable dust rivers', true)}
+    ${living ? '' : `<section class="section"><div class="section-title">Dust wisps</div>
+      ${toggle('dustRivers', 'Enable dust wisps', true)}
       ${range('dustDensity', 'Dust density', .1, 1, .05, settings.dustDensity)}
       ${range('dustBrightness', 'Dust light', .1, 2, .05, settings.dustBrightness)}
-      ${range('dustWidth', 'River width', .25, 2, .05, settings.dustWidth)}
+      ${range('dustWidth', 'Wisp width', .25, 2, .05, settings.dustWidth)}
       ${range('dustFlow', 'Flow speed', 0, 2, .05, settings.dustFlow)}
-      ${range('dustResponse', 'River response', 0, 3, .05, settings.dustResponse)}
+      ${range('dustResponse', 'Wisp response', 0, 3, .05, settings.dustResponse)}
     </section>
     <section class="section"><div class="section-title">Nebula wavefronts</div>
       ${toggle('wavefronts', 'Enable wavefronts', true)}
@@ -85,7 +98,7 @@ document.body.insertAdjacentHTML('beforeend', `
 `);
 
 const audio = createAudioPlayback({fftSize: 32768, maxFftSize: 32768, smoothing: 0});
-const analysis = createStarfieldAnalysis();
+const analysis = createStarfieldAnalysis(living ? {} : {prefetchFrames: 0});
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, .05, 6500);
 let renderer;
@@ -119,6 +132,40 @@ const quietFeatures = silent();
 let frame = -1, distance = 0, idleTime = 0, restTime = 0, busy = false, loading = false, seeking = false, generation = 0;
 let seekEditing = false;
 let pendingPump = null, pausedSnapshot = null, finished = false;
+const presentationClock = createDeepDriftClock();
+let responseTimeline = null, responseDirty = false, responseTransition = null;
+let presentedTime = 0, presentedDistance = 0, driftLight = 1;
+let displayFeatures = silent();
+const responseKeys = Object.keys(DEFAULT_RESPONSE_SETTINGS);
+function rebuildResponseTimeline(transition = false) {
+  if (living || !analysis.getInfo().loaded || !audio.hasAudio) return;
+  if (transition) responseTransition = {from: structuredClone(displayFeatures), start: performance.now()};
+  responseTimeline = createDeepDriftResponseTimeline({
+    frameCount: analysis.getInfo().frameCount,
+    getFeatureFrame: index => analysis.getFeatureFrame(index), settings,
+  });
+  responseDirty = false;
+}
+function responseAt(time, preview = false) {
+  const result = responseTimeline ? responseTimeline.sample(time) : silent();
+  if (preview && responseTransition) {
+    const mix = Math.min(1, Math.max(0, (performance.now() - responseTransition.start) / 450));
+    const amount = mix * mix * (3 - 2 * mix), from = responseTransition.from;
+    for (const key of ['bass', 'mids', 'highs', 'energy', 'kick', 'breath', 'accent'])
+      result[key] = (from[key] || 0) * (1 - amount) + (result[key] || 0) * amount;
+    for (const key of ['levels', 'onsets']) for (let i = 0; i < 32; i++)
+      result[key][i] = (from[key]?.[i] || 0) * (1 - amount) + result[key][i] * amount;
+    if (mix === 1) responseTransition = null;
+  }
+  return result;
+}
+function presentDrift(time, travel, light = driftLight, preview = true) {
+  presentedTime = time; presentedDistance = travel;
+  displayFeatures = responseAt(time, preview);
+  setCamera(time);
+  world.present({time, distance: travel, features: displayFeatures, light});
+}
+
 let viewYaw = 0, viewPitch = 0, currentView = 'front';
 let viewport = {width: innerWidth, height: innerHeight, pixelRatio: devicePixelRatio || 1};
 const meters = Array.from({length: 32}, () => {const bar = document.createElement('i'); $('spectrumMeter').append(bar); return bar;});
@@ -158,45 +205,59 @@ function step(data, upload = true) {
   if (upload && data.spectrum) {spectrum.set(data.spectrum); spectrumTexture.needsUpdate = true;}
   distance += settings.speed * 26 / 60;
   setCamera(frame / 60);
-  world.update({time: frame / 60, delta: 1 / 60, distance, features: applyFeatures(features), frame, playing: true});
+  world.update({time: frame / 60, delta: 1 / 60, distance, features: living ? applyFeatures(features) : responseAt(frame / 60), frame, playing: true});
 }
-function resetWorld(startFrame = 0) {
-  world.reset(); frame = startFrame - 1; restTime = 0; distance = startFrame / 60 * settings.speed * 26;
+function resetWorld(startFrame = 0, preserveFlow = false) {
+  world.reset({preserveFlow}); presentationClock.reset(); frame = startFrame - 1; restTime = 0; distance = startFrame / 60 * settings.speed * 26;
   features = silent(); spectrum.fill(0); spectrumTexture.needsUpdate = true; pausedSnapshot = null;
+  presentedTime = startFrame / 60; presentedDistance = distance; displayFeatures = silent(); driftLight = 1;
 }
-function saveWorld() {return {world: world.saveState(), frame, distance, features: structuredClone(features), spectrum: spectrum.slice(), viewYaw, viewPitch, currentView, idleTime, restTime};}
-function restoreWorld(saved) {
+function saveWorld() {return {world: world.saveState(), frame, distance, features: structuredClone(features), spectrum: spectrum.slice(), viewYaw, viewPitch, currentView, idleTime, restTime, presentedTime, presentedDistance, driftLight, displayFeatures: structuredClone(displayFeatures), responseTransition: saveResponseTransition(responseTransition, performance.now())};}
+function restoreWorld(saved, {restoreTransition = false} = {}) {
   if (!saved) return;
   world.restoreState(saved.world); frame = saved.frame; distance = saved.distance; features = saved.features; spectrum.set(saved.spectrum); spectrumTexture.needsUpdate = true;
   viewYaw = saved.viewYaw; viewPitch = saved.viewPitch; currentView = saved.currentView; idleTime = saved.idleTime; restTime = saved.restTime;
-  setCamera(audio.hasAudio ? Math.max(0, frame) / 60 : idleTime);
+  presentedTime = saved.presentedTime ?? Math.max(0, frame) / 60; presentedDistance = saved.presentedDistance ?? distance;
+  driftLight = saved.driftLight ?? 1; displayFeatures = saved.displayFeatures || silent();
+  if (restoreTransition) responseTransition = restoreResponseTransition(saved.responseTransition, performance.now());
+  presentationClock.reset();
+  setCamera(living ? (audio.hasAudio ? Math.max(0, frame) / 60 : idleTime) : presentedTime);
 }
 function restorePausedWorld() {
   if (!pausedSnapshot) return;
   // Looking around while paused should not be undone when the music resumes.
+  const light = driftLight;
   restoreWorld({...pausedSnapshot, viewYaw, viewPitch, currentView});
+  driftLight = light;
   pausedSnapshot = null;
 }
 async function rebuild(position) {
+  responseTransition = null;
+  if (!living && responseDirty) rebuildResponseTimeline();
   const token = ++generation;
   seeking = true;
   const endFrame = Math.max(0, Math.min(analysis.getInfo().frameCount - 1, Math.floor(position * 60)));
   const startFrame = Math.max(0, endFrame - 480);
-  resetWorld(startFrame);
+  resetWorld(startFrame, true);
   try {
     for (let f = startFrame; f < endFrame; f++) {
       if (token !== generation) return;
       const data = analysis.getFeatureFrame ? analysis.getFeatureFrame(f) : await analysis.getFrame(f);
       step(data, false);
     }
-    const last = await analysis.getFrame(endFrame);
-    if (token === generation) step(last);
+    const last = living ? await analysis.getFrame(endFrame) : analysis.getFeatureFrame(endFrame);
+    if (token === generation) {step(last); if (!living) presentDrift(endFrame / 60, distance, 1, false);}
   } finally {if (token === generation) seeking = false;}
 }
 function pump(toFrame) {
   if (pendingPump || seeking || loading || busy) return;
   if (toFrame - frame > 120) {
     rebuild(audio.getPlaybackPosition()).catch(error => setStatus('Could not restore playback · ' + error.message));
+    return;
+  }
+  if (!living) {
+    const end = Math.min(toFrame, analysis.getInfo().frameCount - 1);
+    for (let next = frame + 1; next <= end; next++) step(analysis.getFeatureFrame(next), false);
     return;
   }
   const token = generation;
@@ -242,7 +303,7 @@ function updateButtons() {
   }
 }
 function startPlayback(prepared = null, fromStart = true) {
-  finished = false;
+  finished = false; presentationClock.reset();
   audio.play({fromStart, onEnded: () => {finished = true; if (recorder.isRecording) recorder.stop(); setStatus('Track complete · replay to travel again', false); updateButtons();}});
   if (prepared) recorder.startAutoRecord(prepared, () => capture.makeRecordingStream());
   setStatus(audio.fileName); updateButtons();
@@ -255,7 +316,8 @@ async function loadTrack(file, {prepared = null, writable = null} = {}) {
     await audio.load(file);
     setStatus('Analysing the music…', false);
     await analysis.load(audio.buffer, {onProgress: value => setStatus('Analysing the music · ' + Math.round(value * 100) + '%', false)});
-    resetWorld(); await analysis.getFrame(0);
+    if (!living) {responseTransition = null; rebuildResponseTimeline();}
+    resetWorld(); if (living) await analysis.getFrame(0);
     $('duration').textContent = clockText(audio.duration); $('seekSeconds').max = audio.duration;
     loading = false;
     if (writable) {await exportVideo(writable); return;}
@@ -263,7 +325,8 @@ async function loadTrack(file, {prepared = null, writable = null} = {}) {
   } catch (error) {
     if (writable) await writable.abort().catch(() => {});
     if (prepared?.writable) await prepared.writable.abort().catch(() => {});
-    audio.unload(); resetWorld(); setStatus('Could not load audio · ' + error.message, false);
+    audio.unload(); responseTimeline = null; responseTransition = null; responseDirty = false;
+    resetWorld(); setStatus('Could not load audio · ' + error.message, false);
   } finally {loading = false; updateButtons();}
 }
 async function capturePreparation() {
@@ -307,7 +370,7 @@ async function togglePlayback() {
 }
 async function replay() {
   if (!audio.hasAudio || loading || busy || seeking || recorder.isRecording) return;
-  generation++; resetWorld(); await analysis.getFrame(0); await audio.resumeContext(); startPlayback();
+  generation++; responseTransition = null; resetWorld(); if (living) await analysis.getFrame(0); await audio.resumeContext(); startPlayback();
 }
 async function seek(position) {
   if (!audio.hasAudio || loading || busy || seeking || recorder.isRecording) return;
@@ -325,7 +388,7 @@ $('seek').addEventListener('change', event => seek(Number(event.target.value) * 
 $('seekSeconds').addEventListener('input', () => {seekEditing = true;});
 $('seekSeconds').addEventListener('change', event => {seekEditing = false; seek(Number(event.target.value));});
 $('seekSeconds').addEventListener('keydown', event => {if (event.key === 'Enter') {event.preventDefault(); seekEditing = false; seek(Number(event.target.value));}});
-$('unloadBtn').addEventListener('click', () => {generation++; audio.unload(); analysis.reset(); resetWorld(); idleTime = 0; finished = false; $('elapsed').textContent = $('duration').textContent = '0:00'; $('seek').value = 0; $('seekSeconds').value = 0; setStatus('Choose an audio file to begin', false); updateButtons();});
+$('unloadBtn').addEventListener('click', () => {generation++; audio.unload(); analysis.reset(); responseTimeline = null; responseTransition = null; responseDirty = false; resetWorld(); idleTime = 0; finished = false; $('elapsed').textContent = $('duration').textContent = '0:00'; $('seek').value = 0; $('seekSeconds').value = 0; setStatus('Choose an audio file to begin', false); updateButtons();});
 $('muteBtn').addEventListener('click', () => {const muted = audio.toggleMute(); $('muteBtn').textContent = muted ? '♪' : '♫'; $('muteBtn').setAttribute('aria-pressed', String(muted)); $('muteBtn').setAttribute('aria-label', muted ? 'Unmute audio' : 'Mute audio');});
 $('recordBtn').addEventListener('click', async () => {
   if (busy || loading || !audio.hasAudio) return;
@@ -339,21 +402,33 @@ $('recordBtn').addEventListener('click', async () => {
 });
 async function exportVideo(writable = null) {
   if (!audio.hasAudio || busy || loading || seeking || recorder.isRecording) return;
+  if (!living && responseDirty) rebuildResponseTimeline();
+  // The preview also freezes while the save picker is open. Preserve the fade
+  // here, before that await, including when the picker itself is cancelled.
+  const savedTransition = saveResponseTransition(responseTransition, performance.now());
+  const suspendForPicker = !living && audio.context?.state === 'running';
   generation++; busy = true; updateButtons();
   if (pendingPump) await pendingPump;
   const savedPause = pausedSnapshot;
   try {
+    if (suspendForPicker) await audio.suspendContext();
     await capture.runOfflineExport({
       audio, suggestedName: filename + '.mp4', pendingWritable: writable, onStatus: setStatus,
       labels: {rendering: 'Rendering ' + title + '…', saved: 'Export saved · ' + filename + '.mp4'},
-      analysisProvider: index => analysis.getFrame(index),
-      prepare() {const saved = saveWorld(); resetWorld(); return saved;},
-      restore(saved) {restoreWorld(saved); pausedSnapshot = savedPause;},
-      renderFrame(data, delta, frameData) {step(frameData); composer.render();},
+      analysisProvider: index => living ? analysis.getFrame(index) : analysis.getFeatureFrame(index),
+      prepare() {const saved = saveWorld(); saved.responseTransition = savedTransition; resetWorld(0, true); return saved;},
+      restore(saved) {restoreWorld(saved, {restoreTransition: true}); pausedSnapshot = savedPause;},
+      renderFrame(data, delta, frameData) {step(frameData); if (!living) presentDrift(frameData.frame / 60, distance, 1, false); composer.render();},
       readCanvas: () => renderer.domElement,
       gpuFinish: () => renderer.getContext().finish(),
     });
-  } finally {busy = false; updateButtons();}
+  } finally {
+    try {if (suspendForPicker) await audio.resumeContext();}
+    finally {
+      responseTransition = restoreResponseTransition(savedTransition, performance.now());
+      busy = false; updateButtons();
+    }
+  }
 }
 $('exportBtn').addEventListener('click', () => exportVideo());
 for (const key of Object.keys(settings)) {
@@ -362,7 +437,26 @@ for (const key of Object.keys(settings)) {
     settings[key] = input.type === 'checkbox' ? input.checked : input.type === 'color' ? input.value : Number(input.value);
     if ($(key + 'Value')) $(key + 'Value').value = Number(input.value).toFixed(2).replace(/\.?0+$/, '') + (input.dataset.suffix || '');
     bloom.enabled = settings.bloom;
+    if (!living && responseKeys.includes(key)) {responseDirty = true; updateResponsePreset(true);}
   });
+}
+function updateResponsePreset(custom = false) {
+  if (living) return;
+  $('responseName').textContent = custom ? 'Custom' : RESPONSE_PRESETS[responsePreset].label;
+  document.querySelectorAll('[data-response-preset]').forEach(button => button.setAttribute('aria-pressed', String(!custom && button.dataset.responsePreset === responsePreset)));
+}
+function applyResponsePreset(id) {
+  responsePreset = id;
+  Object.assign(settings, RESPONSE_PRESETS[id].values);
+  for (const key of responseKeys) {
+    $(key).value = settings[key];
+    $(key + 'Value').value = String(settings[key]);
+  }
+  responseDirty = true; updateResponsePreset();
+}
+if (!living) {
+  document.querySelectorAll('[data-response-preset]').forEach(button => button.addEventListener('click', () => applyResponsePreset(button.dataset.responsePreset)));
+  $('resetResponse').addEventListener('click', () => applyResponsePreset(responsePreset));
 }
 for (const id of ['autoRecord', 'autoExport']) $(id).addEventListener('change', () => {if ($(id).checked) $(id === 'autoRecord' ? 'autoExport' : 'autoRecord').checked = false;});
 $('panelToggle').addEventListener('click', () => {
@@ -390,16 +484,35 @@ function animate(now) {
   requestAnimationFrame(animate);
   const delta = Math.min(.05, (now - previous) / 1000); previous = now;
   if (busy || document.hidden) {fpsFrames = 0; fpsWindowStart = now; return;}
+  if (!living && responseDirty) rebuildResponseTimeline(true);
   if (audio.isPlaying && !loading && !seeking) {
     restTime = 0;
-    pump(Math.floor(audio.getPlaybackPosition() * 60));
+    const actualTime = audio.getPlaybackPosition();
+    const displayTime = living ? actualTime : presentationClock.sample(actualTime, now, audio.duration, {running: audio.context?.state === 'running'});
+    // Only actual audio time may create events. Fractional display cannot fire a future onset.
+    pump(Math.floor(actualTime * 60));
+    if (!living && !seeking) {
+      driftLight += (1 - driftLight) * -Math.expm1(-delta / .18);
+      presentDrift(displayTime, distance + (displayTime - Math.max(0, frame) / 60) * settings.speed * 26);
+    }
   } else if (!seeking) {
     if (audio.hasAudio) restTime += delta;
     if (!audio.hasAudio && !matchMedia('(prefers-reduced-motion: reduce)').matches) {idleTime += delta; distance += delta * 26 * settings.speed;}
-    setCamera(audio.hasAudio ? Math.max(0, frame) / 60 : idleTime);
-    world.update({time: audio.hasAudio ? Math.max(0, frame) / 60 + restTime : idleTime, delta, distance, features: quietFeatures, frame: Math.max(0, frame), playing: false});
+    if (living) {
+      setCamera(audio.hasAudio ? Math.max(0, frame) / 60 : idleTime);
+      world.update({time: audio.hasAudio ? Math.max(0, frame) / 60 + restTime : idleTime, delta, distance, features: quietFeatures, frame: Math.max(0, frame), playing: false});
+    } else {
+      presentationClock.reset();
+      if (audio.hasAudio) {
+        driftLight += (.18 - driftLight) * -Math.expm1(-delta / .45);
+        presentDrift(presentedTime, presentedDistance);
+      } else {
+        driftLight = 1;
+        presentDrift(idleTime, distance);
+      }
+    }
   }
-  setCamera(audio.hasAudio ? Math.max(0, frame) / 60 : idleTime);
+  if (living) setCamera(audio.hasAudio ? Math.max(0, frame) / 60 : idleTime);
   if (recorder.isRecording && capture.shouldSkipRecordingFrame(now, $('lock60').checked)) return;
   composer.render();
   if (recorder.isRecording) capture.requestRecordingFrame(now);
@@ -417,7 +530,7 @@ function animate(now) {
     $('sceneStats').dataset.energy = audio.isPlaying ? features.energy : 0;
     $('sceneStats').dataset.canvas = `${renderer.domElement.width}×${renderer.domElement.height}`;
   }
-  meters.forEach((bar, i) => bar.style.height = (2 + (audio.isPlaying ? scaled.levels[i] : 0) * 25) + 'px');
+  meters.forEach((bar, i) => bar.style.height = (2 + (audio.isPlaying ? (living ? scaled.levels[i] : displayFeatures.levels[i]) : 0) * 25) + 'px');
 }
 updateButtons();
 requestAnimationFrame(animate);
