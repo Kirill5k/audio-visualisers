@@ -6,6 +6,11 @@
 - Some visualisers use shared assets in `js/`, `css/`, and `fonts/`; account for other consumers when changing shared files.
 - HTML files under `tests/` are browser test harnesses, not visualisers.
 
+## Visuals and Related Skills
+
+- The project uses Three.js (`THREE.js`) for visuals.
+- Skills in `.agents/skills/` cover Three.js fundamentals, animation, geometry, interaction, lighting, loaders, materials, postprocessing, shaders, and textures, plus the Web Audio API. Read the relevant skill's `SKILL.md` when working in these areas.
+
 ## Package Manager
 
 - This is a static HTML/CSS/JavaScript project with no package manifest or build step. Use npm's `npx` to run the local server.
