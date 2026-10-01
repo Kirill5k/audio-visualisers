@@ -1,0 +1,22 @@
+body.pulse-atlas {
+  --atlas-pearl: #eee9df;
+  --atlas-silver: #8f999a;
+  --atlas-copper: #68c8bd;
+  --accent: #68c8bd;
+}
+.pulse-atlas .color-row { margin: 12px 0; }
+.pulse-atlas .color-row input[type="color"] { width: 43px; height: 28px; padding: 2px; border: 1px solid var(--edge); border-radius: 5px; background: var(--panel); cursor: pointer; }
+.pulse-atlas #resetColorsBtn { width: 100%; margin-top: 5px; }
+.pulse-atlas .setlist-section .section-title { display: block; margin-bottom: 9px; }
+.pulse-atlas #setlistInput { width: 100%; min-height: 100px; resize: vertical; padding: 9px; border: 1px solid var(--edge); border-radius: 5px; background: var(--atlas-black); color: var(--ink); font: 11px/1.6 "Inter", sans-serif; }
+.pulse-atlas #setlistInput::placeholder { color: color-mix(in srgb, var(--atlas-silver) 65%, transparent); }
+.pulse-atlas #setlistStatus { color: var(--atlas-silver); white-space: pre-line; }
+.pulse-atlas .study-link { color: var(--accent); font-size: 11px; text-decoration: none; }
+.pulse-atlas .study-link:hover { text-decoration: underline; }
+.pulse-atlas .band-ranges { display: grid; grid-template-columns: 45px minmax(0,1fr) minmax(0,1fr); align-items: center; gap: 8px; margin-top: 12px; font-size: 10px; color: var(--muted); }
+.pulse-atlas .band-ranges .frequency-input { width: 100%; min-width: 0; padding: 7px; }
+.pulse-atlas .band-ranges input[aria-invalid="true"] { border-color: var(--danger); }
+.pulse-atlas .band-actions { display: flex; gap: 8px; }
+.pulse-atlas .band-actions button { flex: 1; padding: 8px 9px; font-size: 10px; }
+.pulse-atlas #resetTraceBtn { width: 100%; }
+.pulse-atlas #bandStatus[data-invalid="true"] { color: var(--danger); }

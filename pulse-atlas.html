@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pulse Atlas — Audio Visualiser</title>
+  <link rel="preload" href="fonts/inter/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/visualiser-ui.css">
+  <link rel="stylesheet" href="css/spectral-ui.css">
+  <link rel="stylesheet" href="css/pulse-atlas.css">
+  <script type="importmap">
+    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"}}
+  </script>
+</head>
+<body class="spectral-visualiser pulse-atlas">
+  <main id="stage" aria-label="Pulse Atlas: rhythm lanes, energy ribbons and full-track overview"></main>
+  <button id="panelToggle" class="glass closed" title="Show settings" aria-label="Show settings">☰</button>
+  <aside id="panel" class="glass hidden" aria-label="Visualiser settings">
+    <div class="brand"><div><div class="eyebrow">Rhythm / Energy / Motion</div><h1>Pulse Atlas</h1></div></div>
+    <label class="file-picker" for="fileInput" tabindex="0">Choose an audio file</label>
+    <input id="fileInput" type="file" accept="audio/*">
+    <button id="referenceBtn" class="action reference-button">Load reference track</button>
+    <section class="section">
+      <div class="section-title">Time window</div>
+      <div class="control"><label class="control-head" for="historySeconds"><span>History · both charts</span><span id="historySecondsValue" class="value">15 s</span></label><input id="historySeconds" type="range" min="5" max="60" step="1" value="15" data-suffix=" s"></div>
+      <p class="hint">Both charts show the same amount of time.</p>
+    </section>
+    <section class="section">
+      <div class="section-title">Rhythm trace</div>
+      <div class="control"><label class="control-head" for="head"><span>Head position</span><span id="headValue" class="value">0.98</span></label><input id="head" type="range" min="0.4" max="1" step="0.01" value="0.98"></div>
+      <div class="control"><label class="control-head" for="gain"><span>Gain</span><span id="gainValue" class="value">1.15</span></label><input id="gain" type="range" min="0.4" max="4" step="0.05" value="1.15"></div>
+      <div class="control"><label class="control-head" for="height"><span>Spike height</span><span id="heightValue" class="value">1.90</span></label><input id="height" type="range" min="0.2" max="6" step="0.05" value="1.9"></div>
+      <div class="control"><label class="control-head" for="baseline"><span>Baseline</span><span id="baselineValue" class="value">−0.90</span></label><input id="baseline" type="range" min="-0.9" max="0.9" step="0.01" value="-0.9"></div>
+      <div class="control"><label class="control-head" for="transient"><span>Transient</span><span id="transientValue" class="value">0.85</span></label><input id="transient" type="range" min="0" max="1.2" step="0.01" value="0.85"></div>
+      <div class="control"><label class="control-head" for="waveSmoothness"><span>Smoothness</span><span id="waveSmoothnessValue" class="value">0.10</span></label><input id="waveSmoothness" type="range" min="0" max="1" step="0.01" value="0.1"></div>
+      <div class="control"><label class="control-head" for="waveThickness"><span>Thickness</span><span id="waveThicknessValue" class="value">1.6</span></label><input id="waveThickness" type="range" min="0" max="8" step="0.1" value="1.6"></div>
+      <div class="control"><label class="control-head" for="waveGlow"><span>Glow</span><span id="waveGlowValue" class="value">0.14</span></label><input id="waveGlow" type="range" min="0" max="1" step="0.01" value="0.14"></div>
+      <button id="resetTraceBtn" class="action glass" type="button">Reset trace defaults</button>
+      <p class="hint">The bright dot draws each trace as its history scrolls behind it.</p>
+    </section>
+    <section class="section">
+      <div class="section-title">Energy ribbons</div>
+      <div class="control"><label class="control-head" for="energyGain"><span>Energy intensity</span><span id="energyGainValue" class="value">1</span></label><input id="energyGain" type="range" min="0.5" max="3" step="0.05" value="1"></div>
+    </section>
+    <section class="section">
+      <div class="section-title">Frequency bands</div>
+      <div class="band-ranges">
+        <span>Band</span><span>Minimum Hz</span><span>Maximum Hz</span>
+        <span>Low</span><input id="kickMin" class="frequency-input" aria-label="Low minimum frequency" type="number" min="20" max="21999" step="1" value="40"><input id="kickMax" class="frequency-input" aria-label="Low maximum frequency" type="number" min="21" max="22000" step="1" value="120">
+        <span>Mid</span><input id="snareMin" class="frequency-input" aria-label="Mid minimum frequency" type="number" min="20" max="21999" step="1" value="180"><input id="snareMax" class="frequency-input" aria-label="Mid maximum frequency" type="number" min="21" max="22000" step="1" value="1200">
+        <span>High</span><input id="hatsMin" class="frequency-input" aria-label="High minimum frequency" type="number" min="20" max="21999" step="1" value="6000"><input id="hatsMax" class="frequency-input" aria-label="High maximum frequency" type="number" min="21" max="22000" step="1" value="14000">
+      </div>
+      <label class="color-row" for="fftSize"><span>FFT size</span><select id="fftSize"><option value="1024">1,024</option><option value="2048">2,048</option><option value="4096">4,096</option><option value="8192" selected>8,192</option></select></label>
+      <div class="control"><label class="control-head" for="smoothing"><span>FFT smoothing</span><span id="smoothingValue" class="value">0.20</span></label><input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.2"></div>
+      <div class="band-actions"><button id="applyBandsBtn" class="action glass" type="button">Apply bands</button><button id="resetBandsBtn" class="action glass" type="button">Reset bands</button></div>
+      <p id="bandStatus" class="hint" role="status" aria-live="polite">Cardiogram defaults · applied to both charts.</p>
+      <p class="hint">Bands may overlap.</p>
+    </section>
+    <section class="section">
+      <div class="section-title">Appearance</div>
+      <div class="control"><label class="control-head" for="gridOpacity"><span>Guide opacity</span><span id="gridOpacityValue" class="value">0.24</span></label><input id="gridOpacity" type="range" min="0" max="0.5" step="0.01" value="0.24"></div>
+      <label class="toggle-row" for="labels"><span>Show labels</span><input id="labels" type="checkbox" checked></label>
+      <label class="toggle-row" for="headers"><span>Show headers</span><input id="headers" type="checkbox" checked></label>
+      <label class="toggle-row" for="sectionNumbers"><span>Show section numbers (01, 02, 03)</span><input id="sectionNumbers" type="checkbox" checked></label>
+      <label class="color-row" for="colorPreset"><span>Colour preset</span><select id="colorPreset"><option value="atlas">Atlas</option><option value="cardiogram">Cardiogram</option><option value="ocean">Ocean</option><option value="ember">Ember</option><option value="orchid">Orchid</option><option value="custom" disabled>Custom</option></select></label>
+      <label class="color-row" for="colorLow"><span>Low band</span><input id="colorLow" type="color" value="#68c8bd"></label>
+      <label class="color-row" for="colorMid"><span>Mid band</span><input id="colorMid" type="color" value="#e3ad73"></label>
+      <label class="color-row" for="colorHigh"><span>High band</span><input id="colorHigh" type="color" value="#aaa3d7"></label>
+      <label class="color-row" for="colorText"><span>Labels</span><input id="colorText" type="color" value="#eee9df"></label>
+      <label class="color-row" for="colorGuides"><span>Guides</span><input id="colorGuides" type="color" value="#8f999a"></label>
+      <button id="resetColorsBtn" class="action glass" type="button">Reset colours</button>
+    </section>
+    <section class="section">
+      <div class="section-title">Playback position</div>
+      <div class="seek-entry"><label for="seekSeconds">Seconds</label><input id="seekSeconds" class="frequency-input" type="number" min="0" step="0.1" value="0"><button id="seekBtn" class="action glass">Seek</button></div>
+    </section>
+    <section class="section setlist-section">
+      <label class="section-title" for="setlistInput">Setlist / track starts</label>
+      <textarea id="setlistInput" rows="5" spellcheck="false" aria-describedby="setlistHint setlistStatus" placeholder="00:00 Opening track&#10;04:32 Next track"></textarea>
+      <p id="setlistHint" class="hint">One track per line: MM:SS or HH:MM:SS, then the title. Markers belong to this audio file.</p>
+      <p id="setlistStatus" class="hint" role="status" aria-live="polite">Paste a setlist to mark track starts.</p>
+    </section>
+    <section class="section quality-details">
+      <div class="section-title">Composition &amp; export</div>
+      <p>16:9 · 1920 × 1080 · 60 fps<br>Bottom 25% left clear for your titles.<br>Clean view hides the playback controls.</p>
+      <p class="hint">Space · play/pause<br>R · replay &nbsp; M · mute &nbsp; H · clean view<br>Esc · show settings</p>
+      <a href="chart-studies.html" class="study-link">View the chart studies ↗</a>
+    </section>
+  </aside>
+  <nav id="actions" aria-label="Playback and export">
+    <button id="playPauseBtn" class="action glass" disabled title="Play">▶ <span class="action-label">Play</span></button>
+    <button id="replayBtn" class="action glass" disabled title="Replay">↺ <span class="action-label">Replay</span></button>
+    <button id="unloadBtn" class="action glass" disabled title="Unload">⊘ <span class="action-label">Unload</span></button>
+    <button id="muteBtn" class="action glass" title="Mute audio">♪ <span class="action-label">Mute</span></button>
+    <button id="recordBtn" class="action glass" disabled><span class="record-dot"></span><span class="action-label">Record</span></button>
+    <button id="exportBtn" class="action glass" disabled>↓ <span class="action-label">Export</span></button>
+    <button id="cleanBtn" class="action glass" title="Hide controls (H)">◩ <span class="action-label">Clean view</span></button>
+    <button id="fullscreenBtn" class="action glass" title="Fullscreen" aria-label="Fullscreen">⛶</button>
+  </nav>
+  <div id="timeline" class="glass"><span id="currentTime">0:00</span><input id="seek" aria-label="Track position" type="range" min="0" max="1000" step="1" value="0" disabled><span id="durationText">0:00</span></div>
+  <div id="readout" class="glass" role="status"><span id="statusLight"></span><span id="statusText">Choose an audio file or load the reference track</span><span id="fps">— fps</span></div>
+  <div id="exportOverlay"><div class="export-card glass"><div id="exportStatus">Rendering Pulse Atlas…</div><div class="progress"><div id="exportProgressBar"></div></div><div id="exportPercent">0%</div><button id="exportCancelBtn" class="action glass">Cancel export</button></div></div>
+  <div id="fatal" role="alert"></div>
+  <noscript>This visualiser requires JavaScript.</noscript>
+  <script src="js/recorder.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
+  <script src="js/offline-exporter.js"></script>
+  <script type="module" src="js/pulse/pulse-app.js"></script>
+</body>
+</html>

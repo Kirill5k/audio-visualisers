@@ -390,6 +390,7 @@ export function createStereoMeters(scene, rect, resolution, options = {}) {
 }
 
 export function createWaveformMinimap(scene, rect, options = {}) {
+  const reflectedBars = options.style === 'reflected-bars';
   const group = new THREE.Group();
   group.renderOrder = 20;
   scene.add(group);
@@ -405,10 +406,12 @@ export function createWaveformMinimap(scene, rect, options = {}) {
     uBackground: { value: new THREE.Color(options.backgroundColor || '#000000') },
     uBarCount: { value: 0 },
     uBarFill: { value: 1 },
+    uEnvelopeScale: { value: 1 },
   };
 
   const material = new THREE.ShaderMaterial({
     uniforms,
+    defines: reflectedBars ? { REFLECTED_BARS: 1 } : {},
     transparent: false,
     depthWrite: false,
     depthTest: false,
@@ -430,6 +433,7 @@ export function createWaveformMinimap(scene, rect, options = {}) {
       uniform vec3 uBackground;
       uniform float uBarCount;
       uniform float uBarFill;
+      uniform float uEnvelopeScale;
       varying vec2 vUv;
 
       void main() {
@@ -445,8 +449,19 @@ export function createWaveformMinimap(scene, rect, options = {}) {
         float peak = clamp(texture2D(uPeaks, vec2(sampleX, 0.5)).r, 0.0, 1.0);
         float rms = clamp(texture2D(uEnergyPeaks, vec2(sampleX, 0.5)).r, 0.0, 1.0);
         float envelope = mix(peak, pow(rms, 0.85), uHasEnergy);
-        float edgeDistance = envelope * 0.44 - abs(vUv.y - 0.5);
         float aaY = max(fwidth(vUv.y) * 0.65, 0.00001);
+        #ifdef REFLECTED_BARS
+        // A tall body above the baseline with a shorter, dimmer reflection.
+        float upper = step(0.27, vUv.y);
+        float distanceFromBaseline = abs(vUv.y - 0.27);
+        float barHeight = clamp(envelope * uEnvelopeScale, 0.0, 1.0) * mix(0.235, 0.70, upper);
+        float coverage = smoothstep(-aaY, aaY, barHeight - distanceFromBaseline)
+          * step(0.000001, envelope) * barCoverage;
+        // A hairline seam separates the two halves without extra decoration.
+        coverage *= smoothstep(0.0, fwidth(vUv.y) * 0.7, distanceFromBaseline);
+        coverage *= mix(0.28, 1.0, upper);
+        #else
+        float edgeDistance = envelope * 0.44 - abs(vUv.y - 0.5);
         float coverage = smoothstep(-aaY, aaY, edgeDistance) * step(0.000001, envelope);
         // Energy supplies the solid body; true peaks remain as a fine outline.
         // Peak transients stay visible without filling the track into a brick.
@@ -455,6 +470,7 @@ export function createWaveformMinimap(scene, rect, options = {}) {
         float peakOutline = (1.0 - smoothstep(halfStroke - aaY, halfStroke + aaY, peakEdge))
           * step(0.000001, peak) * uHasEnergy * 0.3;
         coverage = max(coverage, peakOutline) * barCoverage;
+        #endif
         float played = step(vUv.x, uProgress);
         vec3 color = mix(uColor, uPlayedColor, played);
         gl_FragColor = vec4(mix(uBackground, color, coverage), 1.0);
@@ -477,6 +493,8 @@ export function createWaveformMinimap(scene, rect, options = {}) {
   });
   const playhead = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 1), playheadMat);
   playhead.renderOrder = 24;
+  // In the reflected style the colour boundary itself is the playhead.
+  playhead.visible = !reflectedBars;
   group.add(playhead);
 
   const markerGroup = new THREE.Group();
@@ -532,8 +550,16 @@ export function createWaveformMinimap(scene, rect, options = {}) {
     }
     peaksTexture?.dispose();
     energyTexture?.dispose();
-    peaksTexture = makeTexture(aggregate(sourcePeaks));
-    energyTexture = makeTexture(aggregate(sourceEnergy, true));
+    const displayedPeaks = aggregate(sourcePeaks);
+    const displayedEnergy = aggregate(sourceEnergy, true);
+    peaksTexture = makeTexture(displayedPeaks);
+    energyTexture = makeTexture(displayedEnergy);
+    if (reflectedBars) {
+      let maximum = 0;
+      const envelope = sourceEnergy ? displayedEnergy : displayedPeaks;
+      for (const value of envelope) maximum = Math.max(maximum, sourceEnergy ? Math.pow(value, 0.85) : value);
+      uniforms.uEnvelopeScale.value = maximum > 0 ? 1 / maximum : 1;
+    }
     uniforms.uPeaks.value = peaksTexture;
     uniforms.uEnergyPeaks.value = energyTexture;
     uniforms.uHasEnergy.value = sourceEnergy ? 1 : 0;

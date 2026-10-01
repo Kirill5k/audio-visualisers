@@ -13,11 +13,13 @@ const FPS = 60;
 export async function createSpectralPlayer({
   name, slug, settings, createScene, historySeconds = 24, historyPaddingFrames = 0,
   previewAspect = null, previewMinWidth = 0, previewMinHeight = 0, audioSampleRate = 48000,
-  controls = [], quality = {}, motionAnalysis = true, extend = () => ({}),
+  controls = [], quality = {}, motionAnalysis = true, analysisFactory = null, extend = () => ({}),
 }) {
   const HISTORY_FRAMES = Math.round(historySeconds * FPS) + historyPaddingFrames;
   const audio = createAudioPlayback({ fftSize: 32768, maxFftSize: 32768, smoothing: 0, sampleRate: audioSampleRate });
-  const createAnalysis = () => createSignalAnalysis({ cacheFrames: 1500, prefetchFrames: 30, motionAnalysis });
+  const createAnalysis = () => analysisFactory
+    ? analysisFactory()
+    : createSignalAnalysis({ cacheFrames: 1500, prefetchFrames: 30, motionAnalysis });
   let analysis = createAnalysis();
   const sampleFrame = createSignalFrame(16384);
   const stage = $('stage');
@@ -166,7 +168,7 @@ export async function createSpectralPlayer({
   // remains shared by Atlas and Terrain. Analysis is a getter because load failures
   // and unload replace the worker owner.
   const context = {
-    settings, scene, audio, bind,
+    settings, scene, audio, bind, reanalyze,
     get analysis() { return analysis; },
     get locked() { return Boolean(busy || recorder.isRecording || capture.isExporting); },
     invalidate() { dirty = true; },
@@ -460,6 +462,51 @@ export async function createSpectralPlayer({
       updateButtons();
     }
     return loadTrack(file);
+  }
+
+  // Rebuild a configurable analyser from the already decoded track. Keep the
+  // previous analysis until its replacement succeeds, and preserve transport.
+  async function reanalyze() {
+    if (!audio.hasAudio || busy || recorder.isRecording) return false;
+    const token = ++generation;
+    const wasPlaying = audio.isPlaying;
+    const previous = analysis;
+    let replacement = null;
+    busy = 'analysing';
+    updateButtons();
+    await audio.pause();
+    const position = finished ? audio.duration : audio.getPlaybackPosition();
+    try {
+      replacement = createAnalysis();
+      await replacement.load(audio.buffer, { onProgress: fraction => {
+        if (token === generation) setStatus(`Updating audio analysis · ${Math.round(fraction * 100)}%`, false);
+      } });
+      if (token !== generation || disposed) { replacement.dispose(); return false; }
+      analysis = replacement;
+      scene.setSampleRate?.(analysis.sampleRate);
+      scene.setOverview?.(analysis.peaks, analysis.rmsPeaks);
+      await rebuildHistory(position, token);
+      previous.dispose();
+      extension.onAnalysisChanged?.();
+      return true;
+    } catch (error) {
+      replacement?.dispose();
+      analysis = previous;
+      if (token === generation && !disposed) await rebuildHistory(position, token);
+      throw error;
+    } finally {
+      if (token === generation && !disposed) {
+        audio.seek(position);
+        if (wasPlaying && !finished) {
+          await audio.resumeContext();
+          audio.play({ fromStart: false, onEnded: ended });
+        }
+        busy = '';
+        dirty = true;
+        updateButtons();
+        setStatus((wasPlaying ? '' : 'Paused · ') + audio.fileName, wasPlaying);
+      }
+    }
   }
 
   function unload() {
