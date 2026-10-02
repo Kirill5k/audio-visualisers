@@ -3,7 +3,7 @@ import { createPulseAnalysis } from './pulse-analysis.js';
 import { createPulseAtlasScene } from './pulse-scene.js';
 import { parseSetlist } from '../atlas/signal-atlas-setlist.js';
 import { PULSE_DEFAULT_BANDS, PULSE_FFT_SIZE, PULSE_SMOOTHING, validatePulseAnalysisOptions } from './pulse-analysis-core.js';
-import { PULSE_COLOR_PRESETS, PULSE_TRACE_DEFAULTS, matchingPulsePreset } from './pulse-settings.js';
+import { PULSE_COLOR_PRESETS, PULSE_TRACE_DEFAULTS, PULSE_CHARTS, matchingPulsePreset } from './pulse-settings.js';
 
 const $ = id => document.getElementById(id);
 const COLORS = PULSE_COLOR_PRESETS.atlas.colors;
@@ -11,6 +11,7 @@ const settings = {
   ...COLORS, ...PULSE_TRACE_DEFAULTS,
   bands: PULSE_DEFAULT_BANDS.map(band => ({ ...band })), fftSize: PULSE_FFT_SIZE, smoothing: PULSE_SMOOTHING,
   historySeconds: 15, energyGain: 1, gridOpacity: .24,
+  leftChart: 'rhythm-lanes', rightChart: 'energy-ribbons',
   labels: true, headers: true, sectionNumbers: true, setlist: [],
 };
 
@@ -48,7 +49,7 @@ window.pulseAtlas = await createSpectralPlayer({
       $('smoothingValue').textContent = settings.smoothing.toFixed(2);
       for (const id of analysisIds) $(id).removeAttribute('aria-invalid');
       $('bandStatus').dataset.invalid = 'false';
-      $('bandStatus').textContent = 'Applied to both charts · Low, Mid and High frequency ranges.';
+      $('bandStatus').textContent = 'Applied to rhythm lanes and energy ribbons · Low, Mid and High ranges.';
       player.invalidate();
     }
 
@@ -67,7 +68,7 @@ window.pulseAtlas = await createSpectralPlayer({
       const changed = JSON.stringify(previous) !== JSON.stringify(next);
       Object.assign(settings, next);
       $('bandStatus').dataset.invalid = 'false';
-      $('bandStatus').textContent = audio.hasAudio && changed ? 'Updating both charts…' : 'Frequency bands applied.';
+      $('bandStatus').textContent = audio.hasAudio && changed ? 'Updating audio analysis…' : 'Frequency bands applied.';
       try {
         if (audio.hasAudio && changed) await player.reanalyze();
         syncAnalysisControls();
@@ -113,6 +114,16 @@ window.pulseAtlas = await createSpectralPlayer({
       player.invalidate();
     }
 
+    for (const key of ['leftChart', 'rightChart']) bind(key, 'change', event => {
+      if (player.locked || !Object.hasOwn(PULSE_CHARTS, event.target.value)) return;
+      const other = key === 'leftChart' ? 'rightChart' : 'leftChart';
+      if (settings[other] === event.target.value) settings[other] = settings[key];
+      settings[key] = event.target.value;
+      $('leftChart').value = settings.leftChart;
+      $('rightChart').value = settings.rightChart;
+      $('chartStatus').textContent = `${PULSE_CHARTS[settings.leftChart]} · ${PULSE_CHARTS[settings.rightChart]}`;
+      player.invalidate();
+    });
     bind('setlistInput', 'input', () => { if (!player.locked) updateSetlist(); });
     bind('applyBandsBtn', 'click', () => applyAnalysisSettings(readAnalysisDraft()));
     bind('resetBandsBtn', 'click', () => applyAnalysisSettings({ bands: PULSE_DEFAULT_BANDS, fftSize: PULSE_FFT_SIZE, smoothing: PULSE_SMOOTHING }));
@@ -121,7 +132,7 @@ window.pulseAtlas = await createSpectralPlayer({
         if (player.locked) return;
         $('smoothingValue').textContent = Number($('smoothing').value).toFixed(2);
         $('bandStatus').dataset.invalid = 'false';
-        $('bandStatus').textContent = 'Changes ready · choose Apply bands to update both charts.';
+        $('bandStatus').textContent = 'Changes ready · choose Apply bands to update the analysis.';
       });
       bind(id, 'keydown', event => {
         if (event.key !== 'Enter') return;

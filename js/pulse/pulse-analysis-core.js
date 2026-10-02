@@ -5,7 +5,8 @@ export { ANALYSIS_FPS };
 export const PULSE_FFT_SIZE = 8192;
 export const PULSE_FFT_SIZES = Object.freeze([1024, 2048, 4096, 8192]);
 export const PULSE_SMOOTHING = .2;
-export const PULSE_FEATURE_STRIDE = 12;
+export const PULSE_FEATURE_STRIDE = 15;
+export const PULSE_SILENCE_DB = -96;
 export const PULSE_DEFAULT_BANDS = Object.freeze([
   Object.freeze({ min: 40, max: 120 }),
   Object.freeze({ min: 180, max: 1200 }),
@@ -56,7 +57,12 @@ function validateChannels(channels, sampleRate) {
  * Cardiogram maps smoothed FFT magnitudes to frequency bytes at -100 dB and
  * an FFT-adjusted ceiling, averages bytes within each band, then applies 1.18
  * compression. Followers are precomputed so seeks/export share the live trace.
- * Display gain and transient subtraction remain editable in the scene. */
+ * Display gain and transient subtraction remain editable in the scene.
+ *
+ * The final three values are a full-audible-spectrum power centroid (Hz),
+ * channel-averaged unwindowed PCM RMS over the trailing 50 ms (dBFS), and sparse
+ * onset strengths (0–1). A peak is confirmed one frame after its spectral rise;
+ * no future samples, visible-window normalization or seek state are involved. */
 export function createPulseFeatureBuilder(channels, sampleRate, options = {}) {
   validateChannels(channels, sampleRate);
   const config = validatePulseAnalysisOptions(options, sampleRate);
@@ -65,6 +71,7 @@ export function createPulseFeatureBuilder(channels, sampleRate, options = {}) {
   const duration = length / sampleRate;
   const frames = signalFrameIndex(duration, duration) + 1;
   const data = new Float32Array(frames * PULSE_FEATURE_STRIDE);
+  for (let frame = 0; frame < frames; frame++) data[frame * PULSE_FEATURE_STRIDE + 13] = PULSE_SILENCE_DB;
   const fft = createFFT(fftSize);
   const bins = fftSize / 2;
   const binMasks = new Uint8Array(bins);
@@ -77,6 +84,14 @@ export function createPulseFeatureBuilder(channels, sampleRate, options = {}) {
   const byteSums = new Float64Array(3);
   const fast = new Float64Array(3);
   const slow = new Float64Array(3);
+  const audibleStart = Math.max(1, Math.ceil(20 * fftSize / sampleRate));
+  const audibleEnd = Math.min(bins - 1, Math.floor(Math.min(20000, sampleRate / 2) * fftSize / sampleRate));
+  const rmsWindow = Math.max(1, Math.round(sampleRate * .05));
+  const onsetSeparation = Math.ceil(.12 * ANALYSIS_FPS);
+  const noveltyRate = 1 - Math.exp(-1 / (ANALYSIS_FPS * .6));
+  let noveltyMean = 0, previousNovelty = 0, olderNovelty = 0;
+  let previousThreshold = Infinity, previousAudible = false, lastOnset = -onsetSeparation;
+  let lastOnsetTime = -Infinity;
   const binOf = frequency => Math.max(0, Math.min(bins - 1, Math.round(frequency * fftSize / sampleRate)));
   ranges.forEach((range, band) => {
     const low = binOf(range.min), high = Math.max(low, binOf(range.max));
@@ -95,21 +110,35 @@ export function createPulseFeatureBuilder(channels, sampleRate, options = {}) {
     for (; cursor < target; cursor++) {
       if (cursor === 0) continue;
       const endSample = Math.min(length, Math.round(cursor * sampleRate / ANALYSIS_FPS));
+      const beginSample = Math.max(0, endSample - rmsWindow);
+      let squareSum = 0;
       power.fill(0);
       for (const channel of channels) {
+        for (let sample = beginSample; sample < endSample; sample++) squareSum += channel[sample] ** 2;
         const magnitudes = fft.magnitudes(channel, endSample);
         for (let bin = 0; bin < bins; bin++) {
-          if (binMasks[bin]) power[bin] += magnitudes[bin] * magnitudes[bin];
+          power[bin] += magnitudes[bin] * magnitudes[bin];
         }
       }
+      const rmsPower = squareSum / Math.max(1, (endSample - beginSample) * channels.length);
+      const rmsDb = Math.max(PULSE_SILENCE_DB, 10 * Math.log10(Math.max(1e-20, rmsPower)));
+      let totalPower = 0, weightedFrequency = 0, totalMagnitude = 0, spectralFlux = 0;
       bands.fill(0); flux.fill(0); byteSums.fill(0);
       for (let bin = 0; bin < bins; bin++) {
         const mask = binMasks[bin];
-        if (!mask) continue;
+        const audible = bin >= audibleStart && bin <= audibleEnd;
+        if (!mask && !audible) continue;
         const averagedPower = power[bin] / channels.length;
         const magnitude = Math.sqrt(averagedPower);
         const change = Math.max(0, magnitude - previous[bin]);
         previous[bin] = magnitude;
+        if (audible) {
+          totalPower += averagedPower;
+          weightedFrequency += averagedPower * bin * sampleRate / fftSize;
+          totalMagnitude += magnitude;
+          spectralFlux += change;
+        }
+        if (!mask) continue;
         smoothedMagnitude[bin] = smoothing * smoothedMagnitude[bin] + (1 - smoothing) * magnitude * analyserScale;
         const db = 20 * Math.log10(Math.max(1e-20, smoothedMagnitude[bin]));
         const byte = Math.floor(Math.max(0, Math.min(255, (db + 100) * byteScale)));
@@ -130,6 +159,28 @@ export function createPulseFeatureBuilder(channels, sampleRate, options = {}) {
       data.set(flux, base + 3);
       data.set(fast, base + 6);
       data.set(slow, base + 9);
+      data[base + 12] = totalPower > 1e-16 ? weightedFrequency / totalPower : 0;
+      data[base + 13] = rmsDb;
+
+      // Relative positive flux is invariant to gain. The absolute silence gate
+      // suppresses numerical leakage, while the adaptive floor ignores ordinary
+      // sustained-tone motion and slow fades. Confirm the preceding peak now,
+      // rather than writing a future-informed event back into an earlier frame.
+      const audible = rmsDb > -72;
+      const novelty = audible && totalMagnitude > 1e-8 ? Math.min(1, spectralFlux / totalMagnitude) : 0;
+      const threshold = Math.max(.08, noveltyMean * 1.6 + .02);
+      const frameTime = Math.min(duration, cursor / ANALYSIS_FPS);
+      if (previousAudible && previousNovelty > previousThreshold && previousNovelty > olderNovelty
+        && previousNovelty >= novelty && cursor - lastOnset >= onsetSeparation && frameTime - lastOnsetTime >= .12) {
+        data[base + 14] = previousNovelty;
+        lastOnset = cursor;
+        lastOnsetTime = frameTime;
+      }
+      noveltyMean += (novelty - noveltyMean) * noveltyRate;
+      olderNovelty = previousNovelty;
+      previousNovelty = novelty;
+      previousThreshold = threshold;
+      previousAudible = audible;
     }
     return cursor / frames;
   }
@@ -142,7 +193,8 @@ export function createPulseFeatureBuilder(channels, sampleRate, options = {}) {
 export function readPulseFrame(timeline, frameIndex) {
   if (!Number.isFinite(frameIndex)) throw new Error('Analysis frame must be finite');
   const frame = Math.floor(frameIndex);
-  const row = { frame, time: Math.min(timeline.duration, frame / ANALYSIS_FPS), bands: [0, 0, 0], flux: [0, 0, 0], fast: [0, 0, 0], slow: [0, 0, 0] };
+  const row = { frame, time: Math.min(timeline.duration, frame / ANALYSIS_FPS), bands: [0, 0, 0], flux: [0, 0, 0], fast: [0, 0, 0], slow: [0, 0, 0],
+    brightness: 0, rmsDb: PULSE_SILENCE_DB, onset: 0 };
   if (frame < 0 || frame >= timeline.frames) return row;
   const base = frame * PULSE_FEATURE_STRIDE;
   for (let band = 0; band < 3; band++) {
@@ -151,6 +203,9 @@ export function readPulseFrame(timeline, frameIndex) {
     row.fast[band] = timeline.data[base + band + 6];
     row.slow[band] = timeline.data[base + band + 9];
   }
+  row.brightness = timeline.data[base + 12];
+  row.rmsDb = timeline.data[base + 13];
+  row.onset = timeline.data[base + 14];
   return row;
 }
 

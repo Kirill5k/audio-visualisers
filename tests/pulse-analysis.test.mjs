@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Worker as NodeWorker } from 'node:worker_threads';
-import { createPulseFeatureBuilder, createPulseOverviewBuilder, readPulseFrame, PULSE_FFT_SIZE, PULSE_SMOOTHING, PULSE_DEFAULT_BANDS, validatePulseAnalysisOptions } from '../js/pulse/pulse-analysis-core.js';
+import { createHash } from 'node:crypto';
+import { createPulseFeatureBuilder, createPulseOverviewBuilder, readPulseFrame, PULSE_FFT_SIZE, PULSE_SMOOTHING, PULSE_DEFAULT_BANDS, PULSE_FEATURE_STRIDE, validatePulseAnalysisOptions } from '../js/pulse/pulse-analysis-core.js';
 import { createPulseAnalysis, createSignalFrame } from '../js/pulse/pulse-analysis.js';
 
 const rate = 32000;
@@ -20,6 +21,95 @@ function overview(channels, overviewBins) {
   while (!builder.done) builder.step(7);
   return builder.summary;
 }
+
+test('adding timbre and activity metrics preserves all prior band features bit-for-bit', () => {
+  const pcm = Float32Array.from({ length: rate }, (_, i) =>
+    (.3 * Math.sin(2 * Math.PI * 100 * i / rate) + .2 * Math.sin(2 * Math.PI * 1000 * i / rate)
+      + .1 * Math.sin(2 * Math.PI * 8000 * i / rate)) * (i < rate / 3 ? .5 : 1));
+  const result = timeline([pcm], 7);
+  const priorFeatures = result.data.filter((_, i) => i % PULSE_FEATURE_STRIDE < 12);
+  assert.equal(createHash('sha256').update(new Uint8Array(priorFeatures.buffer)).digest('hex'),
+    'af65dd907a923c4bbedd396fed6a2c56dc16f79796b2f9ccffc63934ad884ca8');
+});
+
+test('timbre measures full-spectrum power centroid and calibrated PCM RMS independently of band controls', () => {
+  for (const frequency of [100, 1000, 4000, 8000]) {
+    const pcm = tone(frequency);
+    const row = readPulseFrame(timeline([pcm]), 60);
+    assert.ok(Math.abs(row.brightness - frequency) < 1, `${frequency} Hz centroid: ${row.brightness}`);
+    assert.ok(Math.abs(row.rmsDb - 20 * Math.log10(.5 / Math.sqrt(2))) < .12, 'sine RMS is amplitude / sqrt(2)');
+    const custom = readPulseFrame(timeline([pcm], 11, { bands: Array.from({ length: 3 }, () => ({ min: 20, max: 40 })) }), 60);
+    assert.equal(custom.brightness, row.brightness, 'centroid includes frequencies excluded by editable bands');
+    assert.equal(custom.rmsDb, row.rmsDb);
+    const half = readPulseFrame(timeline([tone(frequency, rate, .25)]), 60);
+    assert.ok(Math.abs(row.rmsDb - half.rmsDb - 20 * Math.log10(2)) < 1e-5);
+    assert.equal(half.brightness, row.brightness);
+  }
+  const a = tone(1000), b = tone(4000, rate, .25);
+  const stereo = readPulseFrame(timeline([a, b]), 60);
+  assert.ok(Math.abs(stereo.brightness - 1600) < 1, 'stereo powers average before the centroid');
+  assert.ok(Math.abs(stereo.rmsDb - 10 * Math.log10((.5 ** 2 + .25 ** 2) / 4)) < .03);
+});
+
+test('silent and out-of-track timbre/activity rows have finite floors and no attacks', () => {
+  const result = timeline([new Float32Array(rate)]);
+  for (let frame = -1; frame <= result.frames; frame++) {
+    const row = readPulseFrame(result, frame);
+    assert.equal(row.brightness, 0);
+    assert.equal(row.rmsDb, -96);
+    assert.equal(row.onset, 0);
+  }
+});
+
+test('activity detects isolated attacks with causal timestamps and at least 120 ms separation', () => {
+  const starts = [.3, .8, 1.3, 1.8];
+  const pcm = Float32Array.from({ length: rate * 3 }, (_, i) => {
+    const time = i / rate;
+    const start = starts.find(start => time >= start && time < start + .1);
+    return start === undefined ? 0 : .5 * Math.sin(2 * Math.PI * 1000 * time) * Math.exp(-(time - start) * 30);
+  });
+  const result = timeline([pcm], 7);
+  const events = Array.from({ length: result.frames }, (_, frame) => readPulseFrame(result, frame)).filter(row => row.onset > 0);
+  assert.equal(events.length, starts.length, 'each separated strong burst produces one event');
+  events.forEach((event, i) => {
+    assert.ok(event.time >= starts[i] && event.time <= starts[i] + .16, 'events use only samples already heard');
+    assert.ok(event.onset <= 1 && Number.isFinite(event.onset));
+    if (i) assert.ok(event.time - events[i - 1].time >= .12);
+  });
+  const rapid = Float32Array.from({ length: rate * 2 }, (_, i) => {
+    const time = i / rate, phase = time % .05;
+    return phase < .02 ? .5 * Math.sin(2 * Math.PI * 2000 * time) : 0;
+  });
+  const rapidResult = timeline([rapid]);
+  const rapidEvents = Array.from({ length: rapidResult.frames }, (_, frame) => readPulseFrame(rapidResult, frame)).filter(row => row.onset > 0);
+  assert.ok(rapidEvents.length > 0);
+  rapidEvents.slice(1).forEach((event, i) => assert.ok(event.time - rapidEvents[i].time >= .12));
+  const quiet = timeline([pcm.map(value => value * .02)]);
+  const quietEvents = Array.from({ length: quiet.frames }, (_, frame) => readPulseFrame(quiet, frame)).filter(row => row.onset > 0);
+  assert.deepEqual(quietEvents.map(row => row.frame), events.map(row => row.frame), 'relative detector works on quiet audible attacks');
+});
+
+test('activity does not invent attacks on sustained tones or gradual gain changes', () => {
+  const steady = timeline([tone(1000, rate * 3)]);
+  for (let frame = 30; frame < steady.frames; frame++) assert.equal(readPulseFrame(steady, frame).onset, 0);
+  const ramp = Float32Array.from({ length: rate * 3 }, (_, i) =>
+    (.1 + .3 * i / (rate * 3)) * Math.sin(2 * Math.PI * 1000 * i / rate));
+  const result = timeline([ramp]);
+  for (let frame = 30; frame < result.frames; frame++) assert.equal(readPulseFrame(result, frame).onset, 0);
+  const tail = readPulseFrame(result, 140);
+  readPulseFrame(result, 0);
+  assert.deepEqual(readPulseFrame(result, 140), tail, 'arbitrary seeks retain event decisions');
+  assert.deepEqual(timeline([ramp], 1).data, result.data, 'chunk boundaries cannot affect detector history');
+});
+
+test('timbre and attack decisions never include samples after the requested frame', () => {
+  const pcm = tone(1000, rate * 2);
+  const changedFuture = pcm.slice();
+  changedFuture.set(tone(8000, rate, .9), rate);
+  const original = timeline([pcm]), changed = timeline([changedFuture]);
+  for (let frame = 0; frame <= 60; frame++) assert.deepEqual(readPulseFrame(original, frame), readPulseFrame(changed, frame));
+  assert.notEqual(readPulseFrame(original, 100).brightness, readPulseFrame(changed, 100).brightness);
+});
 
 
 test('Cardiogram defaults and independent overlapping bands validate before analysis', () => {
@@ -60,7 +150,7 @@ test('Cardiogram followers use its calibrated byte energy and survive random see
   assert.ok(Math.abs(first.fast[0] / .55 - first.slow[0] / .055) < 1e-7, 'followers use the same energy with different coefficients');
   const smoothing = timeline([tone(500, rate, .001)], 9, { ...options, smoothing: .95 });
   assert.ok(readPulseFrame(smoothing, 1).fast[0] < first.fast[0], 'FFT magnitude smoothing softens the attack');
-  assert.deepEqual(smoothing.data.filter((_, i) => i % 12 < 6), result.data.filter((_, i) => i % 12 < 6), 'FFT smoothing does not alter raw powers or flux');
+  assert.deepEqual(smoothing.data.filter((_, i) => i % PULSE_FEATURE_STRIDE < 6), result.data.filter((_, i) => i % PULSE_FEATURE_STRIDE < 6), 'FFT smoothing does not alter raw powers or flux');
   readPulseFrame(result, 3);
   assert.deepEqual(readPulseFrame(result, 60), last);
   last.fast[0] = 999;
@@ -80,7 +170,8 @@ test('silence and track start stay zero; FFT features never see future samples',
     assert.deepEqual(readPulseFrame(result, frame).flux, [0, 0, 0]);
   }
   assert.ok(readPulseFrame(result, 70).bands[1] > .1);
-  assert.ok(result.data.every(value => Number.isFinite(value) && value >= 0));
+  assert.ok(result.data.every(value => Number.isFinite(value)));
+  assert.ok(result.data.filter((_, i) => i % PULSE_FEATURE_STRIDE !== 13).every(value => value >= 0));
 });
 
 test('channel power preserves inverted stereo, right-only and multichannel recordings', () => {
@@ -117,7 +208,7 @@ test('chunk sizes and seek order cannot change absolute features or introduce a 
   assert.ok(end.flux[1] < 1e-6, 'steady tone has no fabricated onset when seeking into it');
   end.bands[1] = 999;
   assert.notEqual(readPulseFrame(batch, 140).bands[1], 999, 'rows do not expose mutable timeline storage');
-  assert.equal(batch.data.byteLength, batch.frames * 12 * Float32Array.BYTES_PER_ELEMENT);
+  assert.equal(batch.data.byteLength, batch.frames * PULSE_FEATURE_STRIDE * Float32Array.BYTES_PER_ELEMENT);
 });
 
 test('the final partial interval ends at the final sample and overview includes every sample', () => {
@@ -165,7 +256,7 @@ test('worker precomputes compact data, retains PCM and serves deterministic prev
     assert.equal(info.fps, 60);
     assert.equal(info.fftSize, 8192);
     assert.equal(info.frameCount, 121);
-    assert.equal(info.featureBytes, 121 * 12 * 4);
+    assert.equal(info.featureBytes, 121 * PULSE_FEATURE_STRIDE * 4);
     assert.equal(info.workerActive, false, 'worker PCM copies are released after precomputation');
     assert.equal(analysis.buffer, input);
     assert.equal(pcm.byteLength, rate * 2 * 4);

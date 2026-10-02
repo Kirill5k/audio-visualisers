@@ -11,6 +11,20 @@ export const PULSE_TRACE_DEFAULTS = Object.freeze({
   waveSmoothness:.1, waveThickness:1.6, waveGlow:.14, head:.98,
 });
 
+export const PULSE_CHARTS = Object.freeze({
+  'rhythm-lanes': 'Rhythm lanes',
+  'energy-ribbons': 'Energy ribbons',
+  'timbre-trail': 'Timbre trail',
+  'activity-strip': 'Activity strip',
+});
+
+export function selectedPulseCharts(settings) {
+  const left = Object.hasOwn(PULSE_CHARTS, settings.leftChart) ? settings.leftChart : 'rhythm-lanes';
+  const right = Object.hasOwn(PULSE_CHARTS, settings.rightChart) && settings.rightChart !== left
+    ? settings.rightChart : Object.keys(PULSE_CHARTS).find(id => id !== left);
+  return [left, right];
+}
+
 export function matchingPulsePreset(settings) {
   return Object.entries(PULSE_COLOR_PRESETS).find(([, preset]) =>
     Object.entries(preset.colors).every(([key,value]) => String(settings[key]).toLowerCase() === value.toLowerCase()))?.[0] || 'custom';

@@ -13,13 +13,20 @@
   </script>
 </head>
 <body class="spectral-visualiser pulse-atlas">
-  <main id="stage" aria-label="Pulse Atlas: rhythm lanes, energy ribbons and full-track overview"></main>
+  <main id="stage" aria-label="Pulse Atlas: two selectable audio charts and full-track overview"></main>
   <button id="panelToggle" class="glass closed" title="Show settings" aria-label="Show settings">☰</button>
   <aside id="panel" class="glass hidden" aria-label="Visualiser settings">
     <div class="brand"><div><div class="eyebrow">Rhythm / Energy / Motion</div><h1>Pulse Atlas</h1></div></div>
     <label class="file-picker" for="fileInput" tabindex="0">Choose an audio file</label>
     <input id="fileInput" type="file" accept="audio/*">
     <button id="referenceBtn" class="action reference-button">Load reference track</button>
+    <section class="section">
+      <div class="section-title">Charts</div>
+      <label class="color-row" for="leftChart"><span>Left chart</span><select id="leftChart"><option value="rhythm-lanes">Rhythm lanes</option><option value="energy-ribbons">Energy ribbons</option><option value="timbre-trail">Timbre trail</option><option value="activity-strip">Activity strip</option></select></label>
+      <label class="color-row" for="rightChart"><span>Right chart</span><select id="rightChart"><option value="rhythm-lanes">Rhythm lanes</option><option value="energy-ribbons" selected>Energy ribbons</option><option value="timbre-trail">Timbre trail</option><option value="activity-strip">Activity strip</option></select></label>
+      <p class="hint">Two charts at a time. Choosing a chart already shown swaps their positions.</p>
+      <p id="chartStatus" class="hint" role="status" aria-live="polite">Rhythm lanes · Energy ribbons</p>
+    </section>
     <section class="section">
       <div class="section-title">Time window</div>
       <div class="control"><label class="control-head" for="historySeconds"><span>History · both charts</span><span id="historySecondsValue" class="value">15 s</span></label><input id="historySeconds" type="range" min="5" max="60" step="1" value="15" data-suffix=" s"></div>
@@ -53,7 +60,7 @@
       <label class="color-row" for="fftSize"><span>FFT size</span><select id="fftSize"><option value="1024">1,024</option><option value="2048">2,048</option><option value="4096">4,096</option><option value="8192" selected>8,192</option></select></label>
       <div class="control"><label class="control-head" for="smoothing"><span>FFT smoothing</span><span id="smoothingValue" class="value">0.20</span></label><input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.2"></div>
       <div class="band-actions"><button id="applyBandsBtn" class="action glass" type="button">Apply bands</button><button id="resetBandsBtn" class="action glass" type="button">Reset bands</button></div>
-      <p id="bandStatus" class="hint" role="status" aria-live="polite">Cardiogram defaults · applied to both charts.</p>
+      <p id="bandStatus" class="hint" role="status" aria-live="polite">Cardiogram defaults · for rhythm lanes and energy ribbons.</p>
       <p class="hint">Bands may overlap.</p>
     </section>
     <section class="section">
