@@ -7,7 +7,7 @@ export const PULSE_COLOR_PRESETS = Object.freeze({
 });
 
 export const PULSE_TRACE_DEFAULTS = Object.freeze({
-  gain:1.15, height:1.9, baseline:-.9, transient:.85,
+  gain:1.15, height:1.9, baseline:-1.2, transient:.85,
   waveSmoothness:.1, waveThickness:1.6, waveGlow:.14, head:.98,
 });
 

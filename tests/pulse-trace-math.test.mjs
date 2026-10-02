@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCardiogramPath, pulseHistorySeconds } from '../js/pulse/pulse-trace-math.js';
+import { createCardiogramPath, pulseHistorySeconds, pulseTraceSettings } from '../js/pulse/pulse-trace-math.js';
 
 const plot = { x: 100, y: 100, w: 600, h: 300 };
 const rows = (start, end, sample) => new Map(Array.from({ length: end - start + 1 }, (_, index) => {
@@ -30,6 +30,22 @@ test('live tip moves with the newest envelope and never leaves its lane', () => 
     const centre = plot.y + (band + .5) * 100;
     for (const [, y] of path.points) assert.ok(y >= centre - 42 - 1e-8 && y <= centre + 42 + 1e-8);
   }
+});
+
+test('extended baseline range reaches -2 and defaults to -1.2', () => {
+  assert.equal(pulseTraceSettings().baseline, -1.2);
+  assert.equal(pulseTraceSettings({ baseline: -3 }).baseline, -2);
+  assert.equal(pulseTraceSettings({ baseline: 1 }).baseline, .9);
+  const history = rows(0, 900, () => ({ fast: [0, 0, 0], slow: [0, 0, 0] }));
+  for (const baseline of [-1.25, -2]) {
+    const path = createCardiogramPath(history, 15, 0, { baseline }, plot, { latestFrame: 900, columns: 61 });
+    assert.equal(path.config.baseline, baseline);
+    assert.equal(path.baseline, 150 - baseline * 42);
+    assert.ok(path.points.every(([, y]) => y === path.baseline));
+  }
+  const negative = rows(0, 900, () => ({ fast: [0, 0, 0], slow: [1, 1, 1] }));
+  const path = createCardiogramPath(negative, 15, 0, { baseline: -2 }, plot, { latestFrame: 900, columns: 61 });
+  assert.ok(path.points.every(([, y]) => y >= path.baseline), 'Negative transients must not turn into upward spikes');
 });
 
 test('triangle smoothness rounds a narrow transient while retaining the head on the path', () => {

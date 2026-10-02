@@ -11,7 +11,7 @@ export function pulseTraceSettings(settings = {}) {
     head: bound(finite(settings.head, .98), .4, 1),
     gain: bound(finite(settings.gain, 1.15), .4, 4),
     height: bound(finite(settings.height, 1.9), .2, 6),
-    baseline: bound(finite(settings.baseline, -.9), -.9, .9),
+    baseline: bound(finite(settings.baseline, -1.2), -2, .9),
     transient: bound(finite(settings.transient, .85), 0, 1.2),
     smoothingRadius: Math.round(bound(finite(settings.waveSmoothness, .1), 0, 1) * 18),
     thickness: bound(finite(settings.waveThickness, 1.6), 0, 8),
@@ -54,7 +54,8 @@ export function createCardiogramPath(history, time, band, settings, plot, { colu
       value = weighted / totalWeight;
     }
     const shaped = Math.tanh(value * config.height);
-    const norm = config.baseline + shaped * (shaped >= 0 ? 1 - config.baseline : 1 + config.baseline);
+    // Below -1 there is no downward headroom; never invert negative transients.
+    const norm = config.baseline + shaped * (shaped >= 0 ? 1 - config.baseline : Math.max(0, 1 + config.baseline));
     points[column] = [plot.x + column / (columns - 1) * plot.w * config.head, centre - norm * half];
   }
   return { points, head: points.at(-1), baseline: centre - config.baseline * half, config };
