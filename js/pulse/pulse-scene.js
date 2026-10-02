@@ -141,7 +141,8 @@ export function createPulseAtlasScene(stage, settings = {}) {
     makeLabelLayer('charts', { x: .05, y: .032, w: .9, h: .475 }),
     makeLabelLayer('chartReadouts', { x: .05, y: .116, w: .9, h: .145 }),
     makeLabelLayer('overviewHeader', { x: .06, y: .51, w: .88, h: .04 }),
-    makeLabelLayer('overviewMarkers', RECTS.overview),
+    // Room for the largest carets at both track edges, above the time labels.
+    makeLabelLayer('overviewMarkers', { x: .05, y: .69, w: .9, h: .025 }),
     makeLabelLayer('overviewFooter', { x: .055, y: .704, w: .89, h: .037 }),
   ];
 
@@ -343,13 +344,14 @@ export function createPulseAtlasScene(stage, settings = {}) {
     const axesKey = `${timbreModel.lowX}|${timbreModel.highX}|${timbreModel.lowY}|${timbreModel.highY}|${activityModel.maxRate}`;
     const readoutsKey = `${Math.round(timbreModel.brightness)}|${timbreModel.rmsDb.toFixed(1)}|${activityModel.recent.toFixed(1)}|${activityModel.mean.toFixed(1)}|${activityModel.count}`;
     const markerKey = markers.map(marker => marker.time).join(',');
-    labelState = { time, duration, hasAudio, elapsedText, remainingText, markerCount: hasAudio ? markers.length : 0, activeMarker: active };
+    const markerSize = Math.max(4, Math.min(24, Number.isFinite(settings.markerSize) ? settings.markerSize : 10));
+    labelState = { time, duration, hasAudio, elapsedText, remainingText, markerCount: hasAudio ? markers.length : 0, activeMarker: active, markerSize };
     for (const layer of layers) {
       const key = layer.name === 'charts' ? `${settingsKey}|${sampleRate}|${hasAudio}|${axesKey}`
         : layer.name === 'chartReadouts' ? `${settingsKey}|${readoutsKey}`
         : layer.name === 'overviewHeader' ? `${settingsKey}|${progressText}`
         : layer.name === 'overviewFooter' ? `${settingsKey}|${elapsedText}|${remainingText}`
-        : `${settingsKey}|${duration}|${markerKey}|${active}`;
+        : `${settingsKey}|${duration}|${markerKey}|${active}|${markerSize}`;
       if (key === layer.key) continue;
       layer.key = key;
       const { ctx, canvas, rect } = layer;
@@ -370,18 +372,23 @@ export function createPulseAtlasScene(stage, settings = {}) {
           text(ctx, remainingText, .94 * 1920, .73 * 1080, { color: colors.text, size: 18, align: 'right' });
         }
       } else {
-        // Optional setlist starts are plain ticks, without icons or timestamps.
+        // Track-start carets remain visible even with text labels hidden.
         if (hasAudio && markers.length) {
           const box = rectToWorld(RECTS.overview, 16 / 9);
-          const baseline = (50 / (16 / 9) - box.bottom - box.height * .27) * 19.2;
-          ctx.lineWidth = 1;
+          const tipY = (RECTS.overview.y + RECTS.overview.h) * 1080 - 5;
+          const halfWidth = markerSize / 2, markerHeight = markerSize * .65;
           for (let i = 0; i < markers.length; i++) {
             const marker = markers[i];
             if (marker.time < 0 || marker.time >= duration) continue;
             const x = (box.left + 50 + marker.time / duration * box.width) * 19.2;
-            ctx.globalAlpha = i === active ? 1 : marker.time < time ? .45 : .8;
-            ctx.strokeStyle = i === active ? colors.overview : colors.played;
-            ctx.beginPath(); ctx.moveTo(x, baseline - 3); ctx.lineTo(x, baseline + 4); ctx.stroke();
+            ctx.globalAlpha = i === active ? 1 : marker.time < time ? .65 : .9;
+            ctx.fillStyle = i === active ? colors.overview : colors.played;
+            ctx.beginPath();
+            ctx.moveTo(x, tipY);
+            ctx.lineTo(x + halfWidth, tipY + markerHeight);
+            ctx.lineTo(x - halfWidth, tipY + markerHeight);
+            ctx.closePath();
+            ctx.fill();
           }
         }
       }

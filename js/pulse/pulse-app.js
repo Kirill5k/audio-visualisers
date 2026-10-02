@@ -12,7 +12,7 @@ const settings = {
   bands: PULSE_DEFAULT_BANDS.map(band => ({ ...band })), fftSize: PULSE_FFT_SIZE, smoothing: PULSE_SMOOTHING,
   historySeconds: 15, energyGain: 1, gridOpacity: .24,
   leftChart: 'rhythm-lanes', rightChart: 'energy-ribbons',
-  labels: true, headers: true, sectionNumbers: true, setlist: [],
+  labels: true, headers: true, sectionNumbers: true, markerSize: 10, setlist: [],
 };
 
 window.pulseAtlas = await createSpectralPlayer({
@@ -23,7 +23,7 @@ window.pulseAtlas = await createSpectralPlayer({
   // immediately without interrupting playback or rebuilding their histories.
   historySeconds: 60, historyPaddingFrames: 60,
   previewAspect: 16 / 9,
-  controls: [...Object.keys(PULSE_TRACE_DEFAULTS), 'historySeconds', 'energyGain', 'gridOpacity', 'labels', 'headers', 'sectionNumbers'],
+  controls: [...Object.keys(PULSE_TRACE_DEFAULTS), 'historySeconds', 'energyGain', 'gridOpacity', 'labels', 'headers', 'sectionNumbers', 'markerSize'],
   quality: () => ({ fftSize: settings.fftSize, frequencyBins: settings.fftSize / 2, rtaFftSize: 0,
     bandCount: 3, rhythmHistorySeconds: settings.historySeconds, energyHistorySeconds: settings.historySeconds, reservedTextFraction: .25 }),
   extend(player) {
