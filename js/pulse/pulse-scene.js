@@ -322,7 +322,7 @@ export function createPulseAtlasScene(stage, settings = {}) {
       ctx.restore();
       if (settings.labels === false) return;
       const left = .06 * 1920 + slot * SLOT_OFFSET;
-      if (settings.headers !== false) text(ctx, `${settings.sectionNumbers === false ? '' : `0${slot + 1}   `}${PULSE_CHARTS[type].toUpperCase()}`, left, .106 * 1080, { color: colors.text });
+      if (settings.headers !== false) text(ctx, `${settings.sectionNumbers === false ? '' : `0${slot + 1}   `}${PULSE_CHARTS[type].toUpperCase()}`, left, .106 * 1080, { color: colors.text, size: 18 });
       text(ctx, `${seconds}-SECOND ${type === 'timbre-trail' ? 'TRAIL' : 'HISTORY'}`, left + .416 * 1920, .106 * 1080, { size: 10, align: 'right' });
     });
     if (settings.labels === false) return;
@@ -363,8 +363,8 @@ export function createPulseAtlasScene(stage, settings = {}) {
       else if (layer.name === 'chartReadouts') drawChartReadouts(ctx);
       else if (layer.name === 'overviewHeader') {
         if (settings.labels !== false) {
-          if (settings.headers !== false) text(ctx, `${settings.sectionNumbers === false ? '' : '03   '}TRACK OVERVIEW`, .06 * 1920, .538 * 1080, { color: colors.text });
-          text(ctx, progressText, .94 * 1920, .538 * 1080, { color: colors.text, align: 'right' });
+          if (settings.headers !== false) text(ctx, `${settings.sectionNumbers === false ? '' : '03   '}TRACK OVERVIEW`, .06 * 1920, .538 * 1080, { color: colors.text, size: 18 });
+          text(ctx, progressText, .94 * 1920, .538 * 1080, { color: colors.text, size: 18, align: 'right' });
         }
       } else if (layer.name === 'overviewFooter') {
         if (settings.labels !== false) {
