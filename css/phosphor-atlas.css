@@ -1,0 +1,16 @@
+body.phosphor-atlas {
+  --atlas-pearl: #eee9df;
+  --atlas-silver: #8f999a;
+  --atlas-copper: #68c8bd;
+  --accent: #68c8bd;
+}
+.phosphor-atlas .color-row { margin: 12px 0; }
+.phosphor-atlas .color-row input[type="color"] { width: 43px; height: 28px; padding: 2px; border: 1px solid var(--edge); border-radius: 5px; background: var(--panel); cursor: pointer; }
+.phosphor-atlas #resetColorsBtn, .phosphor-atlas #resetScopeBtn { width: 100%; margin-top: 5px; }
+.phosphor-atlas #scopeGainRow.inactive { opacity: .45; }
+.phosphor-atlas .setlist-section .section-title { display: block; margin-bottom: 9px; }
+.phosphor-atlas #setlistInput { width: 100%; min-height: 100px; resize: vertical; padding: 9px; border: 1px solid var(--edge); border-radius: 5px; background: var(--atlas-black); color: var(--ink); font: 11px/1.6 "Inter", sans-serif; }
+.phosphor-atlas #setlistInput::placeholder { color: color-mix(in srgb, var(--atlas-silver) 65%, transparent); }
+.phosphor-atlas #setlistStatus { color: var(--atlas-silver); white-space: pre-line; }
+.phosphor-atlas .study-link { color: var(--accent); font-size: 11px; text-decoration: none; }
+.phosphor-atlas .study-link:hover { text-decoration: underline; }
