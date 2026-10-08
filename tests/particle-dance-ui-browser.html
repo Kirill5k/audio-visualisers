@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Particle Dance responsive UI checks</title>
+  <style>
+    body { margin: 24px; background: #111018; color: #eee; font: 14px/1.5 system-ui; }
+    h1 { font-size: 24px; } h2 { font-size: 16px; }
+    button { padding: 9px 16px; cursor: pointer; }
+    pre { padding: 16px; background: #08070d; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .viewport { max-width: 100%; overflow: auto; border: 1px solid #55465f; }
+    iframe { display: block; border: 0; flex: none; }
+    #mobile { width: 390px; height: 844px; }
+    #desktop { width: 1280px; height: 800px; }
+  </style>
+</head>
+<body>
+  <h1>Particle Dance responsive UI checks</h1>
+  <p>Checks the real page at 390 × 844 and 1280 × 800. Exercises config controls without loading audio or saving files.</p>
+  <button id="run" disabled>Run checks</button>
+  <p id="summary" role="status">Loading both previews…</p>
+  <pre id="results">[]</pre>
+  <h2>Mobile · 390 × 844</h2>
+  <div class="viewport"><iframe id="mobile" title="Particle Dance mobile preview" src="../particle-dance.html"></iframe></div>
+  <h2>Desktop · 1280 × 800</h2>
+  <div class="viewport"><iframe id="desktop" title="Particle Dance desktop preview" src="../particle-dance.html"></iframe></div>
+  <script type="module" src="./particle-dance-ui-browser.js"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+.particle-dance { --accent: #dfb5ff; --panel: rgba(8, 12, 10, .94); }
+.particle-dance #panel { width: 314px; max-height: calc(100dvh - 138px); }
+.particle-dance #panelToggle { left: 344px; }
+.particle-dance #panelToggle.closed { left: 18px; }
+.particle-dance h1 { font-size: 25px; letter-spacing: -.055em; font-weight: 550; }
+.particle-dance .edition { color: var(--muted); font-size: 9px; margin-top: 21px; white-space: nowrap; }
+.particle-dance #variants { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+.particle-dance #variants button { height: 28px; padding: 0; border: 1px solid var(--edge); border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 10px; }
+.particle-dance #variants button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: #dfb5ff12; }
+.particle-dance .preset-caption { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 10px; color: var(--muted); }
+.particle-dance .text-button { border: 0; padding: 3px; color: var(--accent); background: transparent; cursor: pointer; font-size: 10px; }
+.particle-dance .search-label { display: block; margin-top: 22px; font-size: 10px; color: var(--muted); }
+.particle-dance #controlSearch { width: 100%; margin: 7px 0 2px; padding: 9px; background: #ffffff05; border: 1px solid var(--edge); border-radius: 6px; color: var(--ink); font-size: 11px; }
+.particle-dance details.section { margin-top: 12px; padding-top: 12px; }
+.particle-dance details summary { cursor: pointer; color: var(--ink); font-size: 11px; font-weight: 600; padding: 3px 0; }
+.particle-dance details details { margin: 12px 0 0; padding: 8px 0 0; border-top: 1px solid #ffffff0e; }
+.particle-dance details details summary { color: var(--muted); font-size: 10px; }
+.particle-dance .control-head .number-value { width: 65px; padding: 3px 5px; border: 1px solid #ffffff15; background: #0006; color: var(--accent); border-radius: 4px; text-align: right; font-size: 10px; }
+.particle-dance .color-row, .particle-dance .toggle-row { margin-top: 9px; }
+.particle-dance .color-row select { max-width: 155px; }
+.particle-dance .modulation-card { padding-bottom: 8px; }
+.particle-dance .modulation-add { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+.particle-dance .modulation-add select { min-width: 0; flex: 1; width: 100%; }
+.particle-dance .config-row[data-mode-hidden="true"] { display: none; }
+.particle-dance .effect-actions { display: flex; gap: 12px; margin: 10px 0; }
+.particle-dance .remove-modulation { margin: 10px 0 4px; }
+.particle-dance input[type="color"] { width: 43px; height: 28px; padding: 2px; border: 1px solid var(--edge); border-radius: 5px; background: var(--panel); cursor: pointer; }
+.particle-dance .credit { margin-top: 14px; }
+.particle-dance .control[hidden], .particle-dance .config-row[hidden], .particle-dance details[hidden] { display: none; }
+.particle-dance .hint, .particle-dance .credit { color: var(--muted); font-size: 10px; line-height: 1.7; }
+.particle-dance .credit a { color: var(--accent); }
+.particle-dance button:disabled, .particle-dance input:disabled, .particle-dance select:disabled { opacity: .4; cursor: not-allowed; }
+.particle-dance .file-picker[aria-disabled="true"] { opacity: .4; pointer-events: none; }
+.particle-dance #dropHint { display: none; position: fixed; inset: 20px; z-index: 80; border: 2px dashed var(--accent); border-radius: 20px; background: #10091de8; align-items: center; justify-content: center; font-size: 24px; pointer-events: none; }
+.particle-dance.dragging #dropHint { display: flex; }
+.particle-dance #actions { max-width: calc(100vw - 405px); flex-wrap: wrap; justify-content: flex-end; }
+.particle-dance #timeline { left: 18px; right: 18px; }
+@media (max-width: 1100px) {
+  .particle-dance #actions .action-label { display: none; }
+  .particle-dance #actions { gap: 5px; }
+}
+@media (max-width: 760px) {
+  .particle-dance #panel { top: 12px; left: 12px; width: min(314px, calc(100vw - 70px)); max-height: calc(100dvh - 160px); }
+  .particle-dance #panelToggle:not(.closed) { left: auto; right: 12px; }
+  .particle-dance #actions { top: auto; bottom: 12px; left: 12px; right: 12px; max-width: none; justify-content: center; flex-wrap: nowrap; }
+  .particle-dance #actions .action { padding: 0 10px; }
+  .particle-dance #timeline { bottom: 102px; }
+}

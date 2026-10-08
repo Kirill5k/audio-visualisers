@@ -68,9 +68,9 @@ function createGlyphAtlas(charSet) {
   return { texture, glyphCount };
 }
 
-function createEffectPass(effect) {
+function createEffectPass(effect, registry) {
   const uniforms = { tDiffuse: { value: null } };
-  for (const [key, control] of Object.entries(EFFECT_CONTROLS[effect])) {
+  for (const [key, control] of Object.entries((registry?.controls ?? EFFECT_CONTROLS)[effect])) {
     if (key === 'enabled') continue;
     uniforms[key] = { value: control.type === 'color' ? new THREE.Color(control.default) : control.default };
   }
@@ -93,18 +93,25 @@ function createEffectPass(effect) {
     colorModeInt: { value: 0 }, dprScale: { value: 1 },
   });
   if (effect === 'ledScreen') uniforms.dprScale = { value: 1 };
+  registry?.initializeUniforms?.(effect, uniforms);
   return new ShaderPass({
     uniforms,
     vertexShader: shaders.FULLSCREEN_VERTEX_SHADER,
-    fragmentShader: shaders[`${effect}FragmentShader`],
+    fragmentShader: registry?.shaders?.[`${effect}FragmentShader`] ?? shaders[`${effect}FragmentShader`],
   });
 }
 
 /**
  * Dimensions are CSS pixels plus DPR. Frame settings may contain audio-modulated
  * values. A zero-delta repaint never advances clocks or commits feedback history.
+ * Optional registry hooks extend controls/shaders, uniform initialization,
+ * preparatory passes, clock rates and resource lifecycle. Omit the registry to
+ * preserve the original fourteen-effect Mesh Grid behavior. Stateful registries
+ * must be created separately for each runtime (preview and export).
  */
-export function createMeshGridEffects({ renderer, scene, camera, settings = {} }) {
+export function createMeshGridEffects({ renderer, scene, camera, settings = {}, registry = null }) {
+  const effectControls = registry?.controls ?? EFFECT_CONTROLS;
+  const resolveOrder = registry?.resolveEffectOrder ?? resolveEffectOrder;
   let configuredSettings = settings;
   const size = renderer.getSize(new THREE.Vector2());
   let width = size.x;
@@ -112,6 +119,7 @@ export function createMeshGridEffects({ renderer, scene, camera, settings = {} }
   let pixelRatio = renderer.getPixelRatio();
   let composer = null;
   let passes = new Map();
+  const preparatoryPasses = new Map();
   let historyTarget = null;
   let chainKey = null;
   let hasFrame = false;
@@ -135,6 +143,7 @@ export function createMeshGridEffects({ renderer, scene, camera, settings = {} }
     }
     composer = null;
     passes.clear();
+    preparatoryPasses.clear();
     historyTarget?.dispose();
     historyTarget = null;
     hasFrame = false;
@@ -162,14 +171,16 @@ export function createMeshGridEffects({ renderer, scene, camera, settings = {} }
     const physicalWidth = Math.max(1, Math.floor(width * pixelRatio));
     const physicalHeight = Math.max(1, Math.floor(height * pixelRatio));
     historyTarget?.setSize(physicalWidth, physicalHeight);
-    for (const pass of passes.values()) {
-      pass.uniforms.resolution.value.set(physicalWidth, physicalHeight);
+    const allPasses = [...passes.values(), ...[...preparatoryPasses.values()].flat()];
+    for (const pass of allPasses) {
+      pass.uniforms.resolution?.value.set(physicalWidth, physicalHeight);
+      pass.uniforms.tSize?.value.set(physicalWidth, physicalHeight);
       if (pass.uniforms.dprScale) pass.uniforms.dprScale.value = 2 / (pixelRatio || 1);
     }
   }
 
   function ensureComposer(effectiveSettings) {
-    const enabled = resolveEffectOrder(effectiveSettings);
+    const enabled = resolveOrder(effectiveSettings);
     const antiAliasing = Boolean(effectiveSettings.antiAliasing);
     const nextKey = JSON.stringify([enabled, antiAliasing]);
     if (nextKey === chainKey) return;
@@ -182,8 +193,11 @@ export function createMeshGridEffects({ renderer, scene, camera, settings = {} }
     composer.renderToScreen = false;
     composer.addPass(new RenderPass(scene, camera));
     for (const effect of enabled) {
-      const pass = createEffectPass(effect);
+      const pass = createEffectPass(effect, registry);
       passes.set(effect, pass);
+      const before = registry?.createPreparatoryPasses?.(effect, pass) ?? [];
+      preparatoryPasses.set(effect, before);
+      for (const preparatoryPass of before) composer.addPass(preparatoryPass);
       composer.addPass(pass);
     }
     if (antiAliasing) composer.addPass(new SMAAPass());
@@ -201,14 +215,19 @@ export function createMeshGridEffects({ renderer, scene, camera, settings = {} }
 
   function updateUniforms(effect, pass, effectiveSettings, dt) {
     const uniforms = pass.uniforms;
-    for (const [key, control] of Object.entries(EFFECT_CONTROLS[effect])) {
+    const targets = [pass, ...(preparatoryPasses.get(effect) ?? [])];
+    for (const [key, control] of Object.entries(effectControls[effect])) {
       if (key === 'enabled') continue;
       const value = effectiveSettings[`${effect}_${key}`] ?? control.default;
-      if (uniforms[key].value?.isColor) uniforms[key].value.set(value);
-      else uniforms[key].value = value;
+      for (const target of targets) {
+        const uniform = target.uniforms[key];
+        if (!uniform) continue;
+        if (uniform.value?.isColor) uniform.value.set(value);
+        else uniform.value = value;
+      }
     }
     // Upstream eW(.016, dt) = .016 * dt * 120, not elapsed wall time.
-    if (uniforms.time) uniforms.time.value += 1.92 * dt;
+    if (uniforms.time) uniforms.time.value += (registry?.clockRate?.(effect, uniforms) ?? 1.92) * dt;
     if (effect === 'feedback') {
       const dynamics = feedbackFrameUniforms(effectiveSettings, dt > 0 ? dt : lastPositiveDelta);
       for (const [key, value] of Object.entries(dynamics)) {
@@ -232,6 +251,7 @@ export function createMeshGridEffects({ renderer, scene, camera, settings = {} }
         uniforms[`paletteColor${index + 1}`].value.copy(palette[Math.round(index * (palette.length - 1) / (count - 1))]);
       }
     }
+    registry?.updateUniforms?.(effect, pass, effectiveSettings, dt);
   }
 
   function displayFrame() {
@@ -290,7 +310,10 @@ export function createMeshGridEffects({ renderer, scene, camera, settings = {} }
       dirty = true;
     },
     reset() {
-      for (const pass of passes.values()) if (pass.uniforms.time) pass.uniforms.time.value = 0;
+      for (const [effect, pass] of passes) {
+        if (pass.uniforms.time) pass.uniforms.time.value = 0;
+        registry?.resetPass?.(effect, pass);
+      }
       clearTargets();
       lastPositiveDelta = 1 / 60;
       hasFrame = false;
@@ -303,6 +326,7 @@ export function createMeshGridEffects({ renderer, scene, camera, settings = {} }
       copyPass.dispose();
       for (const atlas of atlases.values()) atlas.texture.dispose();
       atlases.clear();
+      registry?.dispose?.();
     },
   };
 }

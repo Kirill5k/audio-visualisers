@@ -1,0 +1,140 @@
+<!doctype html>
+<!-- Serve the repository over HTTP and open this page in a WebGL2 browser. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Particle Dance effect browser tests</title>
+  <script type="importmap">
+    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"}}
+  </script>
+</head>
+<body>
+  <h1>Particle Dance effect browser tests</h1>
+  <p>All 32 source effects, seven procedural textures, ASCII atlases, SMAA, deterministic resets, and frozen feedback.</p>
+  <pre id="results">Running…</pre>
+  <script type="module">
+    import * as THREE from 'three';
+    import { createParticleDanceEffects } from '../js/particle-dance/particle-dance-effects.js';
+    import { EFFECT_ORDER, EFFECT_DEFAULTS, EFFECT_CONTROLS } from '../js/particle-dance/particle-dance-effect-settings.js';
+
+    function runSmoke() {
+      const canvas = document.createElement('canvas');
+      document.body.append(canvas);
+      const renderer = new THREE.WebGLRenderer({ canvas, preserveDrawingBuffer: true });
+      renderer.setSize(320, 180);
+      renderer.setPixelRatio(1);
+      const errors = [];
+      renderer.debug.onShaderError = (gl, program, vertex, fragment) => errors.push({
+        program: gl.getProgramInfoLog(program),
+        vertex: gl.getShaderInfoLog(vertex),
+        fragment: gl.getShaderInfoLog(fragment),
+      });
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color('#0f1823');
+      const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 100);
+      camera.position.z = 3;
+      const geometry = new THREE.TorusKnotGeometry(.65, .2, 60, 8);
+      const material = new THREE.MeshBasicMaterial({ color: '#ff6688', wireframe: true });
+      const mesh = new THREE.Mesh(geometry, material);
+      scene.add(mesh);
+      const settings = { ...EFFECT_DEFAULTS, enablePostProcessing: true };
+      const effects = createParticleDanceEffects({ renderer, scene, camera, settings });
+      const results = [];
+      const checksum = () => {
+        const gl = renderer.getContext();
+        const pixels = new Uint8Array(320 * 180 * 4);
+        gl.readPixels(0, 0, 320, 180, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        return pixels.reduce((sum, value, index) => (sum + Math.imul(value, index + 1)) >>> 0, 0);
+      };
+
+      try {
+        for (const id of EFFECT_ORDER) {
+          const config = { ...settings, [`${id}_enabled`]: true };
+          effects.setSettings(config);
+          const draw = () => {
+            effects.reset();
+            for (let index = 0; index < 5; index++) effects.render({ settings: config }, 1 / 60);
+            return checksum();
+          };
+          const first = draw(), second = draw();
+          effects.invalidate();
+          effects.render({ settings: config }, 0);
+          effects.render({ settings: config }, 0);
+          results.push({ id, checksum: second, deterministic: first === second,
+            pauseStable: second === checksum(), glError: renderer.getContext().getError() });
+        }
+        for (const preset of Object.values(EFFECT_CONTROLS.textureOverlay.preset.options)) {
+          const config = { ...settings, textureOverlay_enabled: true, textureOverlay_preset: preset };
+          effects.setSettings(config);
+          const runTexture = () => {
+            effects.reset();
+            for (let index = 0; index < 8; index++) effects.render({ settings: config }, 1 / 60);
+            return checksum();
+          };
+          const first = runTexture(), second = runTexture();
+          results.push({ texture: preset, checksum: second, deterministic: first === second, glError: renderer.getContext().getError() });
+        }
+        for (const charSet of ['ascii', 'blocks', 'dots']) {
+          const config = { ...settings, ascii_enabled: true, ascii_charSet: charSet };
+          effects.setSettings(config);
+          effects.render({ settings: config }, 1 / 60);
+          results.push({ charSet, checksum: checksum() });
+        }
+        const config = {
+          ...settings,
+          feedback_enabled: true, gammaCorrection_enabled: true,
+          concentricTile_enabled: true, antiAliasing: true,
+          effectOrder: ['gammaCorrection'], feedback_decay: .9, feedback_zoom: 1.002,
+        };
+        effects.setSettings(config);
+        const run = () => {
+          effects.reset();
+          const sums = [];
+          for (let index = 0; index < 5; index++) {
+            mesh.rotation.y = index * .15;
+            effects.render({ settings: config }, 1 / 60);
+            sums.push(checksum());
+          }
+          return sums;
+        };
+        const first = run();
+        const second = run();
+        const before = checksum();
+        effects.render({ settings: config }, 0);
+        effects.render({ settings: config }, 0);
+        const pauseStable = before === checksum();
+        effects.resize(320, 180, 1);
+        effects.render({ settings: config }, 0);
+        const sameSizePreservesHistory = before === checksum();
+        camera.position.x = .8;
+        camera.lookAt(0, 0, 0);
+        effects.invalidate();
+        effects.render({ settings: config }, 0);
+        const movedCamera = checksum();
+        effects.invalidate();
+        effects.render({ settings: config }, 0);
+        const frozenCameraRepaint = movedCamera !== before && movedCamera === checksum();
+        const deterministic = JSON.stringify(first) === JSON.stringify(second);
+        return {
+          passed: errors.length === 0 && results.length >= 42
+            && results.every(result => !result.glError && result.deterministic !== false && result.pauseStable !== false)
+            && deterministic && pauseStable && sameSizePreservesHistory && frozenCameraRepaint,
+          results, errors, first, second, deterministic, pauseStable,
+          sameSizePreservesHistory, frozenCameraRepaint,
+        };
+      } finally {
+        effects.dispose();
+        geometry.dispose();
+        material.dispose();
+        renderer.dispose();
+      }
+    }
+
+    try {
+      document.getElementById('results').textContent = JSON.stringify(runSmoke(), null, 2);
+    } catch (error) {
+      document.getElementById('results').textContent = error.stack;
+    }
+  </script>
+</body>
+</html>

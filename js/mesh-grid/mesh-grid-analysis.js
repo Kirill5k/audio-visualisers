@@ -196,6 +196,12 @@ export function createMeshGridAudioModulator() {
   let cachedResult = null, cachedSettings = null;
   const envelopes = new Map(), rampStarts = new Map();
   return {
+    // Restart a changed slider's envelope/ramp without disturbing FFT history or
+    // the other controls. Used when the UI adds, retargets or changes its mode.
+    resetControl(key) {
+      envelopes.delete(key); frameEnvelopes.delete(key); rampStarts.delete(key);
+      cachedResult = null; cachedSettings = null;
+    },
     reset() {
       previousDisplay = new Uint8Array(0); previousOnset = new Uint8Array(0); previousTime = null;
       framePreviousDisplay = new Uint8Array(0); framePreviousOnset = new Uint8Array(0); framePreviousTime = null;
@@ -314,6 +320,7 @@ export function createMeshGridAnalysis(audioBuffer, initialSettings = {}, { brow
       }
       settings = next; cachedFrame = null;
     },
+    resetModulation(key) { assertActive(); modulator.resetControl(key); cachedFrame = null; },
     reset() { assertActive(); reset(); },
     dispose() {
       if (disposed) return;
