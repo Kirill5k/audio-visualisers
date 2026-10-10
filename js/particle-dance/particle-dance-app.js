@@ -5,7 +5,7 @@ import { createMeshGridAnalysis } from '../mesh-grid/mesh-grid-analysis.js';
 import { PARTICLE_CONTROLS, GLOBAL_CONTROLS, createSettings } from './particle-dance-settings.js';
 import { PRESETS, DEFAULT_PRESET_ID } from './particle-dance-presets.js';
 import { EFFECT_CONTROLS, EFFECT_DEFAULTS, EFFECT_NAMES, EFFECT_ORDER, resolveEffectOrder } from './particle-dance-effect-settings.js';
-import { eligibleModulationTargets, createModulation, setModulationBound, MODULATION_CONTROLS, FREQUENCY_RANGES } from './particle-dance-modulation.js';
+import { eligibleModulationTargets, createModulation, setModulationBound, setSpreadAudioReactive, MODULATION_CONTROLS, FREQUENCY_RANGES } from './particle-dance-modulation.js';
 
 const $ = id => document.getElementById(id);
 const DT = 1 / 60;
@@ -31,6 +31,8 @@ async function initialise() {
   let recordingStopped = null;
   let recordingError = null;
   let recordingSession = false;
+  let spreadControlsModulation = null;
+  let effectiveSpread = settings.spread;
   const expandedSections = new Map();
   let viewport = { width: innerWidth, height: innerHeight, pixelRatio: Math.min(devicePixelRatio, 2) };
   const audio = createAudioPlayback({ fftSize: settings.fftSize, maxFftSize: 32768 });
@@ -57,6 +59,7 @@ async function initialise() {
   const locked = () => Boolean(busy || recordingSession || recorder.isRecording);
   function syncButtons() {
     const lock = locked();
+    syncSpreadAudioControls();
     const savingRecording = recordingSession && !recorder.isRecording;
     for (const id of ['playPauseBtn', 'replayBtn', 'unloadBtn', 'seek']) $(id).disabled = !audio.hasAudio || lock;
     $('recordBtn').disabled = !audio.hasAudio || !canRecord || Boolean(busy) || recordingSession && !recorder.isRecording;
@@ -127,6 +130,7 @@ async function initialise() {
     const frame = analysis.frameAt(baseTime + index * DT, DT);
     // Visual clocks restart with the temporal history; PCM sampling retains the seek offset.
     scene.step({ ...frame, time: index * DT }, DT);
+    showSpreadValue(frame.settings.spread);
     frameIndex = index;
   }
   function ended() {
@@ -193,10 +197,12 @@ async function initialise() {
       // A paused edit updates geometry without advancing the audio position.
       const frame = analysis.frameAt(audio.hasAudio ? audio.getPlaybackPosition() : Math.max(0, frameIndex) * DT, 0);
       scene.step({ ...frame, time: Math.max(0, frameIndex) * DT }, 0);
+      showSpreadValue(frame.settings.spread);
     }
     if (key === 'enablePostProcessing' || key.endsWith('_enabled')) {
       pruneModulations(); analysis.setSettings(settings); rebuildModulations();
     }
+    syncSpreadAudioControls();
   }
 
   function group(title, open = false, parent = $('configControls')) {
@@ -218,7 +224,7 @@ async function initialise() {
       for (const el of [input, number]) { el.min = spec.min; el.max = spec.max; el.step = spec.step ?? .01; el.value = owner[key] ?? spec.default; }
       input.type = 'range'; label.append(number); row.append(label, input);
       const update = source => {
-        if (locked() || !Number.isFinite(source.valueAsNumber)) return;
+        if (locked() || source.disabled || !Number.isFinite(source.valueAsNumber)) return;
         owner[key] = Math.max(spec.min, Math.min(spec.max, source.valueAsNumber));
         change(key);
         // Validation may clamp related endpoints; display the applied value.
@@ -243,6 +249,92 @@ async function initialise() {
     }
     parent.append(row);
     return row;
+  }
+  function showSpreadValue(value = effectiveSpread) {
+    effectiveSpread = value;
+    const output = $('spreadLiveValue');
+    if (output) output.value = Number(value).toFixed(2);
+  }
+  function buildSpreadControl(row) {
+    // Keep the saved manual value separate from the audio-driven frame settings.
+    const oldHead = row.querySelector('.control-head');
+    const head = document.createElement('div'); head.className = 'control-head spread-head';
+    const name = document.createElement('label'); name.htmlFor = 'control-spread'; name.textContent = 'Spread';
+    const toggleLabel = document.createElement('label'); toggleLabel.className = 'spread-reactive-toggle';
+    const toggle = document.createElement('input'); toggle.type = 'checkbox'; toggle.id = 'spreadAudioReactive';
+    toggle.setAttribute('aria-label', 'Audio reactive spread'); toggle.setAttribute('aria-controls', 'spreadAudioControls');
+    toggleLabel.append(toggle, 'Audio reactive');
+    head.append(name, toggleLabel, oldHead.querySelector('.number-value')); oldHead.replaceWith(head);
+    row.dataset.search += ' audio reactive live bass sensitivity minimum maximum response attack release frequency';
+    const readout = document.createElement('div'); readout.id = 'spreadAudioReadout'; readout.className = 'spread-audio-readout';
+    const live = document.createElement('span'); live.append('Live ');
+    const output = document.createElement('output'); output.id = 'spreadLiveValue'; output.setAttribute('aria-label', 'Live spread'); live.append(output);
+    const hint = document.createElement('span'); hint.id = 'spreadManualHint';
+    readout.append(live, hint); row.append(readout);
+    const options = document.createElement('div'); options.id = 'spreadAudioControls'; options.dataset.section = 'Spread audio reactive';
+    options.className = 'spread-audio-controls'; row.append(options);
+    spreadControlsModulation = null;
+    toggle.addEventListener('change', () => {
+      if (locked()) return;
+      setSpreadAudioReactive(settings, toggle.checked, PARTICLE_CONTROLS.spread);
+      analysis.resetModulation('spread'); settingsChanged('controlModulations'); rebuildModulations();
+    });
+    syncSpreadAudioControls();
+  }
+  function syncSpreadAudioControls() {
+    const toggle = $('spreadAudioReactive');
+    if (!toggle) return;
+    const modulation = settings.controlModulations?.spread;
+    const modulated = Boolean(modulation?.enabled);
+    const audioReactive = modulated && modulation.mode === 'audio';
+    toggle.checked = audioReactive;
+    const manual = $('control-spread');
+    const manualNumber = manual.parentElement.querySelector('.number-value');
+    for (const input of [manual, manualNumber]) {
+      input.dataset.unavailable = String(modulated);
+      input.disabled = locked() || modulated;
+      input.value = settings.spread;
+      input.setAttribute('aria-describedby', 'spreadManualHint');
+    }
+    $('spreadAudioReadout').hidden = !modulated;
+    $('spreadManualHint').textContent = audioReactive ? `Manual ${settings.spread} saved` : 'Controlled by slider modulation';
+    const options = $('spreadAudioControls'); options.hidden = !audioReactive;
+    if (modulation !== spreadControlsModulation) {
+      spreadControlsModulation = modulation;
+      options.replaceChildren();
+      if (modulation) {
+        const change = key => {
+          if (key === 'min' || key === 'max') setModulationBound(modulation, key, modulation[key], PARTICLE_CONTROLS.spread);
+          settingsChanged('controlModulations');
+          // The adjacent controls and the advanced panel edit the same entry.
+          rebuildModulations();
+        };
+        control(options, 'source', MODULATION_CONTROLS.source, modulation, change, 'spread-audio-');
+        const band = { range: 'bass' };
+        control(options, 'range', { type: 'select', label: 'Frequency range', default: 'bass', options: Object.fromEntries(Object.entries(FREQUENCY_RANGES).map(([id, range]) => [range.label, id])) }, band, () => {
+          const range = FREQUENCY_RANGES[band.range];
+          modulation.freqStart = range.start; modulation.freqEnd = range.end; change('frequency');
+        }, 'spread-audio-');
+        for (const [key, label] of [['min', 'Minimum'], ['max', 'Maximum'], ['amount', 'Sensitivity']]) {
+          const spec = key === 'amount' ? MODULATION_CONTROLS.amount : PARTICLE_CONTROLS.spread;
+          control(options, key, { ...spec, label }, modulation, change, 'spread-audio-');
+        }
+        const timing = group('Response timing', false, options);
+        for (const key of ['attackMs', 'releaseMs']) control(timing, key, MODULATION_CONTROLS[key], modulation, change, 'spread-audio-');
+      }
+    }
+    if (modulation) {
+      for (const key of ['source', 'min', 'max', 'amount', 'attackMs', 'releaseMs']) {
+        const input = $(`control-spread-audio-${key}`);
+        if (!input) continue;
+        input.value = modulation[key];
+        const number = input.closest('.config-row').querySelector('.number-value');
+        if (number) number.value = modulation[key];
+      }
+      const frequency = $('control-spread-audio-range');
+      if (frequency) frequency.value = Object.keys(FREQUENCY_RANGES).find(id => FREQUENCY_RANGES[id].start === modulation.freqStart && FREQUENCY_RANGES[id].end === modulation.freqEnd) || 'full';
+    }
+    showSpreadValue(modulated ? effectiveSpread : settings.spread);
   }
   function modulationTargets() {
     return eligibleModulationTargets(PARTICLE_CONTROLS, EFFECT_CONTROLS, settings, EFFECT_NAMES);
@@ -334,7 +426,10 @@ async function initialise() {
     for (const section of $('configControls').querySelectorAll('details')) expandedSections.set(section.dataset.section, section.open);
     $('configControls').replaceChildren();
     const particles = group('Particles & colour', true);
-    for (const [key, spec] of Object.entries(PARTICLE_CONTROLS)) control(particles, key, spec);
+    for (const [key, spec] of Object.entries(PARTICLE_CONTROLS)) {
+      const row = control(particles, key, spec);
+      if (key === 'spread') buildSpreadControl(row);
+    }
     for (const title of ['Audio', 'Camera', 'Background', 'Rendering']) {
       const parent = group(title);
       for (const [key, spec] of Object.entries(GLOBAL_CONTROLS)) if (spec.group === title) control(parent, key, spec);
@@ -374,7 +469,10 @@ async function initialise() {
   }
   function filterControls() {
     const query = $('controlSearch').value.trim().toLowerCase();
-    for (const row of $('configControls').querySelectorAll('.config-row')) row.hidden = Boolean(query && !row.dataset.search.includes(query));
+    // Keep a containing control visible when one of its nested options matches.
+    for (const row of [...$('configControls').querySelectorAll('.config-row')].reverse()) {
+      row.hidden = Boolean(query && !row.dataset.search.includes(query) && ![...row.querySelectorAll('.config-row')].some(child => !child.hidden));
+    }
     for (const details of [...$('configControls').querySelectorAll('details')].reverse()) {
       details.hidden = Boolean(query && ![...details.querySelectorAll('.config-row')].some(row => !row.hidden));
       if (query && !details.hidden) details.open = true;

@@ -34,6 +34,37 @@ export function createModulation(spec, mode = 'oscillate') {
   };
 }
 
+/** A restrained bass envelope around the manual Spread value. */
+export function createSpreadAudioModulation(baseSpread, spec) {
+  const low = spec.min ?? 2, high = spec.max ?? 20;
+  const clamp = value => Math.max(low, Math.min(high, value));
+  const base = clamp(Number.isFinite(baseSpread) ? baseSpread : (spec.default ?? 8));
+  const step = spec.step > 0 ? spec.step : .5;
+  const endpoint = value => clamp(Number((low + Math.round((value - low) / step) * step).toFixed(12)));
+  return {
+    ...createModulation(spec, 'audio'),
+    source: 'amplitude', freqStart: FREQUENCY_RANGES.bass.start, freqEnd: FREQUENCY_RANGES.bass.end,
+    anchor: 'range', amount: 1, attackMs: 120, releaseMs: 650,
+    min: endpoint(.8 * base), max: endpoint(1.2 * base),
+  };
+}
+
+/** Toggle the one Spread mapping while retaining the saved manual slider value.
+ * Returns the existing/new mapping, or null when disabling an unmapped slider.
+ */
+export function setSpreadAudioReactive(settings, enabled, spec) {
+  const current = settings.controlModulations?.spread;
+  if (!enabled) {
+    if (current) current.enabled = false;
+    return current ?? null;
+  }
+  settings.controlModulations ||= {};
+  const modulation = current?.mode === 'audio' ? current : createSpreadAudioModulation(settings.spread, spec);
+  modulation.enabled = true;
+  settings.controlModulations.spread = modulation;
+  return modulation;
+}
+
 /** Editable modulation endpoints stay ordered inside their target's safe range. */
 export function setModulationBound(modulation, key, value, spec) {
   if (!['min', 'max'].includes(key) || !Number.isFinite(value)) return false;

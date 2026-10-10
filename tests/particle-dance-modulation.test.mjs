@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createModulation, setModulationBound, eligibleModulationTargets, MODULATION_CONTROLS, FREQUENCY_RANGES } from '../js/particle-dance/particle-dance-modulation.js';
+import { createModulation, createSpreadAudioModulation, setSpreadAudioReactive, setModulationBound, eligibleModulationTargets, MODULATION_CONTROLS, FREQUENCY_RANGES } from '../js/particle-dance/particle-dance-modulation.js';
 import { createMeshGridAudioModulator, createMeshGridAnalysis } from '../js/mesh-grid/mesh-grid-analysis.js';
 
 test('new modulation uses the current source defaults and independent target bounds', () => {
@@ -85,4 +85,97 @@ test('analysis ramp reset does not replace the PCM spectrum or consume another f
   assert.equal(after.settings.particleSize, 0);
   assert.deepEqual([...after.spectrum], spectrum);
   analysis.dispose();
+});
+
+const spreadSpec = { min: 2, max: 20, step: .5, default: 8 };
+
+test('Spread audio defaults use a bounded bass envelope and independent ranges', () => {
+  const first = createSpreadAudioModulation(7.5, spreadSpec);
+  const second = createSpreadAudioModulation(7.5, spreadSpec);
+  assert.deepEqual(first, { ...createModulation(spreadSpec, 'audio'), source: 'amplitude',
+    freqStart: 0, freqEnd: .1, anchor: 'range', amount: 1, attackMs: 120, releaseMs: 650, min: 6, max: 9 });
+  first.min = 2;
+  assert.equal(second.min, 6);
+  for (const base of [2, 2.1, 7.5, 19.9, 20]) {
+    const m = createSpreadAudioModulation(base, spreadSpec);
+    assert.ok(m.min >= 2 && m.max <= 20 && m.min <= m.max);
+    assert.equal(m.min % .5, 0);
+    assert.equal(m.max % .5, 0);
+  }
+  assert.equal(createSpreadAudioModulation(2, spreadSpec).min, 2);
+  assert.equal(createSpreadAudioModulation(20, spreadSpec).max, 20);
+});
+
+test('Spread checkbox preserves the manual value, other targets and edited audio parameters', () => {
+  const particleSize = createModulation({ min: .05, max: .5 });
+  const settings = { spread: 7.5, controlModulations: { particleSize } };
+  setSpreadAudioReactive(settings, true, spreadSpec);
+  assert.equal(settings.spread, 7.5);
+  assert.equal(settings.controlModulations.particleSize, particleSize);
+  Object.assign(settings.controlModulations.spread, { source: 'flux', min: 4, max: 12, amount: .6, attackMs: 250 });
+  const edited = { ...settings.controlModulations.spread };
+  setSpreadAudioReactive(settings, false, spreadSpec);
+  assert.deepEqual(settings.controlModulations.spread, { ...edited, enabled: false });
+  const silence = new Uint8Array(100);
+  assert.equal(createMeshGridAudioModulator().process(settings, silence, silence, 0).spread, 7.5);
+  setSpreadAudioReactive(settings, true, spreadSpec);
+  assert.deepEqual(settings.controlModulations.spread, edited);
+  assert.equal(settings.spread, 7.5);
+});
+
+test('enabling Spread audio replaces a temporal mapping without creating a second mapping', () => {
+  const settings = { spread: 7.5, controlModulations: { spread: createModulation(spreadSpec, 'oscillate') } };
+  setSpreadAudioReactive(settings, true, spreadSpec);
+  assert.deepEqual(Object.keys(settings.controlModulations), ['spread']);
+  assert.deepEqual(settings.controlModulations.spread, createSpreadAudioModulation(7.5, spreadSpec));
+  const plain = { spread: 7.5 };
+  setSpreadAudioReactive(plain, false, spreadSpec);
+  assert.equal(plain.spread, 7.5);
+  assert.equal(plain.controlModulations?.spread?.enabled ?? false, false);
+});
+
+test('Spread reacts only to bass energy, spanning silence to its configured maximum', () => {
+  const settings = { spread: 7.5 };
+  setSpreadAudioReactive(settings, true, spreadSpec);
+  const silence = new Uint8Array(100), bass = new Uint8Array(100), treble = new Uint8Array(100);
+  bass.fill(255, 0, 10); treble.fill(255, 10);
+  const evaluate = spectrum => createMeshGridAudioModulator().process(settings, spectrum, silence, 0).spread;
+  assert.equal(evaluate(silence), 6);
+  assert.equal(evaluate(bass), 9);
+  assert.equal(evaluate(treble), 6);
+});
+
+test('Spread attack expands smoothly and release contracts more slowly', () => {
+  const settings = { spread: 7.5 };
+  setSpreadAudioReactive(settings, true, spreadSpec);
+  const modulator = createMeshGridAudioModulator();
+  const silence = new Uint8Array(100), bass = new Uint8Array(100).fill(255, 0, 10);
+  assert.equal(modulator.process(settings, silence, silence, 0).spread, 6);
+  const attack = modulator.process(settings, bass, silence, .12).spread;
+  assert.ok(Math.abs(attack - (6 + 3 * (1 - Math.exp(-1)))) < 1e-12);
+  const release = modulator.process(settings, silence, silence, .24).spread;
+  assert.ok(Math.abs(release - (6 + (attack - 6) * Math.exp(-.12 / .65))) < 1e-12);
+  assert.ok(6 < release && release < attack && attack < 9);
+});
+
+test('Spread envelopes replay exactly and stay isolated between preview/export analyses', () => {
+  const rate = 8000, pcm = new Float32Array(rate * 2);
+  for (let i = 0; i < pcm.length; i++) {
+    const time = i / rate;
+    if (time > .2 && time < 1.2) pcm[i] = .1 * Math.sin(2 * Math.PI * 100 * time);
+  }
+  const buffer = { sampleRate: rate, duration: 2, length: pcm.length, numberOfChannels: 1, getChannelData: () => pcm };
+  const settings = { spread: 7.5, fftSize: 1024 };
+  setSpreadAudioReactive(settings, true, spreadSpec);
+  const preview = createMeshGridAnalysis(buffer, settings), exported = createMeshGridAnalysis(buffer, structuredClone(settings));
+  try {
+    const run = analysis => Array.from({ length: 120 }, (_, frame) => analysis.frameAt(frame / 60).settings.spread);
+    const expected = run(preview);
+    assert.equal(exported.frameAt(0).settings.spread, 6, 'another analysis cannot consume the initial envelope');
+    assert.deepEqual(run(exported), expected);
+    preview.reset();
+    assert.deepEqual(run(preview), expected);
+    assert.ok(expected.some(value => value > 6));
+    assert.ok(expected.every(value => value >= 6 && value <= 9));
+  } finally { preview.dispose(); exported.dispose(); }
 });

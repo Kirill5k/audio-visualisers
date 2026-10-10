@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Particle Dance audio-reactive Spread checks</title>
+  <style>
+    body { margin: 24px; background: #111018; color: #eee; font: 14px/1.5 system-ui; }
+    h1 { font-size: 24px; } button { padding: 9px 16px; cursor: pointer; }
+    pre { padding: 16px; background: #08070d; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .viewport { max-width: 100%; overflow: auto; border: 1px solid #55465f; }
+    iframe { display: block; width: 960px; height: 720px; border: 0; }
+  </style>
+</head>
+<body>
+  <h1>Particle Dance audio-reactive Spread checks</h1>
+  <p>Exercises the real Spread controls, muted reference audio, pause/replay, capture locks and a 390 × 844 preview. The short recording stays in memory; no files are saved.</p>
+  <button id="run" disabled>Run checks</button>
+  <p id="summary" role="status">Loading Particle Dance…</p>
+  <pre id="results">[]</pre>
+  <div class="viewport"><iframe id="app" title="Particle Dance Spread test preview" src="../particle-dance.html" allow="autoplay"></iframe></div>
+  <script type="module" src="./particle-dance-spread-browser.js"></script>
+</body>
+</html>

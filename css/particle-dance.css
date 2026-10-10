@@ -16,6 +16,15 @@
 .particle-dance details details { margin: 12px 0 0; padding: 8px 0 0; border-top: 1px solid #ffffff0e; }
 .particle-dance details details summary { color: var(--muted); font-size: 10px; }
 .particle-dance .control-head .number-value { width: 65px; padding: 3px 5px; border: 1px solid #ffffff15; background: #0006; color: var(--accent); border-radius: 4px; text-align: right; font-size: 10px; }
+.particle-dance .spread-head { gap: 8px; }
+.particle-dance .spread-reactive-toggle { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; white-space: nowrap; color: var(--accent); font-size: 9px; cursor: pointer; }
+.particle-dance .spread-reactive-toggle input { width: 13px; height: 13px; margin: 0; accent-color: var(--accent); }
+.particle-dance .spread-audio-readout { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 10px; color: var(--muted); }
+.particle-dance #spreadLiveValue { color: var(--accent); font-variant-numeric: tabular-nums; }
+.particle-dance .spread-audio-controls { margin-top: 10px; padding: 0 10px 10px; border: 1px solid var(--edge); border-radius: 6px; background: #ffffff03; }
+.particle-dance .spread-audio-controls .color-row { gap: 8px; }
+.particle-dance .spread-audio-controls select { min-width: 0; max-width: 145px; }
+.particle-dance .spread-audio-readout[hidden], .particle-dance .spread-audio-controls[hidden] { display: none; }
 .particle-dance .color-row, .particle-dance .toggle-row { margin-top: 9px; }
 .particle-dance .color-row select { max-width: 155px; }
 .particle-dance .modulation-card { padding-bottom: 8px; }
