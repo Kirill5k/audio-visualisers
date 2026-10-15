@@ -1,0 +1,48 @@
+.light-fall { --accent: #86d6eb; --panel: rgba(8, 12, 10, .94); }
+.light-fall #panel { width: 314px; max-height: calc(100dvh - 138px); }
+.light-fall #panelToggle { left: 344px; }
+.light-fall #panelToggle.closed { left: 18px; }
+.light-fall h1 { font-size: 25px; letter-spacing: -.055em; font-weight: 550; }
+.light-fall .edition { color: var(--muted); font-size: 9px; margin-top: 21px; white-space: nowrap; }
+.light-fall #variants { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+.light-fall #variants button { height: 28px; padding: 0; border: 1px solid var(--edge); border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 10px; }
+.light-fall #variants button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: #86d6eb12; }
+.light-fall .preset-caption { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 10px; color: var(--muted); }
+.light-fall .text-button { border: 0; padding: 3px; color: var(--accent); background: transparent; cursor: pointer; font-size: 10px; }
+.light-fall .search-label { display: block; margin-top: 22px; font-size: 10px; color: var(--muted); }
+.light-fall #controlSearch { width: 100%; margin: 7px 0 2px; padding: 9px; background: #ffffff05; border: 1px solid var(--edge); border-radius: 6px; color: var(--ink); font-size: 11px; }
+.light-fall details.section { margin-top: 12px; padding-top: 12px; }
+.light-fall details summary { cursor: pointer; color: var(--ink); font-size: 11px; font-weight: 600; padding: 3px 0; }
+.light-fall details details { margin: 12px 0 0; padding: 8px 0 0; border-top: 1px solid #ffffff0e; }
+.light-fall details details summary { color: var(--muted); font-size: 10px; }
+.light-fall .control-head .number-value { width: 65px; padding: 3px 5px; border: 1px solid #ffffff15; background: #0006; color: var(--accent); border-radius: 4px; text-align: right; font-size: 10px; }
+.light-fall .color-row, .light-fall .toggle-row { margin-top: 9px; }
+.light-fall .color-row select { max-width: 155px; }
+.light-fall .modulation-card { padding-bottom: 8px; }
+.light-fall .modulation-add { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+.light-fall .modulation-add select { min-width: 0; flex: 1; width: 100%; }
+.light-fall .config-row[data-mode-hidden="true"] { display: none; }
+.light-fall .effect-actions { display: flex; gap: 12px; margin: 10px 0; }
+.light-fall .remove-modulation { margin: 10px 0 4px; }
+.light-fall input[type="color"] { width: 43px; height: 28px; padding: 2px; border: 1px solid var(--edge); border-radius: 5px; background: var(--panel); cursor: pointer; }
+.light-fall .credit { margin-top: 14px; }
+.light-fall .control[hidden], .light-fall .config-row[hidden], .light-fall details[hidden] { display: none; }
+.light-fall .hint, .light-fall .credit { color: var(--muted); font-size: 10px; line-height: 1.7; }
+.light-fall .credit a { color: var(--accent); }
+.light-fall button:disabled, .light-fall input:disabled, .light-fall select:disabled { opacity: .4; cursor: not-allowed; }
+.light-fall .file-picker[aria-disabled="true"] { opacity: .4; pointer-events: none; }
+.light-fall #dropHint { display: none; position: fixed; inset: 20px; z-index: 80; border: 2px dashed var(--accent); border-radius: 20px; background: #07141ce8; align-items: center; justify-content: center; font-size: 24px; pointer-events: none; }
+.light-fall.dragging #dropHint { display: flex; }
+.light-fall #actions { max-width: calc(100vw - 405px); flex-wrap: wrap; justify-content: flex-end; }
+.light-fall #timeline { left: 18px; right: 18px; }
+@media (max-width: 1100px) {
+  .light-fall #actions .action-label { display: none; }
+  .light-fall #actions { gap: 5px; }
+}
+@media (max-width: 760px) {
+  .light-fall #panel { top: 12px; left: 12px; width: min(314px, calc(100vw - 70px)); max-height: calc(100dvh - 160px); }
+  .light-fall #panelToggle:not(.closed) { left: auto; right: 12px; }
+  .light-fall #actions { top: auto; bottom: 12px; left: 12px; right: 12px; max-width: none; justify-content: center; flex-wrap: nowrap; }
+  .light-fall #actions .action { padding: 0 10px; }
+  .light-fall #timeline { bottom: 102px; }
+}
