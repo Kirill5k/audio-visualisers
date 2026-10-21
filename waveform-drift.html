@@ -5,13 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Waveform Drift — Audio Visualiser</title>
   <link rel="stylesheet" href="css/visualiser-ui.css">
+  <style>
+    :root { --panel: rgba(9, 9, 9, .91); --accent: #eee; }
+    body { background: #000; }
+    #stage::after { display: none; }
+    #panel.hidden { visibility: hidden; }
+    #panelToggle { left: 322px; }
+    .reference-track { width: 100%; margin-top: 8px; }
+    button:focus-visible, input:focus-visible, .file-picker:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
+    @media (max-width: 760px) {
+      #panel { max-height: calc(100dvh - 130px); width: min(286px, calc(100vw - 76px)); }
+      #panelToggle { left: min(322px, calc(100vw - 50px)); }
+      #panelToggle.closed { left: 18px; }
+    }
+  </style>
 </head>
 <body>
   <div id="stage"></div>
 
-  <button id="panelToggle" class="glass" aria-label="Hide settings" title="Hide settings">×</button>
+  <button id="panelToggle" class="glass closed" aria-label="Show settings" aria-expanded="false" aria-controls="panel" title="Show settings">☰</button>
 
-  <aside id="panel" class="glass">
+  <aside id="panel" class="glass hidden" inert>
     <div class="brand">
       <div>
         <div class="eyebrow">Audio reactive study</div>
@@ -21,23 +35,24 @@
 
     <label class="file-picker" for="fileInput">Choose an audio file</label>
     <input id="fileInput" type="file" accept="audio/*">
+    <button id="referenceBtn" class="action reference-track">Play reference track</button>
 
     <section class="section">
       <div class="section-title">Trail</div>
 
       <div class="control">
-        <div class="control-head"><span>Flow speed</span><span class="value" id="speedValue">2.50</span></div>
-        <input id="speed" type="range" min="0.15" max="2.5" step="0.05" value="2.5">
+        <div class="control-head"><span>Flow speed</span><span class="value" id="speedValue">1.40</span></div>
+        <input id="speed" type="range" min="0.15" max="2.5" step="0.05" value="1.4">
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Trail length</span><span class="value" id="historyBinsValue">320</span></div>
-        <input id="historyBins" type="range" min="40" max="420" step="20" value="320">
+        <div class="control-head"><span>Trail length</span><span class="value" id="historyBinsValue">220</span></div>
+        <input id="historyBins" type="range" min="40" max="420" step="20" value="220">
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Trail drop</span><span class="value" id="driftYValue">0.30</span></div>
-        <input id="driftY" type="range" min="-0.3" max="0.3" step="0.01" value="0.3">
+        <div class="control-head"><span>Trail drop</span><span class="value" id="driftYValue">0.20</span></div>
+        <input id="driftY" type="range" min="-0.3" max="0.3" step="0.01" value="0.2">
       </div>
 
       <div class="control">
@@ -46,13 +61,13 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Trail fade</span><span class="value" id="fadeValue">0.60</span></div>
-        <input id="fade" type="range" min="0" max="1" step="0.01" value="0.6">
+        <div class="control-head"><span>Trail fade</span><span class="value" id="fadeValue">0.88</span></div>
+        <input id="fade" type="range" min="0" max="1" step="0.01" value="0.88">
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Motion smoothing</span><span class="value" id="motionSmoothValue">0.00</span></div>
-        <input id="motionSmooth" type="range" min="0" max="0.85" step="0.05" value="0">
+        <div class="control-head"><span>Motion smoothing</span><span class="value" id="motionSmoothValue">0.15</span></div>
+        <input id="motionSmooth" type="range" min="0" max="0.85" step="0.05" value="0.15">
       </div>
     </section>
 
@@ -70,13 +85,13 @@
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Baseline</span><span class="value" id="baselineValue">-0.37</span></div>
-        <input id="baseline" type="range" min="-0.4" max="0.45" step="0.01" value="-0.37">
+        <div class="control-head"><span>Baseline</span><span class="value" id="baselineValue">-0.06</span></div>
+        <input id="baseline" type="range" min="-0.4" max="0.45" step="0.01" value="-0.06">
       </div>
 
       <div class="control">
-        <div class="control-head"><span>FFT smoothing</span><span class="value" id="smoothingValue">0.85</span></div>
-        <input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.85">
+        <div class="control-head"><span>FFT smoothing</span><span class="value" id="smoothingValue">0.78</span></div>
+        <input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.78">
       </div>
 
       <label class="color-row">
@@ -98,52 +113,52 @@
       </label>
 
       <div class="control">
-        <div class="control-head"><span>Point size</span><span class="value" id="pointSizeValue">3.0</span></div>
-        <input id="pointSize" type="range" min="0.4" max="5" step="0.1" value="3">
+        <div class="control-head"><span>Point size</span><span class="value" id="pointSizeValue">2.2</span></div>
+        <input id="pointSize" type="range" min="0.4" max="5" step="0.1" value="2.2">
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Density</span><span class="value" id="densityValue">0.90</span></div>
-        <input id="density" type="range" min="0.05" max="1" step="0.01" value="0.9">
+        <div class="control-head"><span>Density</span><span class="value" id="densityValue">0.82</span></div>
+        <input id="density" type="range" min="0.05" max="1" step="0.01" value="0.82">
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Opacity</span><span class="value" id="opacityValue">0.290</span></div>
-        <input id="opacity" type="range" min="0.005" max="1" step="0.005" value="0.29">
+        <div class="control-head"><span>Opacity</span><span class="value" id="opacityValue">0.650</span></div>
+        <input id="opacity" type="range" min="0.005" max="1" step="0.005" value="0.65">
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Spray</span><span class="value" id="scatterValue">0.0</span></div>
-        <input id="scatter" type="range" min="0" max="25" step="0.5" value="0">
+        <div class="control-head"><span>Spray</span><span class="value" id="scatterValue">4.0</span></div>
+        <input id="scatter" type="range" min="0" max="25" step="0.5" value="4">
       </div>
 
       <label class="toggle-row">
         <span>Reverse flow</span>
-        <input id="reverseFlow" type="checkbox" checked>
+        <input id="reverseFlow" type="checkbox">
       </label>
 
-      <div class="color-row"><span>Particle colour</span><input id="colorParticles" type="color" value="#c9cf9a"></div>
+      <div class="color-row"><span>Particle colour</span><input id="colorParticles" type="color" value="#e4e4e4"></div>
     </section>
 
     <section class="section">
-      <div class="section-title">Waveform</div>
+      <div class="section-title">Spectrum crest</div>
 
       <div class="control">
-        <div class="control-head"><span>Thickness</span><span class="value" id="waveThicknessValue">1.5</span></div>
-        <input id="waveThickness" type="range" min="0" max="8" step="0.1" value="1.5">
+        <div class="control-head"><span>Thickness</span><span class="value" id="waveThicknessValue">1.2</span></div>
+        <input id="waveThickness" type="range" min="0" max="8" step="0.1" value="1.2">
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Smoothness</span><span class="value" id="waveSmoothnessValue">0.13</span></div>
-        <input id="waveSmoothness" type="range" min="0" max="1" step="0.01" value="0.13">
+        <div class="control-head"><span>Smoothness</span><span class="value" id="waveSmoothnessValue">0.20</span></div>
+        <input id="waveSmoothness" type="range" min="0" max="1" step="0.01" value="0.2">
       </div>
 
       <div class="control">
-        <div class="control-head"><span>Glow</span><span class="value" id="waveGlowValue">0.06</span></div>
-        <input id="waveGlow" type="range" min="0" max="1" step="0.01" value="0.06">
+        <div class="control-head"><span>Glow</span><span class="value" id="waveGlowValue">0.08</span></div>
+        <input id="waveGlow" type="range" min="0" max="1" step="0.01" value="0.08">
       </div>
 
-      <div class="color-row"><span>Waveform colour</span><input id="colorWave" type="color" value="#f2f4e4"></div>
+      <div class="color-row"><span>Waveform colour</span><input id="colorWave" type="color" value="#ffffff"></div>
 
       <label class="toggle-row">
         <span>Bloom</span>
@@ -173,6 +188,7 @@
   </aside>
 
   <nav id="actions">
+    <button id="openBtn" class="action glass" title="Open audio">＋ <span class="action-label">Open audio</span></button>
     <button id="playPauseBtn" class="action glass" disabled title="Play">▶ <span class="action-label">Play</span></button>
     <button id="replayBtn" class="action glass" disabled title="Replay">↺ <span class="action-label">Replay</span></button>
     <button id="unloadBtn" class="action glass" disabled title="Unload">⊘ <span class="action-label">Unload</span></button>
@@ -223,44 +239,42 @@
     import { createAudioPlayback } from "./js/audio-playback.js";
     import { createCaptureSession } from "./js/capture-export.js";
 
-    // 2048 = 43ms window, 1024 bins. At 1024 the bottom ~10 bins were stretched across
-    // the left third of the screen by FREQUENCY_CURVE, so the bass was 10 numbers magnified.
+    import { FREQUENCY_CURVE, sampleSpectrum } from "./js/waveform-drift-spectrum.js";
+
     const FFT_SIZE = 2048;
-    // 520 columns left ~7px between dots at 2x DPR, so the bright bass region resolved as
-    // separate specks (local contrast 1.8x its own brightness). ~1 column per device pixel
-    // fills it into a surface: same brightness at opacity 0.02, local contrast down to 0.21.
-    // Past ~2048 this adds rendering density, not spectrum — FFT_SIZE only yields 1024 bins.
-    const COLUMNS = 4096;
+    // Fine grain without the original 1.3 million overlapping vertices.
+    const COLUMNS = 2048;
+    const WAVE_COLUMNS = 1024;
     const WORLD_WIDTH = 100;
-    const FREQUENCY_CURVE = 2.32;
-    let HISTORY = 320;
+    const FIELD_WIDTH = 84;
+    let HISTORY = 220;
     const EXPORT_WIDTH = 1920;
     const EXPORT_HEIGHT = 1080;
     const EXPORT_FPS = 60;
     const EXPORT_SUPERSAMPLE = 2;
 
     const settings = {
-      speed: 2.5,
-      historyBins: 320,
+      speed: 1.4,
+      historyBins: 220,
       driftX: 0,
-      driftY: 0.3,
-      fade: 0.6,
-      motionSmooth: 0,
+      driftY: 0.2,
+      fade: 0.88,
+      motionSmooth: 0.15,
       gain: 1,
       height: 20,
-      baseline: -0.37,
-      smoothing: 0.85,
+      baseline: -0.06,
+      smoothing: 0.78,
       minFrequency: 40,
       maxFrequency: 12000,
-      pointSize: 3,
-      density: 0.9,
-      opacity: 0.29,
-      scatter: 0,
+      pointSize: 2.2,
+      density: 0.82,
+      opacity: 0.65,
+      scatter: 4,
       lines: false,
-      waveThickness: 1.5,
-      waveSmoothness: 0.13,
-      waveGlow: 0.06,
-      reverseFlow: true,
+      waveThickness: 1.2,
+      waveSmoothness: 0.2,
+      waveGlow: 0.08,
+      reverseFlow: false,
       bloom: true,
       grain: false,
       lock60: false,
@@ -268,6 +282,7 @@
 
     const audio = createAudioPlayback({
       fftSize: FFT_SIZE,
+      maxFftSize: FFT_SIZE,
       smoothing: settings.smoothing,
       minDecibels: -100,
       maxDecibels: -26,
@@ -300,20 +315,24 @@
     let waveGlow;
     let waveGeometry;
     let wavePositions;
-    let waveRawHeights;
 
     let historyData = new Uint8Array(FFT_BINS * HISTORY);
     let historyTexture;
     let historyHead = 0;
     let flowAccumulator = 0;
     let elapsedTime = 0;
+    let loadingAudio = false;
 
     function worldHeight() {
       return WORLD_WIDTH / camera.userData.aspect;
     }
 
     function baselineY() {
-      return settings.baseline * worldHeight();
+      return settings.baseline * Math.min(worldHeight(), 70);
+    }
+
+    function verticalScale() {
+      return Math.min(1, worldHeight() / 56.25);
     }
 
     function setStatus(message, live = false) {
@@ -332,8 +351,7 @@
         height: innerHeight,
         pixelRatio: renderer.getPixelRatio(),
       }),
-      // Render 2x and let the exporter downscale: the field is ~200k soft 2-4px dots,
-      // which alias badly (and eat the encoder's bitrate) when rasterised 1:1.
+      // Supersample fine particles for clean 1080p capture.
       applyViewport: (width, height) => {
         renderer.setPixelRatio(EXPORT_SUPERSAMPLE);
         composer.setPixelRatio(EXPORT_SUPERSAMPLE);
@@ -360,7 +378,7 @@
     function initScene() {
       try {
         scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x040503);
+        scene.background = new THREE.Color(0x000000);
 
         camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100);
         camera.position.z = 10;
@@ -405,6 +423,7 @@
 
       if (fieldMaterial) {
         fieldMaterial.uniforms.uBaseline.value = baselineY();
+        fieldMaterial.uniforms.uVerticalScale.value = verticalScale();
         fieldMaterial.uniforms.uViewportHeight.value = height * pixelRatio;
       }
       if (wave) {
@@ -431,18 +450,17 @@
 
     function seedDemoHistory() {
       for (let row = 0; row < HISTORY; row++) {
-        const phase = row * 0.075;
+        const phase = row * 0.035;
         for (let bin = 0; bin < FFT_BINS; bin++) {
           const x = bin / FFT_BINS;
-          const ridgeA = Math.exp(-Math.pow((x - .05 - Math.sin(phase) * .012) * 16, 2));
-          const ridgeB = Math.exp(-Math.pow((x - .17 - Math.cos(phase * .7) * .025) * 10, 2));
-          const ripple = Math.max(0, Math.sin(x * 75 - phase * 2.1)) * Math.exp(-x * 5.2);
-          const noise = Math.sin(bin * 12.9898 + row * 78.233) * 43758.5453;
-          const grain = (noise - Math.floor(noise)) * 16;
-          historyData[row * FFT_BINS + bin] = Math.min(160, 18 + ridgeA * 96 + ridgeB * 58 + ripple * 26 + grain);
+          const bed = 128 * Math.exp(-x * 7);
+          const ridge = 48 * Math.exp(-Math.pow((x - .035 - Math.sin(phase) * .005) * 85, 2));
+          const detail = (Math.sin(x * 160 + phase) * 13 + Math.sin(x * 470 - phase * 2) * 9) * Math.exp(-x * 3);
+          historyData[row * FFT_BINS + bin] = Math.max(0, Math.min(225, 34 + bed + ridge + detail));
         }
       }
       historyHead = 0;
+      flowAccumulator = 0;
       historyTexture.needsUpdate = true;
       const newestRow = (historyHead - 1 + HISTORY) % HISTORY;
       frequencyData.set(historyData.subarray(newestRow * FFT_BINS, (newestRow + 1) * FFT_BINS));
@@ -453,11 +471,12 @@
       const grids = new Float32Array(count * 2);
       let index = 0;
 
-      // Oldest rows first so the newest waveform paints over its own trail.
+      // Each vertex belongs to a physical ring-buffer row. Its grain travels with
+      // the stored spectrum instead of flickering as history moves underneath it.
       for (let row = HISTORY - 1; row >= 0; row--) {
         for (let column = 0; column < COLUMNS; column++) {
           grids[index * 2] = column / (COLUMNS - 1);
-          grids[index * 2 + 1] = row / (HISTORY - 1);
+          grids[index * 2 + 1] = row;
           index++;
         }
       }
@@ -488,6 +507,9 @@
           uHistory: { value: historyTexture },
           uHistoryHead: { value: historyHead },
           uHistorySize: { value: HISTORY },
+          uFlowFraction: { value: flowAccumulator },
+          uVerticalScale: { value: verticalScale() },
+          uSmoothness: { value: settings.waveSmoothness },
           uGain: { value: settings.gain },
           uHeight: { value: settings.height },
           uBaseline: { value: 0 },
@@ -504,7 +526,6 @@
           uWorldWidth: { value: WORLD_WIDTH },
           uReverseFlow: { value: settings.reverseFlow ? -1 : 1 },
           uLines: { value: settings.lines ? 1 : 0 },
-          uTime: { value: 0 },
           uColor: { value: new THREE.Color($("colorParticles").value) },
           uViewportHeight: { value: innerHeight },
         },
@@ -514,6 +535,9 @@
           uniform sampler2D uHistory;
           uniform float uHistoryHead;
           uniform float uHistorySize;
+          uniform float uFlowFraction;
+          uniform float uVerticalScale;
+          uniform float uSmoothness;
           uniform float uGain;
           uniform float uHeight;
           uniform float uBaseline;
@@ -530,7 +554,6 @@
           uniform float uWorldWidth;
           uniform float uReverseFlow;
           uniform float uLines;
-          uniform float uTime;
           uniform vec3 uColor;
           uniform float uViewportHeight;
 
@@ -543,49 +566,46 @@
             return fract(p.x * p.y);
           }
 
+          float spectrum(float x, float row) {
+            float frequency = mix(uMinFrequency, uMaxFrequency, pow(clamp(x, 0.0, 1.0), ${FREQUENCY_CURVE.toFixed(2)}));
+            float raw = texture2D(uHistory, vec2(clamp(frequency / uNyquist, 0.0, 1.0), (row + .5) / uHistorySize)).r;
+            return pow(clamp(pow(raw, 1.18) * uGain, 0.0, 1.0), 1.55);
+          }
+
           void main() {
-            float minFrequencyX = clamp(uMinFrequency / uNyquist, 0.0, 0.998);
-            float maxFrequencyX = clamp(uMaxFrequency / uNyquist, minFrequencyX + 0.001, 0.999);
-            float frequencyX = mix(minFrequencyX, maxFrequencyX, pow(aGrid.x, ${FREQUENCY_CURVE.toFixed(2)}));
+            float row = aGrid.y;
+            float ageRow = mod(uHistoryHead - 1.0 - row + uHistorySize, uHistorySize);
+            float age = clamp((ageRow + uFlowFraction) / (uHistorySize - 1.0), 0.0, 1.0);
+            float radius = uSmoothness * .012;
+            float shaped = (spectrum(aGrid.x - 2.0 * radius, row)
+              + 2.0 * spectrum(aGrid.x - radius, row)
+              + 3.0 * spectrum(aGrid.x, row)
+              + 2.0 * spectrum(aGrid.x + radius, row)
+              + spectrum(aGrid.x + 2.0 * radius, row)) / 9.0;
 
-            float age = aGrid.y;
-            float ageRow = age * (uHistorySize - 1.0);
-            float textureRow = mod(uHistoryHead - 1.0 - ageRow + uHistorySize, uHistorySize);
-            float raw = texture2D(uHistory, vec2(frequencyX, (textureRow + .5) / uHistorySize)).r;
-            float amplitude = clamp(pow(raw, 1.18) * uGain, 0.0, 1.0);
-            float shaped = pow(amplitude, 1.55);
-
-            float seed = hash21(aGrid * vec2(811.7, 437.2));
-            float seedB = hash21(aGrid.yx * vec2(309.4, 971.1) + 1.7);
-            // Per-vertex randomness turns a polyline into a jagged, strobing mess: in line
-            // mode every vertex of a row draws the same seeds, so density culls whole rows
-            // and spray/flicker move the row as one.
-            seed = mix(seed, hash21(vec2(age, 12.7) * vec2(811.7, 437.2)), uLines);
-            seedB = mix(seedB, hash21(vec2(age, 4.1) * vec2(309.4, 971.1) + 1.7), uLines);
-            float flicker = .85 + .15 * sin(uTime * 2.4 + seed * 25.0);
-
+            float seed = hash21(vec2(aGrid.x * 811.7, row * 1.37));
+            float seedB = hash21(vec2(aGrid.x * 309.4 + 1.7, row * 2.11));
+            seed = mix(seed, hash21(vec2(row, 12.7)), uLines);
+            seedB = mix(seedB, hash21(vec2(row, 4.1)), uLines);
+            float drift = age * (.7 + .3 * age);
+            // A little uneven erosion breaks up the curtain while the crest stays crisp.
+            float erosion = seedB * (.08 + .92 * pow(age, .6));
             vec3 transformed;
-            transformed.x = (aGrid.x - .5) * uWorldWidth
-              + age * uDriftX * uWorldWidth * uReverseFlow
-              + (seed - .5) * (.12 + shaped * .8) * (1.0 - uLines);
-            // Spray hangs off the crest and packs towards it, so the trail reads as a
-            // body on one side of the waveform rather than a symmetric fuzz around it.
-            transformed.y = uBaseline + shaped * uHeight
-              + uReverseFlow * (
-                  -age * uDriftY * uWorldWidth
-                  - pow(seedB, 1.7) * uScatter * (.4 + shaped * .8)
-                );
+            transformed.x = (aGrid.x - .5) * ${FIELD_WIDTH.toFixed(1)}
+              + drift * uDriftX * uWorldWidth * uReverseFlow
+              + (seed - .5) * (.045 + age * .18) * (1.0 - uLines);
+            transformed.y = uBaseline + uVerticalScale * (shaped * uHeight
+              - uReverseFlow * (drift * uDriftY * uWorldWidth
+              + erosion * uScatter * (.35 + shaped * .65)));
             transformed.z = 0.0;
 
             gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
-            gl_PointSize = uPointSize * (.65 + shaped * .9) * (uViewportHeight / 900.0);
-
-            // Alpha compositing (not additive): dense clusters converge on the picked
-            // colour instead of blowing out to white when opacity is raised.
+            gl_PointSize = max(1.0, uPointSize * (.65 + seedB * .7) * (uViewportHeight / 900.0));
             float visible = 1.0 - step(uDensity, seed);
-            float quiet = smoothstep(.015, .16, amplitude);
-            float trail = mix(1.0, pow(1.0 - age, 1.6), uTrailFade);
-            vAlpha = visible * trail * flicker * quiet * uOpacity;
+            float quiet = smoothstep(.002, .045, shaped);
+            float trail = exp(-age * mix(.5, 5.5, uTrailFade)) * (1.0 - smoothstep(.82, 1.0, age));
+            float texture = .45 + .55 * seedB;
+            vAlpha = visible * trail * quiet * uOpacity * texture;
             vColor = uColor;
           }
         `,
@@ -625,8 +645,7 @@
     }
 
     function createWave() {
-      wavePositions = new Float32Array(COLUMNS * 3);
-      waveRawHeights = new Float32Array(COLUMNS);
+      wavePositions = new Float32Array(WAVE_COLUMNS * 3);
       waveGeometry = new LineGeometry();
       waveGeometry.setPositions(wavePositions);
 
@@ -634,7 +653,7 @@
         color: $("colorWave").value,
         linewidth: settings.waveThickness,
         transparent: true,
-        opacity: .95,
+        opacity: .82,
         depthWrite: false,
         depthTest: false,
       });
@@ -689,8 +708,8 @@
 
       createHistoryTexture();
       if (!audio.hasAudio) seedDemoHistory();
+      resetSmoothing = true;
       createParticleField();
-      fieldMaterial.uniforms.uTime.value = elapsedTime;
       fieldMaterial.uniforms.uBaseline.value = baselineY();
       fieldMaterial.uniforms.uViewportHeight.value = innerHeight * renderer.getPixelRatio();
       if (audio.context) fieldMaterial.uniforms.uNyquist.value = audio.context.sampleRate / 2;
@@ -701,11 +720,8 @@
       composer.setPixelRatio(renderer.getPixelRatio());
       composer.addPass(new RenderPass(scene, camera));
 
-      // At full flow speed the field redraws ~30% of its pixels per frame — 200k
-      // overlapping dots, each jumping as 2-3 history rows scroll under it. Averaging
-      // consecutive frames is the only thing that measurably calms it (-55% at 0.5).
-      // AfterimagePass for its ping-pong buffers, max() swapped for a real EMA so the
-      // image settles instead of leaving comet trails. Off at 0.
+      // A light temporal average softens subpixel grain. Replace the afterimage
+      // max blend with an EMA so paused frames settle without lingering trails.
       smoothPass = new AfterimagePass(settings.motionSmooth);
       smoothPass.compFsMaterial.fragmentShader = `
         uniform float damp;
@@ -719,7 +735,7 @@
       smoothPass.enabled = settings.motionSmooth > 0;
       composer.addPass(smoothPass);
 
-      bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .38, .3, .5);
+      bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .22, .25, .65);
       bloomPass.enabled = settings.bloom;
       composer.addPass(bloomPass);
 
@@ -750,7 +766,7 @@
             vec3 color = texture2D(tDiffuse, vUv).rgb;
             float distanceFromCenter = length((vUv - .5) * vec2(1.0, .72));
             float vignette = 1.0 - smoothstep(.3, .9, distanceFromCenter) * .5;
-            float grain = (hash21(vUv * 1900.0 + fract(uTime)) - .5) * .06 * uGrain;
+            float grain = (hash21(vUv * 1900.0 + fract(uTime)) - .5) * .045 * uGrain * smoothstep(0.0, .15, max(color.r, max(color.g, color.b)));
             color = color * vignette + grain;
             gl_FragColor = vec4(max(color, 0.0), 1.0);
           }
@@ -767,6 +783,7 @@
       flowAccumulator = 0;
       historyTexture.needsUpdate = true;
       fieldMaterial.uniforms.uHistoryHead.value = historyHead;
+      resetSmoothing = true;
       updateWave();
     }
 
@@ -777,62 +794,36 @@
       fieldMaterial.uniforms.uHistoryHead.value = historyHead;
     }
 
-    function sampleAmplitude(column) {
-      const u = column / (COLUMNS - 1);
-      const nyquist = (audio.context?.sampleRate || 48000) / 2;
-      const frequency = THREE.MathUtils.lerp(
-        settings.minFrequency,
-        settings.maxFrequency,
-        Math.pow(u, FREQUENCY_CURVE),
-      );
-      const bin = Math.min(FFT_BINS - 1, Math.floor(Math.min(0.999, frequency / nyquist) * FFT_BINS));
-      const amplitude = Math.min(1, Math.pow(frequencyData[bin] / 255, 1.18) * settings.gain);
-      return Math.pow(amplitude, 1.55);
-    }
-
     function updateWave() {
       if (!wave) return;
-      const smoothingRadius = Math.round(settings.waveSmoothness * 18);
       const base = baselineY();
-
-      for (let column = 0; column < COLUMNS; column++) {
-        waveRawHeights[column] = sampleAmplitude(column) * settings.height;
+      const options = { ...settings, nyquist: (audio.context?.sampleRate || 48000) / 2 };
+      const scale = verticalScale();
+      for (let column = 0; column < WAVE_COLUMNS; column++) {
+        const u = column / (WAVE_COLUMNS - 1);
+        wavePositions[column * 3] = (u - .5) * FIELD_WIDTH;
+        wavePositions[column * 3 + 1] = base + sampleSpectrum(frequencyData, u, options, settings.waveSmoothness) * settings.height * scale;
       }
-
-      for (let column = 0; column < COLUMNS; column++) {
-        const i = column * 3;
-        let height = waveRawHeights[column];
-
-        if (smoothingRadius > 0) {
-          let weightedHeight = 0;
-          let totalWeight = 0;
-          for (let offset = -smoothingRadius; offset <= smoothingRadius; offset++) {
-            const sampleIndex = Math.max(0, Math.min(COLUMNS - 1, column + offset));
-            const weight = smoothingRadius + 1 - Math.abs(offset);
-            weightedHeight += waveRawHeights[sampleIndex] * weight;
-            totalWeight += weight;
-          }
-          height = weightedHeight / totalWeight;
-        }
-
-        wavePositions[i] = (column / (COLUMNS - 1) - .5) * WORLD_WIDTH;
-        wavePositions[i + 1] = base + height;
-        wavePositions[i + 2] = 0;
+      // LineGeometry's interleaved buffer is allocated once; only upload new endpoints.
+      const start = waveGeometry.attributes.instanceStart;
+      const end = waveGeometry.attributes.instanceEnd;
+      for (let i = 0; i < WAVE_COLUMNS - 1; i++) {
+        start.setXYZ(i, wavePositions[i * 3], wavePositions[i * 3 + 1], 0);
+        end.setXYZ(i, wavePositions[(i + 1) * 3], wavePositions[(i + 1) * 3 + 1], 0);
       }
-      waveGeometry.setPositions(wavePositions);
+      start.data.needsUpdate = true;
     }
 
     function renderFrame(delta, externalFrequencyData = null) {
-      elapsedTime += delta;
+      if (audio.isPlaying || externalFrequencyData) elapsedTime += delta;
       // A fresh export must not inherit the live image through the smoothing buffer.
       smoothPass.damp = resetSmoothing ? 0 : settings.motionSmooth;
       resetSmoothing = false;
-      fieldMaterial.uniforms.uTime.value = elapsedTime;
       finishPass.uniforms.uTime.value = elapsedTime;
 
       if (externalFrequencyData) {
         frequencyData.set(externalFrequencyData.subarray(0, FFT_BINS));
-      } else {
+      } else if (audio.isPlaying) {
         audio.pullFrequencyData();
       }
 
@@ -845,6 +836,7 @@
         updateWave();
       }
 
+      fieldMaterial.uniforms.uFlowFraction.value = flowAccumulator;
       composer.render();
     }
 
@@ -917,6 +909,7 @@
     async function loadAudio(file, preparedRecording, exportWritable) {
       setStatus("Decoding · " + file.name);
       await audio.load(file);
+      audio.setSmoothing(settings.smoothing);
       fieldMaterial.uniforms.uNyquist.value = audio.context.sampleRate / 2;
       resetLiveField();
       setButtonsEnabled(true);
@@ -985,6 +978,7 @@
           historyHead = saved.historyHead;
           flowAccumulator = saved.flowAccumulator;
           elapsedTime = saved.elapsedTime;
+          resetSmoothing = true;
           fieldMaterial.uniforms.uHistoryHead.value = historyHead;
           historyTexture.needsUpdate = true;
           updatePlayPauseUI();
@@ -1001,6 +995,7 @@
       audio.unload();
       $("fileInput").value = "";
       seedDemoHistory();
+      resetSmoothing = true;
       fieldMaterial.uniforms.uHistoryHead.value = historyHead;
       updateWave();
       setButtonsEnabled(false);
@@ -1051,7 +1046,10 @@
       wave.visible = value > 0;
       waveGlow.visible = value > 0 && settings.waveGlow > 0;
     });
-    bindRange("waveSmoothness", "waveSmoothness", 2, updateWave);
+    bindRange("waveSmoothness", "waveSmoothness", 2, (value) => {
+      fieldMaterial.uniforms.uSmoothness.value = value;
+      updateWave();
+    });
     bindRange("waveGlow", "waveGlow", 2, (value) => {
       waveGlow.material.opacity = value;
       waveGlow.visible = value > 0 && settings.waveThickness > 0;
@@ -1120,15 +1118,44 @@
 
     $("panelToggle").addEventListener("click", () => {
       const hidden = $("panel").classList.toggle("hidden");
+      $("panel").inert = hidden;
+      $("panelToggle").setAttribute("aria-expanded", String(!hidden));
       $("panelToggle").classList.toggle("closed", hidden);
       $("panelToggle").textContent = hidden ? "☰" : "×";
       $("panelToggle").title = hidden ? "Show settings" : "Hide settings";
       $("panelToggle").setAttribute("aria-label", hidden ? "Show settings" : "Hide settings");
     });
 
+    $("openBtn").addEventListener("click", () => {
+      if (!capture.isExporting && !recorder.isRecording && !loadingAudio) $("fileInput").click();
+    });
+    $("referenceBtn").addEventListener("click", async () => {
+      if (capture.isExporting || recorder.isRecording || loadingAudio) return;
+      loadingAudio = true;
+      $("referenceBtn").disabled = true;
+      try {
+        await audio.resumeContext();
+        setStatus("Loading reference track…");
+        const response = await fetch("./reference.mp3");
+        if (!response.ok) throw new Error("Reference track unavailable");
+        await loadAudio(new File([await response.blob()], "reference.mp3", { type: "audio/mpeg" }));
+      } catch (error) {
+        setStatus("Could not load audio · " + error.message);
+      } finally {
+        loadingAudio = false;
+        $("referenceBtn").disabled = false;
+      }
+    });
+
+    // Give every existing range a programmatic name without changing the shared UI.
+    document.querySelectorAll(".control").forEach((control) => {
+      const input = control.querySelector("input");
+      input.setAttribute("aria-label", control.querySelector(".control-head span").textContent);
+    });
+
     $("fileInput").addEventListener("change", async (event) => {
       const file = event.target.files[0];
-      if (!file) return;
+      if (!file || capture.isExporting || recorder.isRecording || loadingAudio) return;
 
       let preparedRecording = null;
       let exportWritable = null;
@@ -1159,12 +1186,15 @@
         }
       }
 
+      loadingAudio = true;
       try {
         await loadAudio(file, preparedRecording, exportWritable);
       } catch (error) {
         console.error(error);
         setStatus("Could not load audio · " + error.message);
         event.target.value = "";
+      } finally {
+        loadingAudio = false;
       }
     });
 
@@ -1206,7 +1236,7 @@
     addEventListener("keydown", (event) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
       const tag = event.target?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || event.target?.isContentEditable) return;
+      if (tag === "BUTTON" || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || event.target?.isContentEditable) return;
 
       if (event.code === "Space") {
         event.preventDefault();
