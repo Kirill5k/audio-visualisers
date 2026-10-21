@@ -3,14 +3,14 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { LED_COLUMNS, LED_ROWS, LED_COUNT, evaluateLEDPattern } from './led-patterns.js';
+import { LED_COLUMNS, LED_ROWS, LED_FULL_HEIGHT_ROWS, getLEDRowCount, evaluateLEDPattern } from './led-patterns.js';
 
 const DEGREES = Math.PI / 180;
 const VIEWS = { front: { yaw: 0, pitch: 0 }, left: { yaw: -22, pitch: 12 }, right: { yaw: 22, pitch: 12 } };
 const LOOM_FRAME_HEIGHT = .8;
 const LOOM_MAX_ZOOM = 1.05;
 
-/** HDR, instanced 96 × 54 panel. Scene time is always supplied by the caller. */
+/** HDR, instanced LED panel. Scene time is always supplied by the caller. */
 export function createLEDGridScene(stage, settings) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: true });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -18,7 +18,6 @@ export function createLEDGridScene(stage, settings) {
   renderer.toneMappingExposure = 1;
   renderer.info.autoReset = false;
   renderer.setClearColor(0x000000, 1);
-  renderer.domElement.setAttribute('aria-label', 'Audio-reactive LED matrix with 96 columns and 54 rows');
   renderer.domElement.style.display = 'block';
   renderer.domElement.style.touchAction = 'none';
   stage.appendChild(renderer.domElement);
@@ -42,25 +41,37 @@ export function createLEDGridScene(stage, settings) {
   composer.addPass(bloom);
   composer.addPass(outputPass);
 
-  const offsets = new Float32Array(LED_COUNT * 2);
-  const states = new Float32Array(LED_COUNT * 4);
-  for (let row = 0; row < LED_ROWS; row++) {
-    for (let column = 0; column < LED_COLUMNS; column++) {
-      const index = row * LED_COLUMNS + column;
-      offsets[index * 2] = column - (LED_COLUMNS - 1) / 2;
-      offsets[index * 2 + 1] = row - (LED_ROWS - 1) / 2;
-    }
-  }
+  const capacity = LED_COLUMNS * LED_FULL_HEIGHT_ROWS;
+  const offsets = new Float32Array(capacity * 2);
+  const states = new Float32Array(capacity * 4);
   const quad = new THREE.PlaneGeometry(1, 1);
   const geometry = new THREE.InstancedBufferGeometry();
   geometry.index = quad.index;
   geometry.setAttribute('position', quad.attributes.position);
   geometry.setAttribute('uv', quad.attributes.uv);
-  geometry.setAttribute('aOffset', new THREE.InstancedBufferAttribute(offsets, 2));
+  const offsetAttribute = new THREE.InstancedBufferAttribute(offsets, 2);
+  offsetAttribute.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute('aOffset', offsetAttribute);
   const stateAttribute = new THREE.InstancedBufferAttribute(states, 4);
   stateAttribute.setUsage(THREE.DynamicDrawUsage);
   geometry.setAttribute('aState', stateAttribute);
-  geometry.instanceCount = LED_COUNT;
+  let rows = 0;
+  function syncGrid() {
+    const nextRows = getLEDRowCount(settings);
+    if (rows === nextRows) return;
+    rows = nextRows;
+    for (let row = 0; row < rows; row++) for (let column = 0; column < LED_COLUMNS; column++) {
+      const index = row * LED_COLUMNS + column;
+      offsets[index * 2] = column - (LED_COLUMNS - 1) / 2;
+      // Keep the original top edge and unit cell spacing. Extra rows grow
+      // down into the reserved band without changing the camera or LED size.
+      offsets[index * 2 + 1] = row - (LED_ROWS - 1) / 2 - (rows - LED_ROWS);
+    }
+    offsetAttribute.needsUpdate = true;
+    geometry.instanceCount = LED_COLUMNS * rows;
+    renderer.domElement.setAttribute('aria-label', `Audio-reactive LED matrix with ${LED_COLUMNS} columns and ${rows} rows`);
+  }
+  syncGrid();
   const uniforms = {
     uViolet: { value: new THREE.Color('#7446FF') },
     uBlue: { value: new THREE.Color('#2F5BFF') },
@@ -180,6 +191,7 @@ export function createLEDGridScene(stage, settings) {
     if (disposed) return;
     const started = performance.now();
     lastData = data;
+    syncGrid();
     const result = evaluateLEDPattern(data, settings, states);
     const { values, ...metrics } = result;
     stats = metrics;
@@ -208,9 +220,7 @@ export function createLEDGridScene(stage, settings) {
     composer.setPixelRatio(ratio);
     composer.setSize(width, height);
     camera.aspect = width / height;
-    // Fit the complete perspective composition into the upper 80% of the
-    // output. An off-centre projection keeps preview and export identical,
-    // with the original camera angles and a full-resolution render target.
+    // Keep the original 54-row framing even when the grid extends downward.
     camera.setViewOffset(width * LOOM_FRAME_HEIGHT, height * LOOM_FRAME_HEIGHT,
       -width * (1 - LOOM_FRAME_HEIGHT) * .5, 0, width, height);
     updateCamera(lastData?.time || 0);
@@ -255,7 +265,7 @@ export function createLEDGridScene(stage, settings) {
   function onWheel(event) {
     event.preventDefault();
     if (isFlat()) flatZoom = THREE.MathUtils.clamp(flatZoom * Math.exp(-event.deltaY * .001), .75, 1.20);
-    // Leave room for bloom above the board and for titles below, even zoomed in.
+    // Keep a small margin for bloom, including when extra rows are enabled.
     else zoom = THREE.MathUtils.clamp(zoom * Math.exp(-event.deltaY * .001), .75, LOOM_MAX_ZOOM);
     render();
   }
@@ -268,7 +278,7 @@ export function createLEDGridScene(stage, settings) {
   updateCamera();
   return {
     canvas: renderer.domElement, render, resize, setView, resetCamera, saveCamera, restoreCamera,
-    getInfo: () => ({ ...stats, columns: LED_COLUMNS, rows: LED_ROWS, leds: LED_COUNT,
+    getInfo: () => ({ ...stats, columns: LED_COLUMNS, rows, leds: LED_COLUMNS * rows,
       view: isFlat() ? 'front' : view, projection: isFlat() ? 'orthographic' : 'perspective', planeZ: 0,
       camera: isFlat() ? { view: 'front', yaw: 0, pitch: 0, zoom: flatZoom, target: [0, 0, 0] } : saveCamera(),
       width: renderer.domElement.width, height: renderer.domElement.height,

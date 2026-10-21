@@ -2,6 +2,7 @@ import { createAudioPlayback } from '../audio-playback.js';
 import { createCaptureSession } from '../capture-export.js';
 import { createLEDAnalysis } from './led-analysis.js';
 import { createLEDGridScene } from './led-grid-scene.js';
+import { LED_COLUMNS, getLEDRowCount } from './led-patterns.js';
 import { createRecordingDestination } from './led-recording.js';
 import { createLEDPresentationClock } from './led-presentation-clock.js';
 
@@ -10,7 +11,7 @@ const FPS = 60;
 const presentationClock = createLEDPresentationClock();
 const MODES = ['loom', 'calligraphy', 'choreography'];
 const settings = { mode: 'loom', gain: 1.3, persistence: 1, brightness: 1, glow: .65,
-  violet: '#7446FF', blue: '#2F5BFF', amber: '#FFA53D', white: '#FFF1D0', motion: false, loomHorizontal: false };
+  violet: '#7446FF', blue: '#2F5BFF', amber: '#FFA53D', white: '#FFF1D0', motion: false, loomHorizontal: false, loomFullHeight: false };
 // Device defaults can be 16 kHz (for example a headset communication mode).
 // Decode at a full-bandwidth rate supported by the AAC movie encoder.
 const audio = createAudioPlayback({ fftSize: 32768, maxFftSize: 32768, smoothing: 0, sampleRate: 48000 });
@@ -246,10 +247,16 @@ function unload() {
   renderPosition(0); updateButtons(); setStatus('Choose audio or play the reference track', false);
 }
 
+function updateGridLabels() {
+  const rows = getLEDRowCount(settings);
+  $('gridDimensions').textContent = `${LED_COLUMNS} × ${rows} LEDs`;
+  $('ledCount').textContent = `${(LED_COLUMNS * rows).toLocaleString('en-GB')} points of possibility`;
+}
 function setMode(mode) {
   if (!MODES.includes(mode)) throw new RangeError('Unknown LED mode');
   if (busy || recorder.isRecording) return false;
   settings.mode = mode;
+  updateGridLabels();
   presentationClock.reset();
   $('perspectiveControls').hidden = mode !== 'loom';
   $('loomControls').hidden = mode !== 'loom';
@@ -271,7 +278,7 @@ function setSettings(values) {
   if (busy || recorder.isRecording) return false;
   for (const [key, value] of Object.entries(values)) {
     if (key === 'mode') { setMode(value); continue; }
-    if (key === 'motion' || key === 'loomHorizontal') settings[key] = Boolean(value);
+    if (key === 'motion' || key === 'loomHorizontal' || key === 'loomFullHeight') settings[key] = Boolean(value);
     else if (['violet', 'blue', 'amber', 'white'].includes(key)) {
       if (!/^#[0-9a-f]{6}$/i.test(value)) throw new RangeError('A six-digit hex colour is required');
       settings[key] = value;
@@ -284,6 +291,7 @@ function setSettings(values) {
     if ($(key + 'Value')) $(key + 'Value').textContent = key === 'brightness' ? `${Math.round(settings[key] * 100)}%` : settings[key].toFixed(2);
     if (key === 'brightness') $(key).setAttribute('aria-valuetext', `${Math.round(settings[key] * 100)}%`);
   }
+  updateGridLabels();
   renderPosition(position); return true;
 }
 
@@ -405,7 +413,7 @@ $('resetCameraBtn').onclick = () => setView('front');
 document.querySelectorAll('[data-mode]').forEach(button => { button.onclick = () => setMode(button.dataset.mode); });
 $('modeSelect').onchange = event => setMode(event.target.value);
 document.querySelectorAll('[data-view]').forEach(button => { button.onclick = () => setView(button.dataset.view); });
-for (const key of ['gain', 'persistence', 'brightness', 'glow', 'violet', 'blue', 'amber', 'white', 'motion', 'loomHorizontal']) $(key).oninput = () => setSettings({ [key]: $(key).type === 'checkbox' ? $(key).checked : $(key).value });
+for (const key of ['gain', 'persistence', 'brightness', 'glow', 'violet', 'blue', 'amber', 'white', 'motion', 'loomHorizontal', 'loomFullHeight']) $(key).oninput = () => setSettings({ [key]: $(key).type === 'checkbox' ? $(key).checked : $(key).value });
 document.addEventListener('keydown', action(event => {
   if (event.defaultPrevented || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName) || event.target.isContentEditable) return;
   if (event.code === 'Space') { event.preventDefault(); return audio.isPlaying ? pause() : play(); }
