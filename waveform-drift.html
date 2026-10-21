@@ -12,6 +12,8 @@
     #panel.hidden { visibility: hidden; }
     #panelToggle { left: 322px; }
     .reference-track { width: 100%; margin-top: 8px; }
+    #zHeightControl.inactive { opacity: .4; }
+    #zHeightOffset:disabled { cursor: not-allowed; }
     button:focus-visible, input:focus-visible, .file-picker:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
     @media (max-width: 760px) {
       #panel { max-height: calc(100dvh - 130px); width: min(286px, calc(100vw - 76px)); }
@@ -141,6 +143,11 @@
         <span>Travel along Z axis</span>
         <input id="flowZ" type="checkbox">
       </label>
+
+      <div id="zHeightControl" class="control inactive">
+        <div class="control-head"><span>Z trail height offset</span><span class="value" id="zHeightOffsetValue">0.0</span></div>
+        <input id="zHeightOffset" type="range" min="-40" max="40" step="0.5" value="0" disabled title="Raise or lower the trail as it travels in depth">
+      </div>
 
       <div class="color-row"><span>Particle colour</span><input id="colorParticles" type="color" value="#e4e4e4"></div>
     </section>
@@ -282,6 +289,7 @@
       waveGlow: 0.08,
       reverseFlow: false,
       flowZ: false,
+      zHeightOffset: 0,
       bloom: true,
       grain: false,
       lock60: false,
@@ -533,6 +541,7 @@
           uWorldWidth: { value: WORLD_WIDTH },
           uReverseFlow: { value: settings.reverseFlow ? -1 : 1 },
           uFlowZ: { value: settings.flowZ ? 1 : 0 },
+          uZHeightOffset: { value: settings.zHeightOffset },
           uLines: { value: settings.lines ? 1 : 0 },
           uColor: { value: new THREE.Color($("colorParticles").value) },
           uViewportHeight: { value: innerHeight },
@@ -562,6 +571,7 @@
           uniform float uWorldWidth;
           uniform float uReverseFlow;
           uniform float uFlowZ;
+          uniform float uZHeightOffset;
           uniform float uLines;
           uniform vec3 uColor;
           uniform float uViewportHeight;
@@ -606,6 +616,9 @@
             transformed.y = uBaseline + uVerticalScale * (shaped * uHeight
               - uReverseFlow * (drift * uDriftY * uWorldWidth * (1.0 - uFlowZ)
               + erosion * uScatter * (.35 + shaped * .65)));
+            // Lift or lower the depth trail progressively, keeping its origin
+            // attached to the live crest. Positive always means upward.
+            transformed.y += uVerticalScale * uFlowZ * uZHeightOffset * drift;
             // Reverse flow approaches the viewer but stays in front of the
             // camera even at maximum age; normal flow recedes into the scene.
             float depthTravel = uReverseFlow > 0.0 ? 1.8 : .7;
@@ -1054,6 +1067,10 @@
     bindRange("density", "density", 2, setUniform("uDensity"));
     bindRange("opacity", "opacity", 3, setUniform("uOpacity"));
     bindRange("scatter", "scatter", 1, setUniform("uScatter"));
+    bindRange("zHeightOffset", "zHeightOffset", 1, (value) => {
+      fieldMaterial.uniforms.uZHeightOffset.value = value;
+      resetSmoothing = true;
+    });
     bindRange("waveThickness", "waveThickness", 1, (value) => {
       wave.material.linewidth = value;
       waveGlow.material.linewidth = value * 4.5;
@@ -1110,6 +1127,8 @@
     $("flowZ").addEventListener("change", (event) => {
       settings.flowZ = event.target.checked;
       fieldMaterial.uniforms.uFlowZ.value = settings.flowZ ? 1 : 0;
+      $("zHeightOffset").disabled = !settings.flowZ;
+      $("zHeightControl").classList.toggle("inactive", !settings.flowZ);
       resetSmoothing = true;
     });
     $("lines").addEventListener("change", (event) => {
