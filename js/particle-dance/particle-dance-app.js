@@ -2,7 +2,7 @@ import { createAudioPlayback } from '../audio-playback.js';
 import { createCaptureSession } from '../capture-export.js';
 import { createParticleDanceScene } from './particle-dance-scene.js';
 import { createMeshGridAnalysis } from '../mesh-grid/mesh-grid-analysis.js';
-import { PARTICLE_CONTROLS, GLOBAL_CONTROLS, createSettings } from './particle-dance-settings.js';
+import { PARTICLE_CONTROLS, AUDIO_MOTION_CONTROLS, GLOBAL_CONTROLS, createSettings } from './particle-dance-settings.js';
 import { PRESETS, DEFAULT_PRESET_ID } from './particle-dance-presets.js';
 import { EFFECT_CONTROLS, EFFECT_DEFAULTS, EFFECT_NAMES, EFFECT_ORDER, resolveEffectOrder } from './particle-dance-effect-settings.js';
 import { eligibleModulationTargets, createModulation, setModulationBound, setSpreadAudioReactive, MODULATION_CONTROLS, FREQUENCY_RANGES } from './particle-dance-modulation.js';
@@ -213,7 +213,7 @@ async function initialise() {
     details.append(summary); parent.append(details); return details;
   }
   function control(parent, key, spec, owner = settings, change = settingsChanged, prefix = '') {
-    const row = document.createElement('div'); row.className = 'config-row'; row.dataset.search = `${parent.dataset.section || ''} ${spec.label} ${key}`.toLowerCase();
+    const row = document.createElement('div'); row.className = 'config-row'; row.dataset.search = `${parent.dataset.section || ''} ${spec.label} ${key} ${spec.description || ''}`.toLowerCase();
     const id = `control-${prefix}${key}`;
     const label = document.createElement('label'); label.htmlFor = id;
     const text = document.createElement('span'); text.textContent = spec.label; label.append(text);
@@ -246,6 +246,10 @@ async function initialise() {
         owner[key] = spec.type === 'boolean' ? input.checked : typeof spec.default === 'number' ? Number(input.value) : input.value;
         change(key);
       });
+    }
+    if (spec.description) {
+      const description = document.createElement('p'); description.id = `${id}-description`; description.className = 'control-description'; description.textContent = spec.description;
+      input.setAttribute('aria-describedby', description.id); row.append(description);
     }
     parent.append(row);
     return row;
@@ -425,6 +429,8 @@ async function initialise() {
     $('presetName').textContent = `Variant ${PRESETS.findIndex(p => p.id === presetId) + 1}`;
     for (const section of $('configControls').querySelectorAll('details')) expandedSections.set(section.dataset.section, section.open);
     $('configControls').replaceChildren();
+    const audioMotion = group('Audio motion', true);
+    for (const [key, spec] of Object.entries(AUDIO_MOTION_CONTROLS)) control(audioMotion, key, spec);
     const particles = group('Particles & colour', true);
     for (const [key, spec] of Object.entries(PARTICLE_CONTROLS)) {
       const row = control(particles, key, spec);

@@ -1,4 +1,5 @@
 import { EFFECT_DEFAULTS, EFFECT_ORDER } from '../js/particle-dance/particle-dance-effect-settings.js';
+import { AUDIO_MOTION_CONTROLS } from '../js/particle-dance/particle-dance-settings.js';
 
 const run = document.querySelector('#run');
 const summary = document.querySelector('#summary');
@@ -74,6 +75,31 @@ async function runViewport(frame, width, height) {
   escape(); await tick(280);
   check(label, 'Escape restores controls and opens settings', !doc.body.classList.contains('clean') && !element('#panel').inert && win.getComputedStyle(element('#actions')).visibility === 'visible');
   check(label, 'all six variants and 32 effects are available', doc.querySelectorAll('#variants button').length === 6 && doc.querySelectorAll('[data-effect]').length === 32);
+
+  const motionKeys = Object.keys(AUDIO_MOTION_CONTROLS);
+  const motionSection = element('#control-elasticExpansion').closest('details');
+  check(label, 'Audio motion is expanded before the particle controls', motionSection.open && motionSection.querySelector('summary').textContent === 'Audio motion' && motionSection.nextElementSibling.querySelector('summary').textContent === 'Particles & colour');
+  check(label, 'variant 3 starts with all five audio motions enabled', motionKeys.every(key => element(`#control-${key}`).checked && app.settings[key] === true) && app.settings.audioSizeReactivity === .7);
+  check(label, 'all audio motion checkboxes have visible accessible explanations', motionKeys.every(key => {
+    const input = element(`#control-${key}`);
+    const description = doc.getElementById(input.getAttribute('aria-describedby'));
+    return input.type === 'checkbox' && description?.textContent === AUDIO_MOTION_CONTROLS[key].description && win.getComputedStyle(description).display !== 'none';
+  }));
+  for (const key of motionKeys) {
+    click(`#control-${key}`);
+    check(label, `${AUDIO_MOTION_CONTROLS[key].label} switches off independently`, app.settings[key] === false && motionKeys.filter(other => other !== key).every(other => app.settings[other] === true));
+    click(`#control-${key}`);
+    check(label, `${AUDIO_MOTION_CONTROLS[key].label} switches back on`, app.settings[key] === true);
+  }
+  click('#control-particleJets'); click('#resetBtn');
+  check(label, 'Reset variant restores all audio motion checkboxes', motionKeys.every(key => element(`#control-${key}`).checked && app.settings[key] === true));
+  click('#variants button[aria-label="Variant 1"]');
+  check(label, 'switching variants clears audio motion settings from variant 3', motionKeys.every(key => !element(`#control-${key}`).checked && app.settings[key] === false));
+  click('#variants button[aria-label="Variant 3"]');
+  const motionSearch = element('#controlSearch');
+  motionSearch.value = 'hi-hats'; motionSearch.dispatchEvent(new win.Event('input', { bubbles: true }));
+  check(label, 'search finds audio motion by its musical trigger', !element('#control-particleJets').closest('.config-row').hidden && !element('#control-particleJets').closest('details').hidden && element('#control-elasticExpansion').closest('.config-row').hidden);
+  motionSearch.value = ''; motionSearch.dispatchEvent(new win.Event('input', { bubbles: true }));
 
   click('#disableEffectsBtn');
   if (!element('#control-enablePostProcessing').checked) click('#control-enablePostProcessing');

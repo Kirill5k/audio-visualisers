@@ -4,6 +4,8 @@
  * A seeded generator and a zero-delta repaint path make seek/export repeatable.
  */
 
+import { createParticleDanceMotion } from './particle-dance-motion.js';
+
 export const MAX_PARTICLES = 2000;
 export const MAX_CONNECTIONS = 3000;
 export const MAX_HOTSPOTS = 20;
@@ -80,8 +82,10 @@ export function createParticleDanceSimulation({ settings, seed = DEFAULT_SEED })
   const connectionPositions = new Float32Array(MAX_CONNECTIONS * 6);
   const connectionColors = new Float32Array(MAX_CONNECTIONS * 6);
   const hash = new SpatialHash();
+  const motion = createParticleDanceMotion(MAX_PARTICLES);
   const output = { positions, colors, sizes, fade, sizeRatios, density, hotspotPositions,
-    hotspotIntensities, connectionPositions, connectionColors, count: 0, hotspotCount: 0, connectionCount: 0, bass: 0 };
+    hotspotIntensities, connectionPositions, connectionColors, ...motion.output,
+    count: 0, hotspotCount: 0, connectionCount: 0, bass: 0 };
 
   function reset(config = settings) {
     random = createSeededRandom(seed);
@@ -102,13 +106,15 @@ export function createParticleDanceSimulation({ settings, seed = DEFAULT_SEED })
     density.fill(0);
     sizes.fill(0);
     hash.clear();
+    motion.reset();
     return step(config, new Uint8Array(config.fftSize / 2), 0);
   }
 
-  function step(config, spectrum, dt = 1 / 60) {
+  function step(config, spectrum, dt = 1 / 60, audioFrame = {}) {
     const delta = Math.max(0, Math.min(.1, Number.isFinite(dt) ? dt : 0));
     const k = 120 * delta;
     time += .016 * k;
+    motion.begin(config, spectrum, delta, audioFrame);
     const count = Math.max(0, Math.min(Math.ceil(config.particleCount), MAX_PARTICLES));
     const hotspotCount = Math.max(1, Math.min(Math.ceil(config.hotspotCount), MAX_HOTSPOTS));
     const radius = config.spread * .5;
@@ -175,6 +181,7 @@ export function createParticleDanceSimulation({ settings, seed = DEFAULT_SEED })
         }
         p.life -= config.decayRate * k;
         if (config.decayRate > 0 && p.life <= 0) {
+          motion.clearParticle(i);
           p.life = 100;
           const index = 3 * Math.floor(random() * hotspotCount);
           p.x = hotspotPositions[index] + (random() - .5) * 2;
@@ -209,6 +216,9 @@ export function createParticleDanceSimulation({ settings, seed = DEFAULT_SEED })
       sizeRatios[i] = config.particleSize > 0 ? size / config.particleSize : 0;
     }
     sizes.fill(0, count);
+    for (let i = 0; i < count; i++) motion.apply(config, positions, i, delta);
+    motion.trails(config, positions, colors, count, delta);
+    output.jetTrailCount = motion.output.jetTrailCount;
     let connectionCount = 0;
     if (config.showConnections) for (let i = 0; i < count && connectionCount < MAX_CONNECTIONS; i++) {
       const p = particles[i];
@@ -220,7 +230,9 @@ export function createParticleDanceSimulation({ settings, seed = DEFAULT_SEED })
         if (distanceSquared < 2.25) {
           const intensity = (1 - distanceSquared / 2.25) * Math.min(fade[i], fade[neighbor]) * ((sizeRatios[i] + sizeRatios[neighbor]) * .5);
           const index = connectionCount * 6;
-          connectionPositions.set([p.x, p.y, p.z, other.x, other.y, other.z], index);
+          // Connections follow the deformed points, not the underlying swarm.
+          connectionPositions.set(positions.subarray(i * 3, i * 3 + 3), index);
+          connectionPositions.set(positions.subarray(neighbor * 3, neighbor * 3 + 3), index + 3);
           for (let channel = 0; channel < 3; channel++) {
             connectionColors[index + channel] = connectionColors[index + channel + 3] = rgb[channel] * intensity;
           }

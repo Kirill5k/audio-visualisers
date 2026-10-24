@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PRESETS, DEFAULT_PRESET_ID } from '../js/particle-dance/particle-dance-presets.js';
-import { createSettings, PARTICLE_CONTROLS } from '../js/particle-dance/particle-dance-settings.js';
+import { createSettings, PARTICLE_CONTROLS, AUDIO_MOTION_CONTROLS, AUDIO_MOTION_DEFAULTS } from '../js/particle-dance/particle-dance-settings.js';
 import { resolveEffectOrder } from '../js/particle-dance/particle-dance-effect-settings.js';
 
 test('six source variants retain registry order and the linked third variant is the default', () => {
@@ -18,7 +18,7 @@ test('linked sparse preset inherits source defaults and the complete effect regi
   const settings = createSettings();
   assert.equal(settings.particleCount, 2000);
   assert.equal(settings.particleSize, .35);
-  assert.equal(settings.audioSizeReactivity, 2.9);
+  assert.equal(settings.audioSizeReactivity, .7);
   assert.equal(settings.damping, .565);
   assert.equal(settings.fftSize, 1024);
   assert.equal(settings.spectrumCap, .35);
@@ -27,6 +27,24 @@ test('linked sparse preset inherits source defaults and the complete effect regi
   assert.equal(settings.cameraState.position.x, -2.371686);
   assert.deepEqual(settings.cameraState.quaternion, [.232553, .741129, .544463, -.316554]);
   assert.deepEqual(resolveEffectOrder(settings), ['barrelDistortion', 'tiltShift', 'bleachBypass']);
+});
+
+test('five audio motions are independently enabled in variant 3 and reset for every other variant', () => {
+  const keys = ['elasticExpansion', 'twistingCurrents', 'travellingRipples', 'particleJets', 'gatheringRelease'];
+  assert.deepEqual(Object.keys(AUDIO_MOTION_CONTROLS), keys);
+  for (const key of keys) {
+    assert.equal(AUDIO_MOTION_CONTROLS[key].type, 'boolean');
+    assert.ok(AUDIO_MOTION_CONTROLS[key].description);
+    assert.equal(AUDIO_MOTION_DEFAULTS[key], false);
+  }
+  for (const preset of PRESETS) {
+    const settings = createSettings(preset.id);
+    for (const key of keys) assert.equal(settings[key], preset.id === DEFAULT_PRESET_ID, `${preset.name}: ${key}`);
+  }
+  const modified = createSettings();
+  modified.elasticExpansion = false;
+  assert.equal(modified.twistingCurrents, true);
+  assert.equal(createSettings().elasticExpansion, true);
 });
 
 test('preset loads reset effects and own independent nested camera, order and modulation data', () => {

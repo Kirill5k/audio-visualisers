@@ -143,6 +143,29 @@ export const PARTICLE_CONTROLS = {
   }
 };
 
+export const AUDIO_MOTION_CONTROLS = {
+  elasticExpansion: {
+    type: 'boolean', label: 'Elastic expansion', default: false,
+    description: 'Bass hits push the particles outward, then spring back.',
+  },
+  twistingCurrents: {
+    type: 'boolean', label: 'Twisting currents', default: false,
+    description: 'Mids and vocals twist inner and outer particles into flowing streams.',
+  },
+  travellingRipples: {
+    type: 'boolean', label: 'Travelling ripples', default: false,
+    description: 'Percussion sends waves from the centre through the particles.',
+  },
+  particleJets: {
+    type: 'boolean', label: 'Small particle jets', default: false,
+    description: 'Hi-hats launch small bursts with short trails before they return.',
+  },
+  gatheringRelease: {
+    type: 'boolean', label: 'Gathering and release', default: false,
+    description: 'Quiet passages gather the particles; builds and drops release them.',
+  },
+};
+
 export const GLOBAL_CONTROLS = {
   ...SHARED_CONTROLS,
   backgroundAudioReactivity: { ...SHARED_CONTROLS.backgroundAudioReactivity, max: 10 },
@@ -152,10 +175,11 @@ export const GLOBAL_CONTROLS = {
 
 export const GLOBAL_DEFAULTS = { ...SHARED_DEFAULTS, visualizationType: 'particleDance' };
 export const PARTICLE_DEFAULTS = Object.fromEntries(Object.entries(PARTICLE_CONTROLS).map(([key, control]) => [key, control.default]));
+export const AUDIO_MOTION_DEFAULTS = Object.fromEntries(Object.entries(AUDIO_MOTION_CONTROLS).map(([key, control]) => [key, control.default]));
 
 /** Each sparse upstream preset starts from fresh defaults, including nested state. */
 export function createSettings(presetId = DEFAULT_PRESET_ID) {
   const preset = PRESETS.find(item => item.id === presetId);
   if (!preset) throw new RangeError('Unknown Particle Dance preset: ' + presetId);
-  return structuredClone({ ...GLOBAL_DEFAULTS, ...PARTICLE_DEFAULTS, ...EFFECT_DEFAULTS, effectOrder: [...EFFECT_ORDER], ...preset.data });
+  return structuredClone({ ...GLOBAL_DEFAULTS, ...PARTICLE_DEFAULTS, ...AUDIO_MOTION_DEFAULTS, ...EFFECT_DEFAULTS, effectOrder: [...EFFECT_ORDER], ...preset.data });
 }

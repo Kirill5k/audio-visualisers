@@ -308,7 +308,7 @@ export function createMeshGridAnalysis(audioBuffer, initialSettings = {}, { brow
       const transformed = transform.process(raw, settings, time === cachedTime ? 0 : Math.min(dt, .1), sampleRate);
       const modulated = modulator.process(settings, transformed.spectrum, onsetSpectrum, time, transformed.effectiveRange);
       cachedTime = time;
-      cachedFrame = { ...transformed, time, settings: modulated, onsetSpectrum };
+      cachedFrame = { ...transformed, time, settings: modulated, onsetSpectrum, sampleRate };
       return cachedFrame;
     },
     setSettings(nextSettings) {

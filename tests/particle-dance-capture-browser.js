@@ -1,3 +1,5 @@
+import { AUDIO_MOTION_CONTROLS } from '../js/particle-dance/particle-dance-settings.js';
+
 const iframe = document.querySelector('#app');
 const output = document.querySelector('#results');
 const run = document.querySelector('#run');
@@ -5,6 +7,8 @@ const artifacts = document.querySelector('#artifacts');
 const tick = ms => new Promise(resolve => setTimeout(resolve, ms));
 let app, doc;
 const reports = [];
+const motionKeys = Object.keys(AUDIO_MOTION_CONTROLS);
+const motionControlsDisabled = disabled => motionKeys.every(key => doc.querySelector(`#control-${key}`).disabled === disabled);
 function check(name, condition, details) {
   reports.push({ name, passed: Boolean(condition), details });
   output.textContent = JSON.stringify(reports, null, 2);
@@ -106,6 +110,7 @@ async function runChecks() {
     clip = wavFile(await context.decodeAudioData(await response.arrayBuffer()), 12, 2);
   } finally { await context.close(); }
   await app.load(clip, { autoplay: false });
+  check('capture uses all five audio motion effects', motionKeys.every(key => app.settings[key] === true));
   app.audio.setMuted(true);
   const first = app.scene.canvas.toDataURL();
   doc.querySelector('#playPauseBtn').click(); await tick(800); doc.querySelector('#playPauseBtn').click(); await tick(50);
@@ -116,15 +121,20 @@ async function runChecks() {
   const stopped = app.waitForRecordingStop(); const recording = memoryFile();
   await app.toggleRecord({ writable: recording });
   check('recording locks configuration and captures audio', app.recorder.isRecording && doc.querySelector('#resetBtn').disabled);
+  check('recording locks all five audio motion checkboxes', motionControlsDisabled(true));
   await tick(850); await app.toggleRecord(); const recordError = await stopped;
   check('recording completes and unlocks configuration', !recordError && recording.closed && !app.locked);
+  check('recording restores all five audio motion checkboxes', motionControlsDisabled(false));
   await app.audio.pause();
   await metadata(recording.blob(app.recorder.getCodec().mime), 'particle-dance-recording-check');
 
   await app.load(clip, { autoplay: false });
   const before = snapshot(), exportFile = memoryFile();
-  const exported = await app.exportVideo({ writable: exportFile });
+  const exporting = app.exportVideo({ writable: exportFile });
+  check('export locks all five audio motion checkboxes', app.locked && motionControlsDisabled(true));
+  const exported = await exporting;
   check('full-track export completes', exported.ok && exportFile.closed && !app.locked, exported);
+  check('export restores all five audio motion checkboxes', motionControlsDisabled(false));
   check('export preserves exact paused preview state', restored(before, snapshot()));
   const info = await metadata(exportFile.blob(), 'particle-dance-export-check');
   check('full-track export duration matches audio', Math.abs(info.duration - 2) < .08, info);

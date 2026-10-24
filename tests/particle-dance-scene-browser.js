@@ -8,6 +8,7 @@ const errors = document.querySelector('#errors');
 let passed = 0;
 let failed = 0;
 const shaderErrors = [];
+const MOTION_KEYS = ['elasticExpansion', 'twistingCurrents', 'travellingRipples', 'particleJets', 'gatheringRelease'];
 const originalError = console.error;
 console.error = (...args) => {
   shaderErrors.push(args.map(String).join(' '));
@@ -25,7 +26,38 @@ function frame(settings, index) {
       255 * envelope * (0.35 + 0.3 * Math.sin(bin * 0.063 + index * 0.31) ** 2),
     );
   }
-  return { spectrum, time: index / 60, settings };
+  return { spectrum, onsetSpectrum: spectrum, sampleRate: 48000, time: index / 60, settings };
+}
+function musicalFrame(settings, index) {
+  const spectrum = new Uint8Array(settings.fftSize / 2);
+  // Repeated attacks, sustained mids and quieter gaps exercise independent envelopes.
+  const phase = index % 24;
+  for (let bin = 0; bin < spectrum.length; bin++) {
+    spectrum[bin] = phase < 4 ? 230 : phase < 12 ? (bin > 4 && bin < 80 ? 135 : 45) : 8;
+  }
+  return { spectrum, onsetSpectrum: spectrum, sampleRate: 48000, time: index / 60, settings };
+}
+function motionSettings(enabled = true) {
+  return {
+    ...createSettings(PRESETS.find(preset => preset.name.endsWith('#3')).id),
+    particleCount: 500,
+    ...Object.fromEntries(MOTION_KEYS.map(key => [key, enabled])),
+  };
+}
+function runMusicalFrames(instance, settings, count = 36) {
+  for (let index = 0; index < count; index++) instance.step(musicalFrame(settings, index), 1 / 60);
+  const trails = instance.scene.getObjectByName('particle-jet-trails');
+  assert(instance.geometry.attributes.position.array.every(Number.isFinite), 'Particle motion contains invalid positions');
+  assert(trails.geometry.attributes.position.array.every(Number.isFinite), 'Jet trails contain invalid positions');
+  return pixels(instance);
+}
+function geometrySnapshot(instance) {
+  const trails = instance.scene.getObjectByName('particle-jet-trails');
+  return {
+    particles: Array.from(instance.geometry.attributes.position.array),
+    trailCount: trails.geometry.drawRange.count,
+    trails: Array.from(trails.geometry.attributes.position.array.subarray(0, trails.geometry.drawRange.count * 3)),
+  };
 }
 function pixels(instance) {
   const gl = instance.renderer.getContext();
@@ -116,6 +148,42 @@ try {
     assert(first === second, `Reset changed pixels: ${first} versus ${second}`);
   });
 
+  for (const key of MOTION_KEYS) {
+    await test(`Variant #3: ${key} independently moves particles`, () => {
+      const disabled = motionSettings(false);
+      preview.applyPreset(disabled);
+      runMusicalFrames(preview, disabled);
+      const baseline = preview.geometry.attributes.position.array.slice();
+      const enabled = { ...disabled, [key]: true };
+      preview.applyPreset(enabled);
+      runMusicalFrames(preview, enabled);
+      const moved = preview.geometry.attributes.position.array;
+      assert(moved.some((value, index) => Math.abs(value - baseline[index]) > .0001), `${key} did not change particle positions`);
+      const trails = preview.scene.getObjectByName('particle-jet-trails');
+      if (key === 'particleJets') {
+        assert(trails.visible && trails.geometry.drawRange.count > 0, 'High-frequency attacks did not create jet trails');
+        preview.setSettings(disabled);
+        preview.render();
+        assert(!trails.visible && trails.geometry.drawRange.count === 0, 'Disabling jets left visible trail segments');
+      }
+    });
+  }
+
+  await test('All five motions preserve particles, jet trails and pixels on pause and reset', () => {
+    const settings = motionSettings();
+    preview.applyPreset(settings);
+    const firstPixels = hash(runMusicalFrames(preview, settings));
+    const firstGeometry = JSON.stringify(geometrySnapshot(preview));
+    assert(geometrySnapshot(preview).trailCount > 0, 'Expected active jet trails for the pause/reset check');
+    preview.render();
+    assert(JSON.stringify(geometrySnapshot(preview)) === firstGeometry, 'Paused repaint advanced motion or jet trails');
+    assert(hash(pixels(preview)) === firstPixels, 'Paused motion repaint changed pixels');
+    preview.reset();
+    const secondPixels = hash(runMusicalFrames(preview, settings));
+    assert(JSON.stringify(geometrySnapshot(preview)) === firstGeometry, 'Reset did not reproduce particle motion and jet trails');
+    assert(firstPixels === secondPixels, 'Reset did not reproduce motion pixels');
+  });
+
   await test('Paused repaint preserves pixels; camera changes invalidate cached frame', () => {
     const original = hash(pixels(preview));
     preview.render();
@@ -128,7 +196,7 @@ try {
   });
 
   await test('Preview and isolated export scene render identical fixed-time frames', () => {
-    const settings = createSettings();
+    const settings = motionSettings();
     preview.applyPreset(settings);
     const exported = createParticleDanceScene({
       settings: structuredClone(settings),
@@ -139,8 +207,9 @@ try {
     });
     document.querySelector('#canvases').append(exported.canvas);
     try {
-      const first = runFrames(preview, settings, 10);
-      const second = runFrames(exported, settings, 10);
+      const first = runMusicalFrames(preview, settings);
+      const second = runMusicalFrames(exported, settings);
+      assert(JSON.stringify(geometrySnapshot(preview)) === JSON.stringify(geometrySnapshot(exported)), 'Preview/export motion or jet trail geometry differs');
       assert(first.length === second.length, 'Preview/export dimensions differ');
       let maxDifference = 0;
       for (let index = 0; index < first.length; index++)

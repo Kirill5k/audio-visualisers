@@ -40,7 +40,7 @@ test('zero-delta repaint changes no physics, randomness or connection buffers', 
 });
 
 test('audio sizes sample the full stretched spectrum after capping', () => {
-  const settings = { ...createSettings(), particleCount: 100, densityGlow: false, decayRate: 0, showConnections: false };
+  const settings = { ...createSettings(), particleCount: 100, audioSizeReactivity: 2.9, densityGlow: false, decayRate: 0, showConnections: false };
   const input = new Uint8Array(512);
   input.fill(255, 90, 179);
   const frame = createMeshGridSpectrumTransform().process(input, settings);

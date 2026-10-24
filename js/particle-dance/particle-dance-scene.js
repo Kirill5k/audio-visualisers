@@ -170,6 +170,7 @@ export function createParticleDanceScene({
     layer.step({
       dt,
       dataArray: spectrum,
+      audioFrame: frame,
       bufferLength: spectrum.length,
       controls: config,
       renderer,
@@ -338,6 +339,18 @@ function createParticleLayer(resources, settings, seed) {
   });
   const connections = new THREE.LineSegments(connectionGeometry, connectionMaterial);
   connections.frustumCulled = false;
+  const jetTrailGeometry = new THREE.BufferGeometry();
+  jetTrailGeometry.setAttribute('position', new THREE.BufferAttribute(state.jetTrailPositions, 3));
+  jetTrailGeometry.setAttribute('color', new THREE.BufferAttribute(state.jetTrailColors, 3));
+  jetTrailGeometry.setDrawRange(0, 0);
+  const jetTrailMaterial = new THREE.LineBasicMaterial({
+    vertexColors: true, transparent: true, opacity: .65,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const jetTrails = new THREE.LineSegments(jetTrailGeometry, jetTrailMaterial);
+  jetTrails.name = 'particle-jet-trails';
+  jetTrails.frustumCulled = false;
+  jetTrails.visible = !!settings.particleJets;
   const sphereGeometry = new THREE.SphereGeometry(1, 16, 16);
   const hotspots = Array.from({ length: MAX_HOTSPOTS }, () => {
     const hotspot = new THREE.Mesh(sphereGeometry, new THREE.MeshBasicMaterial({
@@ -347,13 +360,13 @@ function createParticleLayer(resources, settings, seed) {
     hotspot.visible = false;
     return hotspot;
   });
-  const owned = [points, connections, ...hotspots];
+  const owned = [points, connections, jetTrails, ...hotspots];
   resources.scene.add(...owned);
   return {
     geometry,
     step(frame) {
       const config = frame.controls;
-      const output = simulation.step(config, frame.dataArray, frame.dt);
+      const output = simulation.step(config, frame.dataArray, frame.dt, frame.audioFrame);
       material.uniforms.uPixelRatio.value = frame.isPostProcessingActive ? 1 : frame.pixelRatio;
       geometry.setDrawRange(0, output.count);
       for (const attribute of Object.values(geometry.attributes)) attribute.needsUpdate = true;
@@ -362,6 +375,10 @@ function createParticleLayer(resources, settings, seed) {
       connectionGeometry.setDrawRange(0, output.connectionCount * 2);
       connectionGeometry.attributes.position.needsUpdate = true;
       connectionGeometry.attributes.color.needsUpdate = true;
+      jetTrails.visible = !!config.particleJets;
+      jetTrailGeometry.setDrawRange(0, config.particleJets ? output.jetTrailCount * 2 : 0);
+      jetTrailGeometry.attributes.position.needsUpdate = true;
+      jetTrailGeometry.attributes.color.needsUpdate = true;
       for (let i = 0; i < MAX_HOTSPOTS; i++) {
         const hotspot = hotspots[i];
         hotspot.visible = !!config.showHotspots && i < output.hotspotCount;
@@ -377,6 +394,7 @@ function createParticleLayer(resources, settings, seed) {
       resources.scene.remove(...owned);
       geometry.dispose(); material.dispose();
       connectionGeometry.dispose(); connectionMaterial.dispose();
+      jetTrailGeometry.dispose(); jetTrailMaterial.dispose();
       sphereGeometry.dispose();
       for (const hotspot of hotspots) hotspot.material.dispose();
     },

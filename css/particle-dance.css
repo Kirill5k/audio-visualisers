@@ -26,6 +26,7 @@
 .particle-dance .spread-audio-controls select { min-width: 0; max-width: 145px; }
 .particle-dance .spread-audio-readout[hidden], .particle-dance .spread-audio-controls[hidden] { display: none; }
 .particle-dance .color-row, .particle-dance .toggle-row { margin-top: 9px; }
+.particle-dance .control-description { margin: 4px 24px 12px 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .particle-dance .color-row select { max-width: 155px; }
 .particle-dance .modulation-card { padding-bottom: 8px; }
 .particle-dance .modulation-add { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
