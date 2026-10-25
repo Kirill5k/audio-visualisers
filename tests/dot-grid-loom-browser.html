@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Dot Grid scrolling spectrum checks</title>
+<style>body{margin:24px;background:#101018;color:#eee;font:14px system-ui}button,a{color:inherit}button{padding:10px;background:#263b42;border:1px solid #84aebd;border-radius:8px}iframe{display:block;width:960px;height:540px;max-width:100%;border:1px solid #456;margin:20px 0}li{margin:8px 0}.pass{color:#7fe4a5}.fail{color:#ff9898}pre{white-space:pre-wrap}</style>
+<h1>Dot Grid scrolling spectrum checks</h1>
+<p>Uses eight seconds of reference.mp3 to check the production spectrum grid, transport, and configuration controls.</p>
+<button id="run" disabled>Run scrolling spectrum checks</button>
+<p id="summary" role="status">Loading visualiser…</p>
+<ol id="results"></ol>
+<pre id="errors"></pre>
+<iframe id="app" src="../dot-grid?test=1" allow="autoplay; fullscreen" title="Dot Grid scrolling spectrum under test"></iframe>
+<p><a href="./dot-grid-capture-browser?mode=loom">Run scrolling spectrum recording and MP4 export checks</a></p>
+<script type="module" src="./dot-grid-loom-browser.js"></script>
+</html>
