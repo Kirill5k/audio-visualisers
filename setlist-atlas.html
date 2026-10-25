@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Setlist Atlas — Audio Visualiser</title>
+  <link rel="preload" href="fonts/inter/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/visualiser-ui.css">
+  <link rel="stylesheet" href="css/spectral-ui.css">
+  <link rel="stylesheet" href="css/setlist-atlas.css">
+  <script type="importmap">
+    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"}}
+  </script>
+</head>
+<body class="spectral-visualiser setlist-atlas">
+  <main id="stage" aria-label="Setlist Atlas: Signal waveform, Pulse waveform, track progress and current track"></main>
+  <p id="currentTrackAnnouncement" class="screen-reader-only" role="status" aria-live="polite" aria-atomic="true"></p>
+  <button id="panelToggle" class="glass closed" title="Show settings" aria-label="Show settings" aria-controls="panel" aria-expanded="false">☰</button>
+  <aside id="panel" class="glass hidden" aria-label="Visualiser settings">
+    <div class="brand"><div><div class="eyebrow">Waveforms / Progress / Tracklist</div><h1>Setlist Atlas</h1></div></div>
+    <label class="file-picker" for="fileInput" tabindex="0">Choose an audio file</label>
+    <input id="fileInput" type="file" accept="audio/*">
+    <button id="referenceBtn" class="action reference-button" type="button">Load reference track</button>
+
+    <section class="section setlist-section">
+      <label class="section-title" for="setlistInput">Setlist / track starts</label>
+      <textarea id="setlistInput" rows="6" spellcheck="false" aria-describedby="setlistHint setlistStatus" placeholder="00:00 Artist - Opening track&#10;04:32 Artist - Next track&#10;01:02:15 Artist - Closing track"></textarea>
+      <p id="setlistHint" class="hint">One track per line: MM:SS or HH:MM:SS, then Artist - Title. A title on its own also works. Track starts mark all three overviews and update the title below them.</p>
+      <p id="setlistStatus" class="hint" role="status" aria-live="polite">Paste a setlist to mark track starts.</p>
+      <div class="control"><label class="control-head" for="markerSize"><span>Marker size</span><span id="markerSizeValue" class="value">10 px</span></label><input id="markerSize" type="range" min="4" max="24" step="1" value="10" data-suffix=" px"></div>
+      <p class="hint">Setlists belong to the loaded audio file. Replacing or unloading it clears the setlist.</p>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Track title &amp; artist</div>
+      <label class="color-row" for="alignment"><span>Text alignment</span><select id="alignment"><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
+      <div class="control"><label class="control-head" for="titleSize"><span>Title size</span><span id="titleSizeValue" class="value">48 px</span></label><input id="titleSize" type="range" min="20" max="96" step="1" value="48" data-suffix=" px"></div>
+      <div class="control"><label class="control-head" for="titleWeight"><span>Title weight</span><span id="titleWeightValue" class="value">550</span></label><input id="titleWeight" type="range" min="100" max="900" step="50" value="550"></div>
+      <div class="control"><label class="control-head" for="artistSize"><span>Artist size</span><span id="artistSizeValue" class="value">28 px</span></label><input id="artistSize" type="range" min="12" max="64" step="1" value="28" data-suffix=" px"></div>
+      <div class="control"><label class="control-head" for="artistWeight"><span>Artist weight</span><span id="artistWeightValue" class="value">450</span></label><input id="artistWeight" type="range" min="100" max="900" step="50" value="450"></div>
+      <div class="control"><label class="control-head" for="transitionDuration"><span>Track transition</span><span id="transitionDurationValue" class="value">6 s</span></label><input id="transitionDuration" type="range" min="1" max="10" step="0.5" value="6" data-suffix=" s"></div>
+      <p class="hint">Text erases before each track start and reveals after it, with a brief pause between. Sizes refer to the 1920 × 1080 composition.</p>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Overview labels</div>
+      <label class="toggle-row" for="headers"><span>Show headings</span><input id="headers" type="checkbox" checked></label>
+      <label class="toggle-row" for="labels"><span>Show elapsed / total time</span><input id="labels" type="checkbox" checked></label>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Colours</div>
+      <label class="color-row" for="colorPreset"><span>Colour preset</span><select id="colorPreset"><option value="original">Original</option><option value="ocean">Ocean</option><option value="aurora">Aurora</option><option value="ember">Ember</option><option value="violet">Violet</option><option value="custom" disabled>Custom</option></select></label>
+      <label class="color-row" for="colorElapsed"><span>Elapsed part</span><input id="colorElapsed" type="color" value="#c58d6b"></label>
+      <label class="color-row" for="colorRemaining"><span>Remaining part</span><input id="colorRemaining" type="color" value="#d8d0bd"></label>
+      <label class="color-row" for="colorLabels"><span>Labels &amp; active marker</span><input id="colorLabels" type="color" value="#f2f0e8"></label>
+      <label class="color-row" for="colorTitle"><span>Track title</span><input id="colorTitle" type="color" value="#f2f0e8"></label>
+      <label class="color-row" for="colorArtist"><span>Artist</span><input id="colorArtist" type="color" value="#c58d6b"></label>
+      <button id="resetColorsBtn" class="action glass" type="button">Reset colours</button>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Playback position</div>
+      <div class="seek-entry"><label for="seekSeconds">Seconds</label><input id="seekSeconds" class="frequency-input" type="number" min="0" step="0.1" value="0"><button id="seekBtn" class="action glass" type="button">Seek</button></div>
+    </section>
+
+    <section class="section quality-details">
+      <div class="section-title">Composition &amp; export</div>
+      <p>16:9 · 1920 × 1080 · 60 fps MP4<br>All three overviews, markers, labels and animated track text are included in the export.</p>
+      <p class="hint">Space · play/pause<br>R · replay &nbsp; M · mute &nbsp; H · clean view<br>Esc · show settings</p>
+    </section>
+  </aside>
+
+  <nav id="actions" aria-label="Playback and export">
+    <button id="playPauseBtn" class="action glass" type="button" disabled title="Play">▶ <span class="action-label">Play</span></button>
+    <button id="replayBtn" class="action glass" type="button" disabled title="Replay">↺ <span class="action-label">Replay</span></button>
+    <button id="unloadBtn" class="action glass" type="button" disabled title="Unload">⊘ <span class="action-label">Unload</span></button>
+    <button id="muteBtn" class="action glass" type="button" title="Mute audio" aria-label="Mute audio" aria-pressed="false">♪ <span class="action-label">Mute</span></button>
+    <button id="exportBtn" class="action glass" type="button" disabled>↓ <span class="action-label">Export</span></button>
+    <button id="cleanBtn" class="action glass" type="button" title="Hide controls (H)" aria-pressed="false">◩ <span class="action-label">Clean view</span></button>
+    <button id="fullscreenBtn" class="action glass" type="button" title="Fullscreen" aria-label="Fullscreen">⛶</button>
+  </nav>
+  <div id="timeline" class="glass"><span id="currentTime">0:00</span><input id="seek" aria-label="Track position" type="range" min="0" max="1000" step="1" value="0" disabled><span id="durationText">0:00</span></div>
+  <div id="readout" class="glass" role="status"><span id="statusLight"></span><span id="statusText">Choose an audio file or load the reference track</span><span id="fps">— fps</span></div>
+  <div id="exportOverlay"><div class="export-card glass"><div id="exportStatus">Rendering Setlist Atlas…</div><div class="progress"><div id="exportProgressBar"></div></div><div id="exportPercent">0%</div><button id="exportCancelBtn" class="action glass" type="button">Cancel export</button></div></div>
+  <div id="fatal" role="alert"></div>
+  <noscript>This visualiser requires JavaScript.</noscript>
+  <script src="js/recorder.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
+  <script src="js/offline-exporter.js"></script>
+  <script type="module" src="js/setlist/setlist-app.js"></script>
+</body>
+</html>

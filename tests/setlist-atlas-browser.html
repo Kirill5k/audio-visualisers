@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Setlist Atlas browser checks</title>
+  <style>
+    body { background:#101211; color:#e9e6df; font:14px/1.5 system-ui,sans-serif; margin:24px; }
+    button,a { color:inherit; } button { padding:10px 14px; background:#302a25; border:1px solid #a17d63; border-radius:7px; margin:0 8px 8px 0; cursor:pointer; }
+    button:disabled { opacity:.45; cursor:wait; } pre { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.6; }
+    iframe { display:block; width:960px; height:540px; border:1px solid #665445; max-width:100%; }
+    video { display:block; width:640px; max-width:100%; margin:12px 0; } a { display:block; margin:10px 0; color:#e3b18d; }
+    .pass { color:#b3e899; } .fail { color:#ff9788; }
+  </style>
+</head>
+<body>
+  <h1>Setlist Atlas browser checks</h1>
+  <p>Exercises the production page with the local reference.mp3. Export checks render a six-second excerpt across a track change, inspect the actual MP4, and cancel a second export. Files stay in memory unless you download them.</p>
+  <button id="runUI" type="button" disabled>Run UI checks</button>
+  <button id="runExport" type="button" disabled>Run export checks</button>
+  <p id="summary" role="status" aria-live="polite">Loading visualiser…</p>
+  <pre id="results">Waiting for the page to initialize.</pre>
+  <div id="artifacts"></div>
+  <iframe id="app" src="../setlist-atlas.html" allow="autoplay; fullscreen" title="Setlist Atlas under test"></iframe>
+  <script type="module" src="setlist-atlas-browser.js"></script>
+</body>
+</html>
