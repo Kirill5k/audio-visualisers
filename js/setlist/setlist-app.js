@@ -15,7 +15,7 @@ window.setlistAtlas = await createSpectralPlayer({
   historySeconds: 1,
   previewAspect: 16 / 9,
   motionAnalysis: false,
-  controls: ['markerSize', 'titleSize', 'titleWeight', 'artistSize', 'artistWeight', 'transitionDuration', 'headers', 'labels'],
+  controls: ['markerSize', 'progressHeight', 'titleSize', 'titleWeight', 'artistSize', 'artistWeight', 'transitionDuration', 'headers', 'labels'],
   quality: { fftSize: 0, frequencyBins: 0, rtaFftSize: 0, analysisFps: 60, overviewCount: 3 },
   extend(player) {
     const { audio, bind } = player;

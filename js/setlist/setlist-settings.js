@@ -17,6 +17,7 @@ export const SETLIST_COLOR_PRESETS = Object.freeze(Object.fromEntries(
 export const SETLIST_DEFAULTS = Object.freeze({
   ...SETLIST_COLOR_PRESETS.original.colors,
   markerSize: 10,
+  progressHeight: 4,
   titleSize: 48,
   titleWeight: 550,
   artistSize: 28,

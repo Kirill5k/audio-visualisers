@@ -55,7 +55,6 @@ export function createSetlistAtlasScene(stage, settings = {}) {
     return mesh;
   });
   const barWorldY = (HEIGHT / 2 - BAR_Y) * 100 / WIDTH;
-  bars[0].scale.set(BOX.width, 4 * 100 / WIDTH, 1);
   bars[0].position.set(BOX.cx, barWorldY, 0);
 
   function makeLayer(name, rect) {
@@ -241,8 +240,10 @@ export function createSetlistAtlasScene(stage, settings = {}) {
     currentTrack = { index: transition.activeIndex, ...(active ? splitTrackTitle(active.title) : { title: '', artist: '' }) };
     updateColors();
     for (const waveform of waveforms) waveform.update({ progress });
+    const barHeight = clamp(settings.progressHeight, 1, 40, 4) * 100 / WIDTH;
+    bars[0].scale.set(BOX.width, barHeight, 1);
     bars[1].visible = progress > 0;
-    bars[1].scale.set(BOX.width * progress, 4 * 100 / WIDTH, 1);
+    bars[1].scale.set(BOX.width * progress, barHeight, 1);
     bars[1].position.set(BOX.left + BOX.width * progress / 2, barWorldY, .01);
     drawHeaders(); drawMarkers(entries); drawTrack(entries);
     renderer.render(scene, camera);
