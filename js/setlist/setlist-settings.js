@@ -1,15 +1,15 @@
 import { ATLAS_COLOR_PRESETS } from '../atlas/signal-atlas-palette.js';
 
-/** The same palette roles as Signal Atlas, exposed as presentation controls. */
+/** Signal Atlas palette roles, with white elapsed and artist defaults for Original. */
 export const SETLIST_COLOR_PRESETS = Object.freeze(Object.fromEntries(
   Object.entries(ATLAS_COLOR_PRESETS).map(([key, preset]) => [key, Object.freeze({
     label: preset.label,
     colors: Object.freeze({
-      colorElapsed: preset.colors.colorAccent,
+      colorElapsed: key === 'original' ? '#FFFFFF' : preset.colors.colorAccent,
       colorRemaining: preset.colors.colorPrimary,
       colorLabels: preset.colors.colorText,
       colorTitle: preset.colors.colorText,
-      colorArtist: preset.colors.colorAccent,
+      colorArtist: key === 'original' ? '#FFFFFF' : preset.colors.colorAccent,
     }),
   })]),
 ));
@@ -18,9 +18,9 @@ export const SETLIST_DEFAULTS = Object.freeze({
   ...SETLIST_COLOR_PRESETS.original.colors,
   markerSize: 10,
   progressHeight: 4,
-  titleSize: 48,
-  titleWeight: 550,
-  artistSize: 28,
+  titleSize: 40,
+  titleWeight: 450,
+  artistSize: 40,
   artistWeight: 450,
   alignment: 'left',
   transitionDuration: 6,

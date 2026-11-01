@@ -185,9 +185,9 @@ export function createSetlistAtlasScene(stage, settings = {}) {
   function drawTrack(entries) {
     const entry = entries[transition.displayIndex];
     const track = entry ? splitTrackTitle(entry.title) : { title: '', artist: '' };
-    const titleSize = clamp(settings.titleSize, 20, 96, 48);
-    const artistSize = clamp(settings.artistSize, 12, 64, 28);
-    const titleWeight = clamp(settings.titleWeight, 100, 900, 550);
+    const titleSize = clamp(settings.titleSize, 20, 96, 40);
+    const artistSize = clamp(settings.artistSize, 12, 64, 40);
+    const titleWeight = clamp(settings.titleWeight, 100, 900, 450);
     const artistWeight = clamp(settings.artistWeight, 100, 900, 450);
     const alignment = ['left', 'center', 'right'].includes(settings.alignment) ? settings.alignment : 'left';
     const layoutKey = JSON.stringify([track, titleSize, artistSize, titleWeight, artistWeight, alignment]);
