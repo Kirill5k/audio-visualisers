@@ -30,7 +30,7 @@ export function createSetlistAtlasScene(stage, settings = {}) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
   stage.appendChild(renderer.domElement);
-  renderer.domElement.setAttribute('aria-label', 'Three synchronized track overviews with track-start markers, current title and artist');
+  renderer.domElement.setAttribute('aria-label', 'Three synchronized track overviews with track-start markers, current artist and title');
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-50, 50, 50 / ASPECT, -50 / ASPECT, -10, 10);
   camera.position.z = 5;
@@ -211,8 +211,9 @@ export function createSetlistAtlasScene(stage, settings = {}) {
       ctx.save();
       ctx.beginPath(); ctx.rect(LEFT, RECTS.title.y * HEIGHT, SPAN, RECTS.title.h * HEIGHT); ctx.clip();
       const top = .79 * HEIGHT;
-      label(ctx, displayed.title, textLayout.title.x, top + titleSize, titleSize, colors.title, 'left', titleWeight);
-      label(ctx, displayed.artist, textLayout.artist.x, top + titleSize * 1.15 + 16 + artistSize, artistSize, colors.artist, 'left', artistWeight);
+      label(ctx, displayed.artist, textLayout.artist.x, top + artistSize, artistSize, colors.artist, 'left', artistWeight);
+      const titleTop = track.artist ? top + artistSize * 1.15 + 16 : top;
+      label(ctx, displayed.title, textLayout.title.x, titleTop + titleSize, titleSize, colors.title, 'left', titleWeight);
       ctx.restore();
     });
   }

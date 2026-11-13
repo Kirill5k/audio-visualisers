@@ -122,7 +122,7 @@ async function runUI() {
   const revealPixels = pixels();
   await app.renderAt(6);
   check('the exact boundary changes the active track during the blank interval', app.getState().currentTrack.index === 1 && app.getState().scene.text.title === '' && app.getState().scene.transition.phase === 'empty');
-  check('accessible announcement changes to the active title and artist', doc.querySelector('#currentTrackAnnouncement').textContent === 'New Frequency — Second Artist');
+  check('accessible announcement changes to the active artist and title', doc.querySelector('#currentTrackAnnouncement').textContent === 'Second Artist — New Frequency');
   await app.renderAt(4.5); check('backward seeks reproduce erase pixels exactly', pixels() === erasePixels);
   await app.renderAt(7.5); check('forward seeks reproduce reveal pixels exactly', pixels() === revealPixels);
   const uploads = app.getState().scene.layers.map(layer => layer.uploads);

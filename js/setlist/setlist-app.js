@@ -28,7 +28,7 @@ window.setlistAtlas = await createSpectralPlayer({
       if (key === announcementKey) return;
       announcementKey = key;
       $('currentTrackAnnouncement').textContent = current.index < 0 ? ''
-        : current.artist ? `${current.title} — ${current.artist}` : current.title;
+        : current.artist ? `${current.artist} — ${current.title}` : current.title;
     }
 
     function applyColors(colors) {
